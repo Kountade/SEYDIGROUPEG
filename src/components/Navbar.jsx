@@ -1,4 +1,4 @@
-// src/components/Navbar.jsx - Version Ultra Professionnelle
+// src/components/Navbar.jsx - Version Ultra Professionnelle Complète
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
@@ -47,7 +47,14 @@ import {
   ClipboardList,
   Truck,
   ArrowLeftRight,
-  DollarSign
+  DollarSign,
+  Grid3x3,
+  Ruler,
+  Award,
+  ClipboardCheck,
+  LineChart,
+  MoveHorizontal,
+  Building
 } from 'lucide-react';
 
 import logo from '../assets/logo.svg';
@@ -101,10 +108,14 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isLoading, setIsLoading] = useState(true);
   
-  // Données pour la section ACHATS
+  // Données pour les différentes sections
   const [achatsALivrer, setAchatsALivrer] = useState([]);
   const [alertsCount, setAlertsCount] = useState(0);
   const [fournisseursCount, setFournisseursCount] = useState(0);
+  const [stocksFaibles, setStocksFaibles] = useState([]);
+  const [ventesImpayees, setVentesImpayees] = useState([]);
+  const [commandesAApprouver, setCommandesAApprouver] = useState([]);
+  const [absencesEnAttente, setAbsencesEnAttente] = useState([]);
 
   // Récupérer l'utilisateur
   const getUserData = () => {
@@ -174,7 +185,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
           setRoleType('global');
         }
         
-        // Charger les données pour la section ACHATS
+        // Charger les données pour les différentes sections
         const achatsRes = await AxiosInstance.get('/purchase-orders/?status=confirmed').catch(() => ({ data: [] }));
         setAchatsALivrer(achatsRes.data || []);
         
@@ -184,26 +195,29 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         const fournisseursRes = await AxiosInstance.get('/suppliers/').catch(() => ({ data: [] }));
         setFournisseursCount(fournisseursRes.data?.length || 0);
         
-        // Notifications
-        const notifs = [];
-        try {
-          const stocksRes = await AxiosInstance.get('/stock-movements/?low_stock=true').catch(() => ({ data: [] }));
-          if (stocksRes.data?.length) {
-            notifs.push({ id: 'stocks', title: 'Stock faible', message: `${stocksRes.data.length} produit(s) en rupture`, link: '/stocks', type: 'warning', time: 'maintenant' });
-          }
-        } catch (e) {}
+        const stocksRes = await AxiosInstance.get('/stock-movements/?low_stock=true').catch(() => ({ data: [] }));
+        setStocksFaibles(stocksRes.data || []);
         
         const ventesRes = await AxiosInstance.get('/sale-orders/?payment_status=pending').catch(() => ({ data: [] }));
+        setVentesImpayees(ventesRes.data || []);
+        
+        // Notifications
+        const notifs = [];
+        
+        if (stocksRes.data?.length) {
+          notifs.push({ id: 'stocks', title: 'Stock faible', message: `${stocksRes.data.length} produit(s) en rupture`, link: '/stocks', type: 'warning', time: 'maintenant' });
+        }
+        
         if (ventesRes.data?.length) {
           notifs.push({ id: 'ventes', title: 'Paiements en attente', message: `${ventesRes.data.length} vente(s) impayée(s)`, link: '/ventes', type: 'error', time: 'aujourd\'hui' });
         }
         
-        if (achatsALivrer.length > 0) {
-          notifs.push({ id: 'achats', title: 'Commandes à livrer', message: `${achatsALivrer.length} commande(s) en attente de livraison`, link: '/commandes-fournisseurs', type: 'info', time: 'aujourd\'hui' });
+        if (achatsRes.data?.length) {
+          notifs.push({ id: 'achats', title: 'Commandes à livrer', message: `${achatsRes.data.length} commande(s) en attente de livraison`, link: '/commandes-fournisseurs', type: 'info', time: 'aujourd\'hui' });
         }
         
-        if (alertsCount > 0) {
-          notifs.push({ id: 'alerts', title: 'Alertes fournisseurs', message: `${alertsCount} alerte(s) à traiter`, link: '/purchase-alerts', type: 'warning', time: 'aujourd\'hui' });
+        if (alertsRes.data?.length) {
+          notifs.push({ id: 'alerts', title: 'Alertes fournisseurs', message: `${alertsRes.data.length} alerte(s) à traiter`, link: '/purchase-alerts', type: 'warning', time: 'aujourd\'hui' });
         }
         
         setNotifications(notifs);
@@ -243,6 +257,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const canViewPurchases = () => isPDG;
   const canViewSuppliers = () => isPDG;
   const canViewInventory = () => isPDG || isChefAgence || isGestionnaireStock;
+  const canViewDeliveries = () => isPDG || isChefAgence || isGestionnaireStock;
   const canViewHR = () => isPDG || isDRH;
   const canViewAdmin = () => isPDG;
 
@@ -278,14 +293,15 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     navigate('/');
   };
 
-  // Menu sections
+  // Menu sections COMPLÈTES
   const menuSections = [
     {
       name: 'TABLEAU DE BORD',
       icon: LayoutDashboard,
       items: [
         { id: 'dashboard', text: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', permission: true },
-        { id: 'statistiques', text: 'Statistiques', icon: TrendingUp, path: '/statistiques', permission: true }
+        { id: 'statistiques', text: 'Statistiques', icon: TrendingUp, path: '/statistiques', permission: true },
+        { id: 'analyses', text: 'Analyses', icon: LineChart, path: '/analyses', permission: isPDG }
       ]
     },
     {
@@ -294,7 +310,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       permission: canViewSales(),
       items: [
         { id: 'pos', text: 'Point de Vente', icon: ShoppingBag, path: '/point-de-vente', permission: canViewSales() },
-        { id: 'ventes', text: 'Ventes', icon: ShoppingCart, path: '/ventes', permission: canViewSales(), badge: notificationCount > 0 ? notificationCount : 0 },
+        { id: 'ventes', text: 'Ventes', icon: ShoppingCart, path: '/ventes', permission: canViewSales(), badge: ventesImpayees.length },
         { id: 'clients', text: 'Clients', icon: Users, path: '/clients', permission: canViewSales() },
         { id: 'devis', text: 'Devis', icon: FileText, path: '/devis', permission: canViewSales() },
         { id: 'factures', text: 'Factures', icon: Receipt, path: '/factures', permission: canViewSales() },
@@ -317,13 +333,20 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     {
       name: 'STOCK & LOGISTIQUE',
       icon: Package,
-      permission: canViewInventory(),
+      permission: canViewInventory() || canViewDeliveries(),
       items: [
-        { id: 'produits', text: 'Produits', icon: Package, path: '/produits', permission: canViewInventory() },
         { id: 'categories', text: 'Catégories', icon: Tags, path: '/categories', permission: canViewInventory() },
-        { id: 'stocks', text: 'Stocks', icon: Database, path: '/stocks', permission: canViewInventory() },
+        { id: 'produits', text: 'Produits', icon: Package, path: '/produits', permission: canViewInventory() },
+        { id: 'variants', text: 'Variantes', icon: Grid3x3, path: '/variants', permission: canViewInventory() },
+        { id: 'marques', text: 'Marques', icon: Award, path: '/brands', permission: canViewInventory() },
+        { id: 'unites', text: 'Unités', icon: Ruler, path: '/units', permission: canViewInventory() },
+        { id: 'reception', text: 'Réception stock', icon: Truck, path: '/stock-receipt', permission: canViewInventory() },
+        { id: 'stocks', text: 'Stocks', icon: Boxes, path: '/stocks', permission: canViewInventory(), badge: stocksFaibles.length },
         { id: 'entrepots', text: 'Entrepôts', icon: Warehouse, path: '/entrepots', permission: canViewInventory() },
-        { id: 'mouvements', text: 'Mouvements', icon: TrendingUp, path: '/mouvements-stock', permission: canViewInventory() }
+        { id: 'mouvements', text: 'Mouvements', icon: TrendingUp, path: '/mouvements-stock', permission: canViewInventory() },
+        { id: 'transferts', text: 'Transferts', icon: MoveHorizontal, path: '/transferts', permission: canViewInventory() },
+        { id: 'inventaire', text: 'Inventaire', icon: ClipboardCheck, path: '/inventaire', permission: canViewInventory() },
+        { id: 'livraisons', text: 'Livraisons', icon: Truck, path: '/livraisons', permission: canViewDeliveries() }
       ]
     },
     ...(canViewHR() ? [{
@@ -331,7 +354,9 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       icon: Users,
       items: [
         { id: 'employes', text: 'Employés', icon: Users, path: '/drh/employes', permission: true },
-        { id: 'conges', text: 'Congés', icon: Calendar, path: '/drh/demandes-conges', permission: true }
+        { id: 'conges', text: 'Congés', icon: Calendar, path: '/drh/demandes-conges', permission: true, badge: absencesEnAttente.length },
+        { id: 'recrutement', text: 'Recrutement', icon: UserPlus, path: '/drh/recrutement', permission: true },
+        { id: 'paie', text: 'Paie', icon: DollarSign, path: '/drh/paie', permission: isPDG }
       ]
     }] : []),
     ...(canViewAdmin() ? [{
@@ -340,7 +365,8 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       items: [
         { id: 'utilisateurs', text: 'Utilisateurs', icon: Users, path: '/utilisateurs', permission: true },
         { id: 'agences', text: 'Agences', icon: Building2, path: '/agences', permission: canViewAgences() },
-        { id: 'roles', text: 'Rôles', icon: Shield, path: '/roles', permission: true }
+        { id: 'roles', text: 'Rôles', icon: Shield, path: '/roles', permission: true },
+        { id: 'audit', text: 'Journal', icon: ClipboardList, path: '/audit', permission: true }
       ]
     }] : []),
     {
@@ -348,7 +374,8 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       icon: UserCircle,
       items: [
         { id: 'profile', text: 'Mon Profil', icon: UserCircle, path: '/profile', permission: true },
-        { id: 'settings', text: 'Paramètres', icon: Settings, path: '/settings', permission: true }
+        { id: 'settings', text: 'Paramètres', icon: Settings, path: '/settings', permission: true },
+        { id: 'support', text: 'Support', icon: HelpCircle, path: '/support', permission: true }
       ]
     }
   ];

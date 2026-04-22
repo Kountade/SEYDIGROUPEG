@@ -10,6 +10,17 @@ import PasswordReset from './components/PasswordReset'
 
 import Agences from './components/agences/Agences'
 import CreerAgence from './components/agences/CreerAgence'
+import Products from './components/produits/Products'
+import ProductForm from './components/produits/ProductForm'
+import ProductDetails from './components/produits/ProductDetails'
+import Categories from './components/produits/Categories'   
+import CategoryForm from './components/produits/CategoryForm'
+import Brands from './components/produits/Brands'
+import BrandForm from './components/produits/BrandForm'
+import Units from './components/produits/Units'
+import UnitForm from './components/produits/UnitForm'
+import Variants from './components/produIts/Variants'
+import VariantForm from './components/produits/VariantForm'
 
 
 
@@ -42,6 +53,34 @@ function App() {
                 <Route path="/home" element={<Home/>}/>
                <Route path="/agences" element={<Agences/>}/>
                <Route path="/creer-agence" element={<CreerAgence/>}/>
+
+               
+
+                            {/* Gestion des produits */}
+                        <Route path="/produits" element={<Products />} />
+                        <Route path="/produits/nouveau" element={<ProductForm />} />
+                        <Route path="/produits/:id" element={<ProductDetails />} />
+                        <Route path="/produits/:id/modifier" element={<ProductForm />} />
+
+                        {/* Catégories */}
+                        <Route path="/categories" element={<Categories />} />
+                        <Route path="/categories/nouveau" element={<CategoryForm />} />
+                        <Route path="/categories/:id/modifier" element={<CategoryForm />} />
+
+                        {/* Marques */}
+                        <Route path="/brands" element={<Brands />} />
+                        <Route path="/brands/nouveau" element={<BrandForm />} />
+                        <Route path="/brands/:id/modifier" element={<BrandForm />} /> 
+
+                        {/* Unités  */}
+                        <Route path="/units" element={<Units />} />
+                        <Route path="/units/nouveau" element={<UnitForm />} />
+                        <Route path="/units/:id/modifier" element={<UnitForm />} />
+
+                        {/* Variantes (si page dédiée)  */}
+                        <Route path="/variants" element={<Variants />} />
+                        <Route path="/variants/nouveau" element={<VariantForm />} />
+                        <Route path="/variants/:id/modifier" element={<VariantForm />} />
 
 
 
