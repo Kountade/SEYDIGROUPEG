@@ -10,6 +10,7 @@ import PasswordReset from './components/PasswordReset'
 
 import Agences from './components/agences/Agences'
 import CreerAgence from './components/agences/CreerAgence'
+import Units from './components/logistique/Units'
 
 
 
@@ -45,7 +46,7 @@ function App() {
                <Route path="/creer-agence" element={<CreerAgence/>}/>
 
                
-
+              <Route path="/units" element={<Units/>}/>
 
 
 
