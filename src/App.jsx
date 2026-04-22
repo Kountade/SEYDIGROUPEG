@@ -19,8 +19,8 @@ import Brands from './components/produits/Brands'
 import BrandForm from './components/produits/BrandForm'
 import Units from './components/produits/Units'
 import UnitForm from './components/produits/UnitForm'
-import Variants from './components/produIts/Variants'
 import VariantForm from './components/produits/VariantForm'
+import Variants from './components/produits/Variants'
 
 
 
