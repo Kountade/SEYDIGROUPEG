@@ -26,7 +26,7 @@ import {
   Hash
 } from 'lucide-react'
 
-const Variants = () => {
+const Variantes = () => {
   const navigate = useNavigate()
 
   const [variants, setVariants] = useState([])
@@ -743,4 +743,4 @@ const Variants = () => {
   )
 }
 
-export default Variants
+export default Variantes

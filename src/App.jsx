@@ -20,7 +20,7 @@ import BrandForm from './components/produits/BrandForm'
 import Units from './components/produits/Units'
 import UnitForm from './components/produits/UnitForm'
 import VariantForm from './components/produits/VariantForm'
-import Variants from './components/produits/Variants'
+import Variantes from './components/produits/Variantes'
 
 
 
@@ -78,7 +78,7 @@ function App() {
                         <Route path="/units/:id/modifier" element={<UnitForm />} />
 
                         {/* Variantes (si page dédiée)  */}
-                        <Route path="/variants" element={<Variants />} />
+                        <Route path="/variants" element={<Variantes />} />
                         <Route path="/variants/nouveau" element={<VariantForm />} />
                         <Route path="/variants/:id/modifier" element={<VariantForm />} />
 
