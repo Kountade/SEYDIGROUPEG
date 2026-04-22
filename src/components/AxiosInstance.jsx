@@ -13,7 +13,7 @@ const getBaseUrl = () => {
   // Priorité 2 : Détection selon le mode
   if (import.meta.env.PROD) {
     //  Remplacez par l'URL de production de votre app
-    return 'https://seydigroup-backed.onrender.com'  // À personnaliser
+    return 'https://seydi-group-back.onrender.com'  // À personnaliser
   }
   
   // Développement local (votre URL actuelle)
