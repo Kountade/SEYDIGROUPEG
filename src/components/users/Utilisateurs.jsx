@@ -1,4 +1,4 @@
-// src/components/users/Utilisateurs.jsx
+// src/components/users/Utilisateurs.jsx - Version Responsive
 import React, { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
@@ -31,7 +31,10 @@ import {
   Clock,
   Calendar,
   Building2,
-  UserCircle
+  UserCircle,
+  Menu,
+  Grid3x3,
+  Table2
 } from 'lucide-react'
 
 // Configuration des rôles
@@ -62,6 +65,7 @@ const Utilisateurs = () => {
   const [viewMode, setViewMode] = useState('grid')
   const [sortField, setSortField] = useState('last_name')
   const [sortDirection, setSortDirection] = useState('asc')
+  const [showFilters, setShowFilters] = useState(false)
   const [stats, setStats] = useState({
     total: 0,
     active: 0,
@@ -85,7 +89,6 @@ const Utilisateurs = () => {
       const users = response.data || []
       setUtilisateurs(users)
       
-      // Calculer les statistiques
       const total = users.length
       const active = users.filter(u => u.is_active).length
       const inactive = total - active
@@ -128,9 +131,7 @@ const Utilisateurs = () => {
   const handleToggleStatus = async () => {
     if (!userToToggle) return
     try {
-      await AxiosInstance.patch(`/users/${userToToggle.id}/`, {
-        is_active: !userToToggle.is_active
-      })
+      await AxiosInstance.patch(`/users/${userToToggle.id}/toggle_active/`)
       showNotification(`Utilisateur ${userToToggle.is_active ? 'désactivé' : 'activé'} avec succès`, 'success')
       fetchData()
       setShowStatusModal(false)
@@ -160,12 +161,12 @@ const Utilisateurs = () => {
 
   const getStatusBadge = (isActive) => {
     return isActive ? (
-      <div className="badge badge-success gap-1">
+      <div className="badge badge-success gap-1 text-xs">
         <CheckCircle className="w-3 h-3" />
         Actif
       </div>
     ) : (
-      <div className="badge badge-ghost gap-1">
+      <div className="badge badge-ghost gap-1 text-xs">
         <Clock className="w-3 h-3" />
         Inactif
       </div>
@@ -218,12 +219,29 @@ const Utilisateurs = () => {
     currentPage * itemsPerPage
   )
 
+  // Ajuster itemsPerPage selon la taille de l'écran
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 640) {
+        setItemsPerPage(6)
+      } else if (window.innerWidth < 1024) {
+        setItemsPerPage(9)
+      } else {
+        setItemsPerPage(12)
+      }
+    }
+    
+    handleResize()
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-200px)]">
-        <div className="text-center space-y-6">
-          <div className="loading loading-spinner loading-lg text-primary w-16 h-16"></div>
-          <p className="text-xl font-semibold text-base-content/70 animate-pulse">
+      <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
+        <div className="text-center space-y-4">
+          <div className="loading loading-spinner loading-lg text-primary w-12 h-12 sm:w-16 sm:h-16"></div>
+          <p className="text-base sm:text-xl font-semibold text-base-content/70 animate-pulse">
             Chargement des utilisateurs...
           </p>
         </div>
@@ -232,123 +250,118 @@ const Utilisateurs = () => {
   }
 
   return (
-    <div className="space-y-6 p-4 lg:p-6">
+    <div className="space-y-4 sm:space-y-6 p-3 sm:p-4 lg:p-6">
       {/* Notification */}
       {notification.show && (
-        <div className="fixed top-20 right-6 z-50 animate-slideDown">
-          <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-lg`}>
+        <div className="fixed top-16 right-3 sm:right-6 z-50 animate-slideDown">
+          <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-lg text-sm sm:text-base`}>
             {notification.type === 'success' ? (
-              <CheckCircle className="w-5 h-5" />
+              <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5" />
             ) : (
-              <AlertCircle className="w-5 h-5" />
+              <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5" />
             )}
             <span className="font-semibold">{notification.message}</span>
             <button 
               className="btn btn-ghost btn-xs btn-circle"
               onClick={() => setNotification({ ...notification, show: false })}
             >
-              <X className="w-4 h-4" />
+              <X className="w-3 h-3 sm:w-4 sm:h-4" />
             </button>
           </div>
         </div>
       )}
 
       {/* En-tête */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-4xl font-black text-base-content mb-2 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-base-content bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
             Utilisateurs
           </h1>
-          <p className="text-base text-base-content/60">
-            Gérez les utilisateurs de la plateforme
+          <p className="text-xs sm:text-sm text-base-content/60 mt-1">
+            Gérez les utilisateurs de la plateforme ({stats.total} au total)
           </p>
         </div>
         
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-2 sm:gap-3">
           <button 
             onClick={fetchData}
-            className="btn btn-outline gap-2"
+            className="btn btn-sm sm:btn-md btn-outline gap-1 sm:gap-2"
           >
-            <RefreshCw className="w-4 h-4" />
-            Actualiser
+            <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4" />
+            <span className="hidden xs:inline">Actualiser</span>
           </button>
           <button 
             onClick={() => navigate('/utilisateurs/nouveau')}
-            className="btn btn-primary gap-2"
+            className="btn btn-sm sm:btn-md btn-primary gap-1 sm:gap-2"
           >
-            <Plus className="w-4 h-4" />
-            Nouvel utilisateur
+            <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
+            <span className="hidden xs:inline">Nouvel utilisateur</span>
           </button>
         </div>
       </div>
 
-      {/* Cartes statistiques */}
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
-        <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300">
+      {/* Cartes statistiques - Responsive */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 lg:gap-4">
+        <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
           <div className="stat-figure text-primary">
-            <Users className="w-8 h-8" />
+            <Users className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
           </div>
-          <div className="stat-title text-base font-semibold">Total</div>
-          <div className="stat-value text-3xl font-black">{stats.total}</div>
-          <div className="stat-desc">Utilisateurs</div>
+          <div className="stat-title text-xs sm:text-sm font-semibold">Total</div>
+          <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{stats.total}</div>
         </div>
         
-        <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300">
+        <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
           <div className="stat-figure text-success">
-            <UserCheck className="w-8 h-8" />
+            <UserCheck className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
           </div>
-          <div className="stat-title text-base font-semibold">Actifs</div>
-          <div className="stat-value text-3xl font-black">{stats.active}</div>
-          <div className="stat-desc">{((stats.active / stats.total) * 100).toFixed(1)}% du total</div>
+          <div className="stat-title text-xs sm:text-sm font-semibold">Actifs</div>
+          <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{stats.active}</div>
         </div>
         
-        <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300">
+        <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
           <div className="stat-figure text-error">
-            <UserX className="w-8 h-8" />
+            <UserX className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
           </div>
-          <div className="stat-title text-base font-semibold">Inactifs</div>
-          <div className="stat-value text-3xl font-black">{stats.inactive}</div>
-          <div className="stat-desc">{((stats.inactive / stats.total) * 100).toFixed(1)}% du total</div>
+          <div className="stat-title text-xs sm:text-sm font-semibold">Inactifs</div>
+          <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{stats.inactive}</div>
         </div>
         
-        <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300">
+        <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
           <div className="stat-figure text-error">
-            <Crown className="w-8 h-8" />
+            <Crown className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
           </div>
-          <div className="stat-title text-base font-semibold">PDG</div>
-          <div className="stat-value text-3xl font-black">{stats.pdg}</div>
-          <div className="stat-desc">Direction</div>
+          <div className="stat-title text-xs sm:text-sm font-semibold">PDG</div>
+          <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{stats.pdg}</div>
         </div>
         
-        <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300">
+        <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
           <div className="stat-figure text-secondary">
-            <Shield className="w-8 h-8" />
+            <Shield className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
           </div>
-          <div className="stat-title text-base font-semibold">DRH</div>
-          <div className="stat-value text-3xl font-black">{stats.drh}</div>
-          <div className="stat-desc">RH</div>
+          <div className="stat-title text-xs sm:text-sm font-semibold">DRH</div>
+          <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{stats.drh}</div>
         </div>
         
-        <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300">
+        <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
           <div className="stat-figure text-neutral">
-            <UserCircle className="w-8 h-8" />
+            <UserCircle className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
           </div>
-          <div className="stat-title text-base font-semibold">Autres</div>
-          <div className="stat-value text-3xl font-black">{stats.autre}</div>
-          <div className="stat-desc">Utilisateurs</div>
+          <div className="stat-title text-xs sm:text-sm font-semibold">Autres</div>
+          <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{stats.autre}</div>
         </div>
       </div>
 
-      {/* Filtres et recherche */}
-      <div className="bg-base-100 rounded-xl shadow-md border border-base-300 p-4 lg:p-6">
-        <div className="flex flex-col lg:flex-row gap-4">
+      {/* Filtres et recherche - Responsive avec toggle sur mobile */}
+      <div className="bg-base-100 rounded-xl shadow-md border border-base-200 p-3 sm:p-4 lg:p-6">
+        <div className="flex flex-col gap-3">
+          {/* Barre de recherche toujours visible */}
           <div className="flex-1">
             <div className="relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-base-content/40" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/40" />
               <input
                 type="text"
-                placeholder="Rechercher par nom, email ou rôle..."
-                className="input input-bordered w-full pl-12"
+                placeholder="Rechercher par nom, email..."
+                className="input input-bordered w-full pl-9 text-sm"
                 value={searchTerm}
                 onChange={(e) => {
                   setSearchTerm(e.target.value)
@@ -358,36 +371,47 @@ const Utilisateurs = () => {
             </div>
           </div>
           
-          <div className="flex gap-3">
+          {/* Bouton toggle filtres sur mobile */}
+          <button 
+            onClick={() => setShowFilters(!showFilters)}
+            className="btn btn-outline btn-sm sm:hidden gap-2"
+          >
+            <Filter className="w-4 h-4" />
+            Filtres
+            {showFilters ? <ChevronRight className="w-3 h-3" /> : <ChevronLeft className="w-3 h-3" />}
+          </button>
+          
+          {/* Filtres - conditionnels sur mobile */}
+          <div className={`${showFilters ? 'flex' : 'hidden'} sm:flex flex-col sm:flex-row gap-3`}>
             <select 
-              className="select select-bordered min-w-[150px]"
+              className="select select-bordered w-full sm:w-40 text-sm"
               value={filterRole}
               onChange={(e) => {
                 setFilterRole(e.target.value)
                 setCurrentPage(1)
               }}
             >
-              <option value="">Tous les rôles</option>
+              <option value="">Rôles</option>
               <option value="pdg">PDG</option>
               <option value="drh">DRH</option>
               <option value="autre">Autre</option>
             </select>
             
             <select 
-              className="select select-bordered min-w-[130px]"
+              className="select select-bordered w-full sm:w-36 text-sm"
               value={filterStatus}
               onChange={(e) => {
                 setFilterStatus(e.target.value)
                 setCurrentPage(1)
               }}
             >
-              <option value="">Tous les statuts</option>
+              <option value="">Statuts</option>
               <option value="true">Actif</option>
               <option value="false">Inactif</option>
             </select>
             
             <button 
-              className="btn btn-outline"
+              className="btn btn-outline gap-2"
               onClick={() => {
                 setFilterRole('')
                 setFilterStatus('')
@@ -396,36 +420,36 @@ const Utilisateurs = () => {
               }}
             >
               <Filter className="w-4 h-4" />
-              Réinitialiser
+              <span className="hidden sm:inline">Réinitialiser</span>
             </button>
             
-            <div className="join">
+            <div className="join ml-auto">
               <button 
-                className={`join-item btn ${viewMode === 'grid' ? 'btn-primary' : 'btn-ghost'}`}
+                className={`join-item btn btn-sm ${viewMode === 'grid' ? 'btn-primary' : 'btn-ghost'}`}
                 onClick={() => setViewMode('grid')}
               >
-                <LayoutGrid className="w-4 h-4" />
+                <Grid3x3 className="w-4 h-4" />
               </button>
               <button 
-                className={`join-item btn ${viewMode === 'table' ? 'btn-primary' : 'btn-ghost'}`}
+                className={`join-item btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-ghost'}`}
                 onClick={() => setViewMode('table')}
               >
-                <List className="w-4 h-4" />
+                <Table2 className="w-4 h-4" />
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Contenu principal */}
+      {/* Contenu principal - Responsive */}
       <div className="bg-base-100 rounded-xl shadow-xl border border-base-300 overflow-hidden">
         {filteredAndSortedUsers.length === 0 ? (
-          <div className="p-12 text-center">
-            <Users className="w-20 h-20 mx-auto mb-4 text-base-content/30" />
-            <p className="text-xl font-semibold text-base-content/50">
+          <div className="p-8 sm:p-12 text-center">
+            <Users className="w-16 h-16 sm:w-20 sm:h-20 mx-auto mb-4 text-base-content/30" />
+            <p className="text-lg sm:text-xl font-semibold text-base-content/50">
               Aucun utilisateur trouvé
             </p>
-            <p className="text-base text-base-content/40 mt-2">
+            <p className="text-sm sm:text-base text-base-content/40 mt-2">
               Essayez de modifier vos critères de recherche ou créez un nouvel utilisateur
             </p>
             <button 
@@ -437,9 +461,9 @@ const Utilisateurs = () => {
             </button>
           </div>
         ) : viewMode === 'grid' ? (
-          /* Vue Grille */
-          <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          /* Vue Grille - Responsive (1 colonne mobile, 2 tablette, 3/4 desktop) */
+          <div className="p-3 sm:p-4 lg:p-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-6">
               {paginatedUsers.map((user) => {
                 const roleConfig = ROLE_CONFIG[user.role_global] || ROLE_CONFIG.autre
                 const RoleIcon = roleConfig.icon
@@ -449,147 +473,129 @@ const Utilisateurs = () => {
                 return (
                   <div 
                     key={user.id} 
-                    className="bg-base-200 rounded-xl p-6 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 border border-base-300 group"
+                    className="bg-base-200 rounded-xl p-4 sm:p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 border border-base-300"
                   >
-                    {/* Lien vers le détail */}
-                    <Link to={`/utilisateurs/${user.id}`} className="block">
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                          <div className="avatar placeholder">
-                            <div className={`rounded-xl w-14 h-14 ${roleConfig.bgColor}`}>
-                              <span className={`text-2xl font-bold ${roleConfig.textColor}`}>
-                                {initials}
-                              </span>
-                            </div>
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="avatar placeholder">
+                          <div className={`rounded-xl w-12 h-12 sm:w-14 sm:h-14 ${roleConfig.bgColor}`}>
+                            <span className={`text-lg sm:text-2xl font-bold ${roleConfig.textColor}`}>
+                              {initials}
+                            </span>
                           </div>
-                          <div>
-                            <h3 className="font-bold text-lg text-base-content line-clamp-1">
-                              {fullName}
-                            </h3>
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              <div className={`badge ${roleConfig.bgColor} ${roleConfig.textColor} gap-1`}>
-                                <RoleIcon className="w-3 h-3" />
-                                {roleConfig.label}
-                              </div>
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-base sm:text-lg text-base-content line-clamp-1">
+                            {fullName}
+                          </h3>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            <div className={`badge badge-sm ${roleConfig.bgColor} ${roleConfig.textColor} gap-1`}>
+                              <RoleIcon className="w-3 h-3" />
+                              {roleConfig.label}
                             </div>
                           </div>
                         </div>
-                        
-                        <div className="dropdown dropdown-end">
-                          <button className="btn btn-ghost btn-sm btn-circle" onClick={(e) => e.preventDefault()}>
-                            <MoreVertical className="w-4 h-4" />
-                          </button>
-                          <ul className="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">
-                            <li>
-                              <Link to={`/utilisateurs/${user.id}`}>
-                                <Eye className="w-4 h-4" />
-                                Voir détails
-                              </Link>
-                            </li>
-                            <li>
-                              <Link to={`/utilisateurs/${user.id}/edit`}>
-                                <Edit className="w-4 h-4" />
-                                Modifier
-                              </Link>
-                            </li>
-                            <li>
-                              <button 
-                                onClick={() => {
-                                  setUserToToggle(user)
-                                  setShowStatusModal(true)
-                                }}
-                              >
-                                {user.is_active ? (
-                                  <><UserX className="w-4 h-4" /> Désactiver</>
-                                ) : (
-                                  <><UserCheck className="w-4 h-4" /> Activer</>
-                                )}
-                              </button>
-                            </li>
-                            <li>
-                              <button 
-                                className="text-error"
-                                onClick={() => {
-                                  setUserToDelete(user)
-                                  setShowDeleteModal(true)
-                                }}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                                Supprimer
-                              </button>
-                            </li>
-                          </ul>
-                        </div>
                       </div>
                       
-                      <div className="space-y-2 mb-4">
-                        <div className="flex items-center gap-2 text-sm text-base-content/70">
-                          <Mail className="w-4 h-4 text-primary" />
-                          <span className="truncate">{user.email}</span>
-                        </div>
-                        {user.phone && (
-                          <div className="flex items-center gap-2 text-sm text-base-content/70">
-                            <Phone className="w-4 h-4 text-primary" />
-                            <span>{user.phone}</span>
-                          </div>
-                        )}
+                      <div className="dropdown dropdown-end">
+                        <button className="btn btn-ghost btn-xs btn-circle">
+                          <MoreVertical className="w-4 h-4" />
+                        </button>
+                        <ul className="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-44">
+                          <li>
+                            <Link to={`/utilisateurs/${user.id}`} className="text-sm">
+                              <Eye className="w-4 h-4" />
+                              Détails
+                            </Link>
+                          </li>
+                          <li>
+                            <Link to={`/utilisateurs/${user.id}/edit`} className="text-sm">
+                              <Edit className="w-4 h-4" />
+                              Modifier
+                            </Link>
+                          </li>
+                          <li>
+                            <button 
+                              className="text-sm"
+                              onClick={() => {
+                                setUserToToggle(user)
+                                setShowStatusModal(true)
+                              }}
+                            >
+                              {user.is_active ? (
+                                <><UserX className="w-4 h-4" /> Désactiver</>
+                              ) : (
+                                <><UserCheck className="w-4 h-4" /> Activer</>
+                              )}
+                            </button>
+                          </li>
+                          <li>
+                            <button 
+                              className="text-error text-sm"
+                              onClick={() => {
+                                setUserToDelete(user)
+                                setShowDeleteModal(true)
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              Supprimer
+                            </button>
+                          </li>
+                        </ul>
                       </div>
-                      
-                      {user.roles_agence && user.roles_agence.length > 0 && (
-                        <div className="pt-3 border-t border-base-300">
-                          <div className="flex flex-wrap gap-1">
-                            {user.roles_agence.slice(0, 2).map((role, idx) => (
-                              <span key={idx} className="badge badge-sm badge-ghost">
-                                {role.agence_nom}: {role.role_display}
-                              </span>
-                            ))}
-                            {user.roles_agence.length > 2 && (
-                              <span className="badge badge-sm badge-ghost">
-                                +{user.roles_agence.length - 2}
-                              </span>
-                            )}
-                          </div>
+                    </div>
+                    
+                    <div className="space-y-2 mb-3">
+                      <div className="flex items-center gap-2 text-xs sm:text-sm text-base-content/70">
+                        <Mail className="w-3 h-3 sm:w-4 sm:h-4 text-primary flex-shrink-0" />
+                        <span className="truncate">{user.email}</span>
+                      </div>
+                      {user.phone && (
+                        <div className="flex items-center gap-2 text-xs sm:text-sm text-base-content/70">
+                          <Phone className="w-3 h-3 sm:w-4 sm:h-4 text-primary flex-shrink-0" />
+                          <span>{user.phone}</span>
                         </div>
                       )}
-                      
-                      <div className="pt-3 flex items-center justify-between">
-                        {getStatusBadge(user.is_active)}
-                        <span className="text-xs text-base-content/40">
-                          {user.created_at ? new Date(user.created_at).toLocaleDateString() : '-'}
-                        </span>
+                    </div>
+                    
+                    {user.roles_agence && user.roles_agence.length > 0 && (
+                      <div className="pt-3 border-t border-base-300">
+                        <div className="flex flex-wrap gap-1">
+                          {user.roles_agence.slice(0, 2).map((role, idx) => (
+                            <span key={idx} className="badge badge-xs badge-ghost">
+                              {role.role_display.substring(0, 12)}
+                            </span>
+                          ))}
+                          {user.roles_agence.length > 2 && (
+                            <span className="badge badge-xs badge-ghost">
+                              +{user.roles_agence.length - 2}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </Link>
+                    )}
+                    
+                    <div className="pt-3 flex items-center justify-between">
+                      {getStatusBadge(user.is_active)}
+                      <span className="text-xs text-base-content/40">
+                        {user.created_at ? new Date(user.created_at).toLocaleDateString() : '-'}
+                      </span>
+                    </div>
                   </div>
                 )
               })}
             </div>
           </div>
         ) : (
-          /* Vue Tableau */
+          /* Vue Tableau - Scroll horizontal sur mobile */
           <div className="overflow-x-auto">
-            <table className="table">
+            <table className="table table-xs sm:table-sm lg:table-md w-full">
               <thead>
-                <tr>
-                  <th>
-                    <button 
-                      className="flex items-center gap-1 hover:text-primary"
-                      onClick={() => handleSort('full_name')}
-                    >
-                      Utilisateur
-                      <ArrowUpDown className="w-3 h-3" />
-                    </button>
-                  </th>
+                <tr className="text-xs sm:text-sm">
+                  <th>Utilisateur</th>
                   <th>Email</th>
-                  <th>
-                    <button 
-                      className="flex items-center gap-1 hover:text-primary"
-                      onClick={() => handleSort('role')}
-                    >
-                      Rôle
-                      <ArrowUpDown className="w-3 h-3" />
-                    </button>
-                  </th>
-                  <th>Téléphone</th>
+                  <th className="hidden sm:table-cell">Rôle</th>
+                  <th className="hidden md:table-cell">Téléphone</th>
                   <th>Statut</th>
                   <th className="text-right">Actions</th>
                 </tr>
@@ -601,76 +607,66 @@ const Utilisateurs = () => {
                   const RoleIcon = roleConfig.icon
                   
                   return (
-                    <tr key={user.id} className="hover">
+                    <tr key={user.id} className="hover text-sm">
                       <td>
-                        <div className="flex items-center gap-3">
-                          <div className="avatar placeholder">
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${roleConfig.bgColor}`}>
-                              <span className={`text-sm font-bold ${roleConfig.textColor}`}>
-                                {getInitials(user.first_name, user.last_name, user.email)}
-                              </span>
-                            </div>
+                        <div className="flex items-center gap-2 sm:gap-3">
+                          <div className={`avatar placeholder w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center ${roleConfig.bgColor}`}>
+                            <span className={`text-xs sm:text-sm font-bold ${roleConfig.textColor}`}>
+                              {getInitials(user.first_name, user.last_name, user.email)}
+                            </span>
                           </div>
                           <div>
-                            <div className="font-semibold">{fullName}</div>
+                            <div className="font-semibold text-sm sm:text-base">{fullName}</div>
                             {user.employee_id && (
-                              <div className="text-xs text-base-content/50">Matricule: {user.employee_id}</div>
+                              <div className="text-xs text-base-content/50 hidden sm:block">{user.employee_id}</div>
                             )}
                           </div>
                         </div>
                       </td>
-                      <td>
-                        <div className="flex items-center gap-1">
-                          <Mail className="w-3 h-3 text-primary" />
-                          <span className="text-sm">{user.email}</span>
-                        </div>
-                      </td>
-                      <td>
-                        <div className={`badge ${roleConfig.bgColor} ${roleConfig.textColor} gap-1`}>
+                      <td className="max-w-[120px] sm:max-w-none truncate">{user.email}</td>
+                      <td className="hidden sm:table-cell">
+                        <div className={`badge badge-sm ${roleConfig.bgColor} ${roleConfig.textColor} gap-1`}>
                           <RoleIcon className="w-3 h-3" />
                           {roleConfig.label}
                         </div>
                       </td>
-                      <td>
-                        {user.phone ? (
-                          <div className="flex items-center gap-1">
-                            <Phone className="w-3 h-3 text-primary" />
-                            <span className="text-sm">{user.phone}</span>
-                          </div>
-                        ) : '-'}
-                      </td>
+                      <td className="hidden md:table-cell">{user.phone || '-'}</td>
                       <td>{getStatusBadge(user.is_active)}</td>
-                      <td>
-                        <div className="flex justify-end gap-2">
+                      <td className="text-right">
+                        <div className="flex justify-end gap-1 sm:gap-2">
                           <Link 
                             to={`/utilisateurs/${user.id}`}
-                            className="btn btn-ghost btn-xs"
+                            className="btn btn-ghost btn-xs sm:btn-sm"
+                            title="Détails"
                           >
-                            <Eye className="w-4 h-4" />
+                            <Eye className="w-3 h-3 sm:w-4 sm:h-4" />
                           </Link>
                           <Link 
                             to={`/utilisateurs/${user.id}/edit`}
-                            className="btn btn-ghost btn-xs"
+                            className="btn btn-ghost btn-xs sm:btn-sm text-primary"
+                            title="Modifier"
                           >
-                            <Edit className="w-4 h-4" />
+                            <Edit className="w-3 h-3 sm:w-4 sm:h-4" />
                           </Link>
                           <button 
-                            className="btn btn-ghost btn-xs"
+                            className="btn btn-ghost btn-xs sm:btn-sm"
                             onClick={() => {
                               setUserToToggle(user)
                               setShowStatusModal(true)
                             }}
+                            title={user.is_active ? 'Désactiver' : 'Activer'}
                           >
-                            {user.is_active ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
+                            {user.is_active ? <UserX className="w-3 h-3 sm:w-4 sm:h-4" /> : <UserCheck className="w-3 h-3 sm:w-4 sm:h-4" />}
                           </button>
                           <button 
-                            className="btn btn-ghost btn-xs text-error"
+                            className="btn btn-ghost btn-xs sm:btn-sm text-error"
                             onClick={() => {
                               setUserToDelete(user)
                               setShowDeleteModal(true)
                             }}
+                            title="Supprimer"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
                           </button>
                         </div>
                       </td>
@@ -682,56 +678,55 @@ const Utilisateurs = () => {
           </div>
         )}
 
-        {/* Pagination */}
+        {/* Pagination - Responsive */}
         {filteredAndSortedUsers.length > 0 && (
-          <div className="p-4 border-t border-base-300">
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div className="text-sm text-base-content/60">
-                Affichage de {((currentPage - 1) * itemsPerPage) + 1} à{' '}
-                {Math.min(currentPage * itemsPerPage, filteredAndSortedUsers.length)} sur{' '}
-                {filteredAndSortedUsers.length} utilisateurs
+          <div className="p-3 sm:p-4 border-t border-base-300">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4">
+              <div className="text-xs sm:text-sm text-base-content/60 order-2 sm:order-1">
+                {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, filteredAndSortedUsers.length)} sur {filteredAndSortedUsers.length}
               </div>
               
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 order-1 sm:order-2">
                 <select 
-                  className="select select-bordered select-sm"
+                  className="select select-bordered select-xs sm:select-sm"
                   value={itemsPerPage}
                   onChange={(e) => {
                     setItemsPerPage(parseInt(e.target.value))
                     setCurrentPage(1)
                   }}
                 >
-                  <option value="12">12 par page</option>
-                  <option value="24">24 par page</option>
-                  <option value="48">48 par page</option>
-                  <option value="96">96 par page</option>
+                  <option value="6">6</option>
+                  <option value="9">9</option>
+                  <option value="12">12</option>
+                  <option value="24">24</option>
+                  <option value="48">48</option>
                 </select>
                 
                 <div className="join">
                   <button 
-                    className="join-item btn btn-sm"
+                    className="join-item btn btn-xs sm:btn-sm"
                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                     disabled={currentPage === 1}
                   >
-                    <ChevronLeft className="w-4 h-4" />
+                    <ChevronLeft className="w-3 h-3 sm:w-4 sm:h-4" />
                   </button>
                   
-                  {[...Array(Math.min(5, totalPages))].map((_, i) => {
+                  {Array.from({ length: Math.min(3, totalPages) }, (_, i) => {
                     let pageNum
-                    if (totalPages <= 5) {
+                    if (totalPages <= 3) {
                       pageNum = i + 1
-                    } else if (currentPage <= 3) {
+                    } else if (currentPage <= 2) {
                       pageNum = i + 1
-                    } else if (currentPage >= totalPages - 2) {
-                      pageNum = totalPages - 4 + i
+                    } else if (currentPage >= totalPages - 1) {
+                      pageNum = totalPages - 2 + i
                     } else {
-                      pageNum = currentPage - 2 + i
+                      pageNum = currentPage - 1 + i
                     }
                     
                     return (
                       <button
                         key={i}
-                        className={`join-item btn btn-sm ${currentPage === pageNum ? 'btn-primary' : ''}`}
+                        className={`join-item btn btn-xs sm:btn-sm ${currentPage === pageNum ? 'btn-primary' : ''}`}
                         onClick={() => setCurrentPage(pageNum)}
                       >
                         {pageNum}
@@ -740,11 +735,11 @@ const Utilisateurs = () => {
                   })}
                   
                   <button 
-                    className="join-item btn btn-sm"
+                    className="join-item btn btn-xs sm:btn-sm"
                     onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                     disabled={currentPage === totalPages}
                   >
-                    <ChevronRight className="w-4 h-4" />
+                    <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4" />
                   </button>
                 </div>
               </div>
@@ -753,86 +748,77 @@ const Utilisateurs = () => {
         )}
       </div>
 
-      {/* Modal de confirmation de suppression */}
+      {/* Modals - Responsive */}
       {showDeleteModal && userToDelete && (
         <div className="modal modal-open">
-          <div className="modal-box">
-            <div className="text-center mb-6">
-              <div className="avatar placeholder mb-4">
-                <div className="bg-error/10 text-error rounded-full w-20 h-20">
-                  <AlertCircle className="w-10 h-10" />
+          <div className="modal-box w-11/12 max-w-md p-4 sm:p-6">
+            <div className="text-center mb-4 sm:mb-6">
+              <div className="avatar placeholder mb-3 sm:mb-4">
+                <div className="bg-error/10 text-error rounded-full w-16 h-16 sm:w-20 sm:h-20">
+                  <AlertCircle className="w-8 h-8 sm:w-10 sm:h-10" />
                 </div>
               </div>
-              <h3 className="font-bold text-2xl mb-2">Confirmer la suppression</h3>
-              <p className="text-base-content/70">
-                Voulez-vous vraiment supprimer l'utilisateur
+              <h3 className="font-bold text-lg sm:text-xl mb-2">Confirmer la suppression</h3>
+              <p className="text-sm text-base-content/70">
+                Voulez-vous vraiment supprimer l'utilisateur ?
               </p>
-              <p className="text-xl font-bold text-error mt-2">
-                "{userToDelete.email}" ?
-              </p>
-              <p className="text-sm text-base-content/50 mt-4">
-                Cette action est irréversible.
+              <p className="text-base font-bold text-error mt-2">
+                "{userToDelete.email}"
               </p>
             </div>
             
-            <div className="modal-action">
+            <div className="flex gap-3">
               <button 
-                className="btn btn-ghost"
+                className="btn btn-ghost flex-1"
                 onClick={() => setShowDeleteModal(false)}
               >
                 Annuler
               </button>
               <button 
-                className="btn btn-error"
+                className="btn btn-error flex-1"
                 onClick={handleDeleteUser}
               >
-                <Trash2 className="w-4 h-4" />
-                Supprimer définitivement
+                Supprimer
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal de confirmation changement statut */}
+      {/* Modal confirmation changement statut - Responsive */}
       {showStatusModal && userToToggle && (
         <div className="modal modal-open">
-          <div className="modal-box">
-            <div className="text-center mb-6">
-              <div className="avatar placeholder mb-4">
-                <div className={`${userToToggle.is_active ? 'bg-warning/10 text-warning' : 'bg-success/10 text-success'} rounded-full w-20 h-20`}>
+          <div className="modal-box w-11/12 max-w-md p-4 sm:p-6">
+            <div className="text-center mb-4 sm:mb-6">
+              <div className="avatar placeholder mb-3 sm:mb-4">
+                <div className={`${userToToggle.is_active ? 'bg-warning/10 text-warning' : 'bg-success/10 text-success'} rounded-full w-16 h-16 sm:w-20 sm:h-20`}>
                   {userToToggle.is_active ? (
-                    <UserX className="w-10 h-10" />
+                    <UserX className="w-8 h-8 sm:w-10 sm:h-10" />
                   ) : (
-                    <UserCheck className="w-10 h-10" />
+                    <UserCheck className="w-8 h-8 sm:w-10 sm:h-10" />
                   )}
                 </div>
               </div>
-              <h3 className="font-bold text-2xl mb-2">
+              <h3 className="font-bold text-lg sm:text-xl mb-2">
                 {userToToggle.is_active ? 'Désactiver' : 'Activer'} l'utilisateur
               </h3>
-              <p className="text-base-content/70">
-                Voulez-vous vraiment {userToToggle.is_active ? 'désactiver' : 'activer'} l'utilisateur
+              <p className="text-sm text-base-content/70">
+                Voulez-vous vraiment {userToToggle.is_active ? 'désactiver' : 'activer'} l'utilisateur ?
               </p>
-              <p className="text-xl font-bold mt-2">
-                "{userToToggle.email}" ?
-              </p>
-              <p className="text-sm text-base-content/50 mt-4">
-                {userToToggle.is_active 
-                  ? 'L\'utilisateur ne pourra plus se connecter.'
-                  : 'L\'utilisateur pourra à nouveau se connecter.'}
+              <p className="text-base font-bold mt-2">
+                "{userToToggle.email}"
               </p>
             </div>
             
-            <div className="modal-action">
+            <div className="flex gap-3">
               <button 
-                className="btn btn-ghost"
+                className="btn btn-ghost flex-1"
                 onClick={() => setShowStatusModal(false)}
               >
                 Annuler
               </button>
               <button 
-                className={`btn ${userToToggle.is_active ? 'btn-warning' : 'btn-success'}`}
+                className={`btn flex-1 ${userToToggle.is_active ? 'btn-warning' : 'btn-success'}`}
                 onClick={handleToggleStatus}
               >
                 {userToToggle.is_active ? 'Désactiver' : 'Activer'}
