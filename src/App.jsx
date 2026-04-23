@@ -21,6 +21,9 @@ import ProductForm from './components/logistique/ProductForm'
 import ProductDetails from './components/logistique/ProductDetails'
 import Categories from './components/logistique/Categories'
 import CategoryForm from './components/logistique/CategoryForm'
+import Utilisateurs from './components/users/Utilisateurs'
+import UtilisateurForm from './components/users/UtilisateurForm'
+import UtilisateurDetail from './components/users/UtilisateurDetail'
 
 
 
@@ -82,7 +85,13 @@ function App() {
                         <Route path="/produits/:id/modifier" element={<ProductForm />} />
 
 
-      
+          {/* Gestion des UTILISATEURS */}
+                        <Route path="/utilisateurs" element={<Utilisateurs />} />
+                        <Route path="/utilisateurs/nouveau" element={<UtilisateurForm />} />
+                        <Route path="/utilisateurs/:id/edit" element={<UtilisateurForm />} />
+                        <Route path="/utilisateurs/:id" element={<UtilisateurDetail />} />
+                          
+
             </Route>
           </Routes>
         }
