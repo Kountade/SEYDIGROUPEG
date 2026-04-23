@@ -14,7 +14,13 @@ import Units from './components/logistique/Units'
 import UnitForm from './components/logistique/UnitForm'
 import Brands from './components/logistique/Brands'
 import BrandForm from './components/logistique/BrandForm'
-
+import Variants from './components/logistique/Variants'
+import VariantForm from './components/logistique/VariantForm'
+import Products from './components/logistique/Products'
+import ProductForm from './components/logistique/ProductForm'
+import ProductDetails from './components/logistique/ProductDetails'
+import Categories from './components/logistique/Categories'
+import CategoryForm from './components/logistique/CategoryForm'
 
 
 
@@ -57,6 +63,25 @@ function App() {
                 <Route path="/brands" element={<Brands />} />
                 <Route path="/brands/nouveau" element={<BrandForm />} />
                 <Route path="/brands/:id/modifier" element={<BrandForm />} /> 
+
+               {/* Variantes (si page dédiée)  */}
+               <Route path="/variants" element={<Variants />} />
+               <Route path="/variants/nouveau" element={<VariantForm />} />
+               <Route path="/variants/:id/modifier" element={<VariantForm />} />
+
+                 {/* Catégories */}
+                 <Route path="/categories" element={<Categories />} />
+                 <Route path="/categories/nouveau" element={<CategoryForm />} />
+                <Route path="/categories/:id/modifier" element={<CategoryForm />} />
+
+
+                   {/* Gestion des produits */}
+                        <Route path="/produits" element={<Products />} />
+                        <Route path="/produits/nouveau" element={<ProductForm />} />
+                        <Route path="/produits/:id" element={<ProductDetails />} />
+                        <Route path="/produits/:id/modifier" element={<ProductForm />} />
+
+
       
             </Route>
           </Routes>
