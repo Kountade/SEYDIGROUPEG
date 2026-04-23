@@ -11,6 +11,9 @@ import PasswordReset from './components/PasswordReset'
 import Agences from './components/agences/Agences'
 import CreerAgence from './components/agences/CreerAgence'
 import Units from './components/logistique/Units'
+import UnitForm from './components/logistique/UnitForm'
+import Brands from './components/logistique/Brands'
+import BrandForm from './components/logistique/BrandForm'
 
 
 
@@ -47,9 +50,13 @@ function App() {
 
                
               <Route path="/units" element={<Units/>}/>
+               <Route path="/units/nouveau" element={<UnitForm />} />
+              <Route path="/units/:id/modifier" element={<UnitForm />} />
 
-
-
+               {/* Marques */}
+                <Route path="/brands" element={<Brands />} />
+                <Route path="/brands/nouveau" element={<BrandForm />} />
+                <Route path="/brands/:id/modifier" element={<BrandForm />} /> 
       
             </Route>
           </Routes>
