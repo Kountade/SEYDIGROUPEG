@@ -1,37 +1,13 @@
 // src/components/users/UtilisateurDetail.jsx
 import React, { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, Link } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
 import { 
-  User, 
-  Mail, 
-  Phone, 
-  MapPin, 
-  Calendar, 
-  Building2, 
-  Shield, 
-  Edit, 
-  ArrowLeft,
-  CheckCircle,
-  XCircle,
-  Briefcase,
-  CreditCard,
-  IdCard,
-  Home,
-  Globe,
-  Clock,
-  Users,
-  Store,
-  Crown,
-  Award,
-  Sparkles,
-  FileText,
-  AlertCircle,
-  UserCheck,
-  UserX,
-  Truck,
-  Package,
-  ShoppingCart
+  User, Mail, Phone, MapPin, Calendar, Building2, Shield, 
+  Edit, ArrowLeft, CheckCircle, XCircle, Briefcase, 
+  CreditCard, IdCard, Store, Crown, AlertCircle, 
+  UserCheck, UserX, Package, ShoppingCart, Clock, X,
+  Users, HardDrive, Award, Sparkles, Trophy
 } from 'lucide-react'
 
 const UtilisateurDetail = () => {
@@ -41,16 +17,16 @@ const UtilisateurDetail = () => {
   const [utilisateur, setUtilisateur] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [openRoleDialog, setOpenRoleDialog] = useState(false)
-  const [roleToToggle, setRoleToToggle] = useState(null)
+  const [openStatusDialog, setOpenStatusDialog] = useState(false)
   const [statusLoading, setStatusLoading] = useState(false)
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', type: 'success' })
 
   // Configuration des rôles
   const roleConfig = {
     pdg: { label: 'PDG', icon: Crown, color: 'error', bgColor: 'bg-error/10', textColor: 'text-error', description: 'Accès total à toutes les agences' },
     drh: { label: 'DRH', icon: Shield, color: 'secondary', bgColor: 'bg-secondary/10', textColor: 'text-secondary', description: 'Gestion RH toutes agences' },
     chef_agence: { label: "Chef d'agence", icon: Store, color: 'primary', bgColor: 'bg-primary/10', textColor: 'text-primary', description: 'Gestion complète de l\'agence' },
-    gestionnaire_stock: { label: 'Gestionnaire stock', icon: Package, color: 'info', bgColor: 'bg-info/10', textColor: 'text-info', description: 'Gestion des stocks et logistique' },
+    gestionnaire_stock: { label: 'Gestionnaire stock', icon: HardDrive, color: 'info', bgColor: 'bg-info/10', textColor: 'text-info', description: 'Gestion des stocks et logistique' },
     commercial: { label: 'Commercial', icon: ShoppingCart, color: 'warning', bgColor: 'bg-warning/10', textColor: 'text-warning', description: 'Force de vente' },
     autre: { label: 'Utilisateur', icon: User, color: 'neutral', bgColor: 'bg-base-200', textColor: 'text-base-content/70', description: 'Compte standard' }
   }
@@ -107,18 +83,23 @@ const UtilisateurDetail = () => {
     }
   }, [id])
 
-  const handleToggleRole = async () => {
-    if (!roleToToggle) return
+  const handleToggleStatus = async () => {
+    if (!utilisateur) return
     setStatusLoading(true)
     try {
-      await AxiosInstance.patch(`/users/${roleToToggle.id}/`, {
-        is_active: !roleToToggle.is_active
+      await AxiosInstance.patch(`/users/${utilisateur.id}/`, {
+        is_active: !utilisateur.is_active
+      })
+      setSnackbar({ 
+        open: true, 
+        message: `Utilisateur ${utilisateur.is_active ? 'désactivé' : 'activé'} avec succès`, 
+        type: 'success' 
       })
       fetchUserData()
-      setOpenRoleDialog(false)
-      setRoleToToggle(null)
+      setOpenStatusDialog(false)
     } catch (error) {
       console.error('Erreur:', error)
+      setSnackbar({ open: true, message: 'Erreur lors de la modification', type: 'error' })
     } finally {
       setStatusLoading(false)
     }
@@ -159,15 +140,28 @@ const UtilisateurDetail = () => {
     <div className="min-h-screen bg-base-200 py-6 px-4">
       <div className="w-full max-w-6xl mx-auto">
         
+        {/* Snackbar */}
+        {snackbar.open && (
+          <div className="fixed bottom-4 right-4 z-50 animate-slide-in">
+            <div className={`alert shadow-xl ${snackbar.type === 'success' ? 'alert-success' : 'alert-error'}`}>
+              <div className="flex items-center gap-2">
+                {snackbar.type === 'success' ? <CheckCircle className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
+                <span>{snackbar.message}</span>
+              </div>
+              <button onClick={() => setSnackbar({ ...snackbar, open: false })} className="btn btn-sm btn-ghost">✕</button>
+            </div>
+          </div>
+        )}
+
         {/* Bouton retour */}
         <div className="mb-4">
-          <button
-            onClick={() => navigate('/utilisateurs')}
+          <Link
+            to="/utilisateurs"
             className="btn btn-ghost btn-sm gap-2 text-base-content/70 hover:text-primary transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
             Retour à la liste
-          </button>
+          </Link>
         </div>
 
         {/* En-tête */}
@@ -219,15 +213,15 @@ const UtilisateurDetail = () => {
               
               {/* Actions */}
               <div className="flex gap-2">
-                <button 
-                  onClick={() => navigate(`/utilisateurs/${id}/edit`)}
+                <Link 
+                  to={`/utilisateurs/${id}/edit`}
                   className="btn btn-accent gap-2"
                 >
                   <Edit className="w-4 h-4" />
                   Modifier
-                </button>
+                </Link>
                 <button 
-                  onClick={() => { setRoleToToggle(utilisateur); setOpenRoleDialog(true) }}
+                  onClick={() => setOpenStatusDialog(true)}
                   className={`btn gap-2 ${utilisateur.is_active ? 'btn-warning' : 'btn-success'} text-white`}
                 >
                   {utilisateur.is_active ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
@@ -262,10 +256,6 @@ const UtilisateurDetail = () => {
                     <p className="text-base-content font-medium">{utilisateur.last_name || 'Non renseigné'}</p>
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Date de naissance</label>
-                    <p className="text-base-content">{utilisateur.birthday ? formatDate(utilisateur.birthday) : 'Non renseignée'}</p>
-                  </div>
-                  <div>
                     <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Téléphone</label>
                     <p className="text-base-content">{utilisateur.phone || 'Non renseigné'}</p>
                   </div>
@@ -298,14 +288,6 @@ const UtilisateurDetail = () => {
                     <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Ville</label>
                     <p className="text-base-content">{utilisateur.city || 'Non renseignée'}</p>
                   </div>
-                  <div>
-                    <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Code postal</label>
-                    <p className="text-base-content">{utilisateur.postal_code || 'Non renseigné'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Pays</label>
-                    <p className="text-base-content">{utilisateur.country || 'Non renseigné'}</p>
-                  </div>
                 </div>
               </div>
             </div>
@@ -326,16 +308,6 @@ const UtilisateurDetail = () => {
                   <div>
                     <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Type de contrat</label>
                     <p className="text-base-content">{utilisateur.contract_type || 'Non renseigné'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Département</label>
-                    <p className="text-base-content">{utilisateur.department || 'Non renseigné'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Salaire</label>
-                    <p className="text-base-content">
-                      {utilisateur.salary ? `${new Intl.NumberFormat('fr-FR').format(utilisateur.salary)} €` : 'Non renseigné'}
-                    </p>
                   </div>
                 </div>
               </div>
@@ -421,81 +393,51 @@ const UtilisateurDetail = () => {
                     <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Dernière connexion</label>
                     <p className="text-sm text-base-content">{formatDateTime(utilisateur.last_login)}</p>
                   </div>
-                  {utilisateur.created_by_email && (
-                    <div>
-                      <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Créé par</label>
-                      <p className="text-sm text-base-content">{utilisateur.created_by_email}</p>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
-
-            {/* Carte agence principale */}
-            {utilisateur.agence_principale && (
-              <div className="card bg-base-100 shadow-xl border border-base-200">
-                <div className="card-body">
-                  <h2 className="card-title text-base-content flex items-center gap-2">
-                    <Star className="h-5 w-5 text-primary" />
-                    Agence principale
-                  </h2>
-                  <div className="divider my-2"></div>
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-primary/10">
-                      <Store className="h-6 w-6 text-primary" />
-                    </div>
-                    <div>
-                      <p className="font-semibold text-base-content">{utilisateur.agence_principale.nom}</p>
-                      <p className="text-xs text-base-content/50">
-                        {utilisateur.agence_principale.type_display}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>
 
       {/* Modal confirmation changement de statut */}
-      {openRoleDialog && (
+      {openStatusDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-base-100 rounded-2xl shadow-xl max-w-md w-full mx-4 overflow-hidden">
-            <div className={`p-4 text-center ${roleToToggle?.is_active ? 'bg-warning' : 'bg-success'}`}>
-              {roleToToggle?.is_active ? (
+            <div className={`p-4 text-center ${utilisateur.is_active ? 'bg-warning' : 'bg-success'}`}>
+              {utilisateur.is_active ? (
                 <UserX className="h-12 w-12 text-white mx-auto mb-2" />
               ) : (
                 <UserCheck className="h-12 w-12 text-white mx-auto mb-2" />
               )}
               <h3 className="text-xl font-bold text-white">
-                {roleToToggle?.is_active ? 'Désactiver' : 'Activer'} l'utilisateur
+                {utilisateur.is_active ? 'Désactiver' : 'Activer'} l'utilisateur
               </h3>
             </div>
             <div className="p-6 text-center">
               <p className="text-base-content/70">
-                Êtes-vous sûr de vouloir {roleToToggle?.is_active ? 'désactiver' : 'activer'} l'utilisateur 
-                <strong className={roleToToggle?.is_active ? 'text-warning' : 'text-success'}>
+                Êtes-vous sûr de vouloir {utilisateur.is_active ? 'désactiver' : 'activer'} l'utilisateur 
+                <strong className={utilisateur.is_active ? 'text-warning' : 'text-success'}>
                   " {nomComplet} "
                 </strong>
                 ?
               </p>
               <p className="text-sm text-base-content/50 mt-2">
-                {roleToToggle?.is_active 
+                {utilisateur.is_active 
                   ? 'L\'utilisateur ne pourra plus se connecter.' 
                   : 'L\'utilisateur pourra à nouveau se connecter.'}
               </p>
             </div>
             <div className="flex gap-3 p-4 bg-base-200">
-              <button onClick={() => setOpenRoleDialog(false)} className="btn btn-ghost flex-1">
+              <button onClick={() => setOpenStatusDialog(false)} className="btn btn-ghost flex-1">
                 Annuler
               </button>
               <button 
-                onClick={handleToggleRole} 
+                onClick={handleToggleStatus} 
                 disabled={statusLoading}
-                className={`btn flex-1 text-white ${roleToToggle?.is_active ? 'btn-warning' : 'btn-success'}`}
+                className={`btn flex-1 text-white ${utilisateur.is_active ? 'btn-warning' : 'btn-success'}`}
               >
-                {statusLoading ? <span className="loading loading-spinner loading-sm"></span> : (roleToToggle?.is_active ? 'Désactiver' : 'Activer')}
+                {statusLoading ? <span className="loading loading-spinner loading-sm"></span> : (utilisateur.is_active ? 'Désactiver' : 'Activer')}
               </button>
             </div>
           </div>

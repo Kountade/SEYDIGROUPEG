@@ -1,6 +1,6 @@
 // src/components/users/Utilisateurs.jsx
 import React, { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
 import {
   Plus,
@@ -15,10 +15,11 @@ import {
   CheckCircle,
   Eye,
   MoreVertical,
-  ChevronDown,
-  ChevronUp,
-  Download,
-  Upload,
+  ChevronLeft,
+  ChevronRight,
+  ArrowUpDown,
+  LayoutGrid,
+  List,
   Mail,
   Phone,
   Shield,
@@ -29,15 +30,8 @@ import {
   UserX,
   Clock,
   Calendar,
-  MapPin,
   Building2,
-  ChevronLeft,
-  ChevronRight,
-  ArrowUpDown,
-  LayoutGrid,
-  List,
-  UserCircle,
-  Award
+  UserCircle
 } from 'lucide-react'
 
 // Configuration des rôles
@@ -68,8 +62,6 @@ const Utilisateurs = () => {
   const [viewMode, setViewMode] = useState('grid')
   const [sortField, setSortField] = useState('last_name')
   const [sortDirection, setSortDirection] = useState('asc')
-  const [selectedUser, setSelectedUser] = useState(null)
-  const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [stats, setStats] = useState({
     total: 0,
     active: 0,
@@ -124,7 +116,7 @@ const Utilisateurs = () => {
     if (!userToDelete) return
     try {
       await AxiosInstance.delete(`/users/${userToDelete.id}/`)
-      showNotification(`Utilisateur "${userToDelete.email}" supprimé avec succès`, 'success')
+      showNotification(`Utilisateur supprimé avec succès`, 'success')
       fetchData()
       setShowDeleteModal(false)
       setUserToDelete(null)
@@ -157,14 +149,25 @@ const Utilisateurs = () => {
     }
   }
 
-  const getRoleDisplay = (user) => {
-    const roleKey = user.role_global || 'autre'
-    const role = ROLE_CONFIG[roleKey] || ROLE_CONFIG.autre
-    const RoleIcon = role.icon
-    return (
-      <div className={`badge ${role.bgColor} ${role.textColor} gap-1`}>
-        <RoleIcon className="w-3 h-3" />
-        {role.label}
+  const getInitials = (firstName, lastName, email) => {
+    if (firstName && lastName) {
+      return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase()
+    }
+    if (firstName) return firstName.charAt(0).toUpperCase()
+    if (lastName) return lastName.charAt(0).toUpperCase()
+    return email?.charAt(0).toUpperCase() || 'U'
+  }
+
+  const getStatusBadge = (isActive) => {
+    return isActive ? (
+      <div className="badge badge-success gap-1">
+        <CheckCircle className="w-3 h-3" />
+        Actif
+      </div>
+    ) : (
+      <div className="badge badge-ghost gap-1">
+        <Clock className="w-3 h-3" />
+        Inactif
       </div>
     )
   }
@@ -214,29 +217,6 @@ const Utilisateurs = () => {
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   )
-
-  const getStatusBadge = (isActive) => {
-    return isActive ? (
-      <div className="badge badge-success gap-1">
-        <CheckCircle className="w-3 h-3" />
-        Actif
-      </div>
-    ) : (
-      <div className="badge badge-ghost gap-1">
-        <Clock className="w-3 h-3" />
-        Inactif
-      </div>
-    )
-  }
-
-  const getInitials = (firstName, lastName, email) => {
-    if (firstName && lastName) {
-      return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase()
-    }
-    if (firstName) return firstName.charAt(0).toUpperCase()
-    if (lastName) return lastName.charAt(0).toUpperCase()
-    return email?.charAt(0).toUpperCase() || 'U'
-  }
 
   if (loading) {
     return (
@@ -471,114 +451,114 @@ const Utilisateurs = () => {
                     key={user.id} 
                     className="bg-base-200 rounded-xl p-6 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 border border-base-300 group"
                   >
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        <div className="avatar placeholder">
-                          <div className={`rounded-xl w-14 h-14 ${roleConfig.bgColor}`}>
-                            <span className={`text-2xl font-bold ${roleConfig.textColor}`}>
-                              {initials}
-                            </span>
+                    {/* Lien vers le détail */}
+                    <Link to={`/utilisateurs/${user.id}`} className="block">
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="avatar placeholder">
+                            <div className={`rounded-xl w-14 h-14 ${roleConfig.bgColor}`}>
+                              <span className={`text-2xl font-bold ${roleConfig.textColor}`}>
+                                {initials}
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                        <div>
-                          <h3 className="font-bold text-lg text-base-content line-clamp-1">
-                            {fullName}
-                          </h3>
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            <div className={`badge ${roleConfig.bgColor} ${roleConfig.textColor} gap-1`}>
-                              <RoleIcon className="w-3 h-3" />
-                              {roleConfig.label}
+                          <div>
+                            <h3 className="font-bold text-lg text-base-content line-clamp-1">
+                              {fullName}
+                            </h3>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              <div className={`badge ${roleConfig.bgColor} ${roleConfig.textColor} gap-1`}>
+                                <RoleIcon className="w-3 h-3" />
+                                {roleConfig.label}
+                              </div>
                             </div>
                           </div>
                         </div>
+                        
+                        <div className="dropdown dropdown-end">
+                          <button className="btn btn-ghost btn-sm btn-circle" onClick={(e) => e.preventDefault()}>
+                            <MoreVertical className="w-4 h-4" />
+                          </button>
+                          <ul className="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">
+                            <li>
+                              <Link to={`/utilisateurs/${user.id}`}>
+                                <Eye className="w-4 h-4" />
+                                Voir détails
+                              </Link>
+                            </li>
+                            <li>
+                              <Link to={`/utilisateurs/${user.id}/edit`}>
+                                <Edit className="w-4 h-4" />
+                                Modifier
+                              </Link>
+                            </li>
+                            <li>
+                              <button 
+                                onClick={() => {
+                                  setUserToToggle(user)
+                                  setShowStatusModal(true)
+                                }}
+                              >
+                                {user.is_active ? (
+                                  <><UserX className="w-4 h-4" /> Désactiver</>
+                                ) : (
+                                  <><UserCheck className="w-4 h-4" /> Activer</>
+                                )}
+                              </button>
+                            </li>
+                            <li>
+                              <button 
+                                className="text-error"
+                                onClick={() => {
+                                  setUserToDelete(user)
+                                  setShowDeleteModal(true)
+                                }}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                Supprimer
+                              </button>
+                            </li>
+                          </ul>
+                        </div>
                       </div>
                       
-                      <div className="dropdown dropdown-end">
-                        <button className="btn btn-ghost btn-sm btn-circle">
-                          <MoreVertical className="w-4 h-4" />
-                        </button>
-                        <ul className="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">
-                          <li>
-                            <button onClick={() => {
-                              setSelectedUser(user)
-                              setShowDetailsModal(true)
-                            }}>
-                              <Eye className="w-4 h-4" />
-                              Voir détails
-                            </button>
-                          </li>
-                          <li>
-                            <button onClick={() => navigate(`/utilisateurs/${user.id}/edit`)}>
-                              <Edit className="w-4 h-4" />
-                              Modifier
-                            </button>
-                          </li>
-                          <li>
-                            <button 
-                              onClick={() => {
-                                setUserToToggle(user)
-                                setShowStatusModal(true)
-                              }}
-                            >
-                              {user.is_active ? (
-                                <><UserX className="w-4 h-4" /> Désactiver</>
-                              ) : (
-                                <><UserCheck className="w-4 h-4" /> Activer</>
-                              )}
-                            </button>
-                          </li>
-                          <li>
-                            <button 
-                              className="text-error"
-                              onClick={() => {
-                                setUserToDelete(user)
-                                setShowDeleteModal(true)
-                              }}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                              Supprimer
-                            </button>
-                          </li>
-                        </ul>
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-2 mb-4">
-                      <div className="flex items-center gap-2 text-sm text-base-content/70">
-                        <Mail className="w-4 h-4 text-primary" />
-                        <span className="truncate">{user.email}</span>
-                      </div>
-                      {user.phone && (
+                      <div className="space-y-2 mb-4">
                         <div className="flex items-center gap-2 text-sm text-base-content/70">
-                          <Phone className="w-4 h-4 text-primary" />
-                          <span>{user.phone}</span>
+                          <Mail className="w-4 h-4 text-primary" />
+                          <span className="truncate">{user.email}</span>
+                        </div>
+                        {user.phone && (
+                          <div className="flex items-center gap-2 text-sm text-base-content/70">
+                            <Phone className="w-4 h-4 text-primary" />
+                            <span>{user.phone}</span>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {user.roles_agence && user.roles_agence.length > 0 && (
+                        <div className="pt-3 border-t border-base-300">
+                          <div className="flex flex-wrap gap-1">
+                            {user.roles_agence.slice(0, 2).map((role, idx) => (
+                              <span key={idx} className="badge badge-sm badge-ghost">
+                                {role.agence_nom}: {role.role_display}
+                              </span>
+                            ))}
+                            {user.roles_agence.length > 2 && (
+                              <span className="badge badge-sm badge-ghost">
+                                +{user.roles_agence.length - 2}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       )}
-                    </div>
-                    
-                    {user.roles_agence && user.roles_agence.length > 0 && (
-                      <div className="pt-3 border-t border-base-300">
-                        <div className="flex flex-wrap gap-1">
-                          {user.roles_agence.slice(0, 2).map((role, idx) => (
-                            <span key={idx} className="badge badge-sm badge-ghost">
-                              {role.agence_nom}: {role.role_display}
-                            </span>
-                          ))}
-                          {user.roles_agence.length > 2 && (
-                            <span className="badge badge-sm badge-ghost">
-                              +{user.roles_agence.length - 2}
-                            </span>
-                          )}
-                        </div>
+                      
+                      <div className="pt-3 flex items-center justify-between">
+                        {getStatusBadge(user.is_active)}
+                        <span className="text-xs text-base-content/40">
+                          {user.created_at ? new Date(user.created_at).toLocaleDateString() : '-'}
+                        </span>
                       </div>
-                    )}
-                    
-                    <div className="pt-3 flex items-center justify-between">
-                      {getStatusBadge(user.is_active)}
-                      <span className="text-xs text-base-content/40">
-                        {user.created_at ? new Date(user.created_at).toLocaleDateString() : '-'}
-                      </span>
-                    </div>
+                    </Link>
                   </div>
                 )
               })}
@@ -610,7 +590,6 @@ const Utilisateurs = () => {
                     </button>
                   </th>
                   <th>Téléphone</th>
-                  <th>Agences</th>
                   <th>Statut</th>
                   <th className="text-right">Actions</th>
                 </tr>
@@ -620,14 +599,13 @@ const Utilisateurs = () => {
                   const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email?.split('@')[0] || 'Utilisateur'
                   const roleConfig = ROLE_CONFIG[user.role_global] || ROLE_CONFIG.autre
                   const RoleIcon = roleConfig.icon
-                  const agenceNames = user.roles_agence?.map(r => r.agence_nom).join(', ') || '-'
                   
                   return (
                     <tr key={user.id} className="hover">
                       <td>
                         <div className="flex items-center gap-3">
-                          <div className={`avatar placeholder ${roleConfig.bgColor} rounded-full`}>
-                            <div className="w-10 h-10 rounded-full flex items-center justify-center">
+                          <div className="avatar placeholder">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${roleConfig.bgColor}`}>
                               <span className={`text-sm font-bold ${roleConfig.textColor}`}>
                                 {getInitials(user.first_name, user.last_name, user.email)}
                               </span>
@@ -661,29 +639,21 @@ const Utilisateurs = () => {
                           </div>
                         ) : '-'}
                       </td>
-                      <td>
-                        <span className="text-sm truncate max-w-[200px] block" title={agenceNames}>
-                          {agenceNames}
-                        </span>
-                      </td>
                       <td>{getStatusBadge(user.is_active)}</td>
                       <td>
                         <div className="flex justify-end gap-2">
-                          <button 
+                          <Link 
+                            to={`/utilisateurs/${user.id}`}
                             className="btn btn-ghost btn-xs"
-                            onClick={() => {
-                              setSelectedUser(user)
-                              setShowDetailsModal(true)
-                            }}
                           >
                             <Eye className="w-4 h-4" />
-                          </button>
-                          <button 
+                          </Link>
+                          <Link 
+                            to={`/utilisateurs/${user.id}/edit`}
                             className="btn btn-ghost btn-xs"
-                            onClick={() => navigate(`/utilisateurs/${user.id}/edit`)}
                           >
                             <Edit className="w-4 h-4" />
-                          </button>
+                          </Link>
                           <button 
                             className="btn btn-ghost btn-xs"
                             onClick={() => {
@@ -866,134 +836,6 @@ const Utilisateurs = () => {
                 onClick={handleToggleStatus}
               >
                 {userToToggle.is_active ? 'Désactiver' : 'Activer'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal de détails */}
-      {showDetailsModal && selectedUser && (
-        <div className="modal modal-open">
-          <div className="modal-box max-w-2xl">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="font-bold text-2xl">Détails de l'utilisateur</h3>
-              <button 
-                className="btn btn-sm btn-circle btn-ghost"
-                onClick={() => setShowDetailsModal(false)}
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            <div className="space-y-4">
-              <div className="flex items-center gap-6 mb-6">
-                <div className={`avatar placeholder ${ROLE_CONFIG[selectedUser.role_global]?.bgColor || 'bg-base-200'} rounded-full`}>
-                  <div className="w-20 h-20 rounded-full flex items-center justify-center">
-                    <span className={`text-3xl font-bold ${ROLE_CONFIG[selectedUser.role_global]?.textColor || 'text-base-content'}`}>
-                      {getInitials(selectedUser.first_name, selectedUser.last_name, selectedUser.email)}
-                    </span>
-                  </div>
-                </div>
-                <div>
-                  <h4 className="font-bold text-2xl mb-2">
-                    {selectedUser.first_name || ''} {selectedUser.last_name || ''}
-                  </h4>
-                  {getStatusBadge(selectedUser.is_active)}
-                </div>
-              </div>
-              
-              <div className="divider">Informations</div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-semibold text-base-content/60">Email</label>
-                  <p className="mt-1 flex items-center gap-2">
-                    <Mail className="w-4 h-4 text-primary" />
-                    {selectedUser.email}
-                  </p>
-                </div>
-                
-                <div>
-                  <label className="text-sm font-semibold text-base-content/60">Téléphone</label>
-                  <p className="mt-1 flex items-center gap-2">
-                    <Phone className="w-4 h-4 text-primary" />
-                    {selectedUser.phone || 'Non renseigné'}
-                  </p>
-                </div>
-                
-                <div>
-                  <label className="text-sm font-semibold text-base-content/60">Rôle global</label>
-                  <p className="mt-1 flex items-center gap-2">
-                    {getRoleDisplay(selectedUser)}
-                  </p>
-                </div>
-                
-                {selectedUser.employee_id && (
-                  <div>
-                    <label className="text-sm font-semibold text-base-content/60">Matricule</label>
-                    <p className="mt-1">{selectedUser.employee_id}</p>
-                  </div>
-                )}
-                
-                {selectedUser.address && (
-                  <div className="md:col-span-2">
-                    <label className="text-sm font-semibold text-base-content/60">Adresse</label>
-                    <p className="mt-1 flex items-start gap-2">
-                      <MapPin className="w-4 h-4 text-primary mt-0.5" />
-                      {selectedUser.address}
-                      {selectedUser.city && `, ${selectedUser.city}`}
-                    </p>
-                  </div>
-                )}
-                
-                {selectedUser.roles_agence && selectedUser.roles_agence.length > 0 && (
-                  <div className="md:col-span-2">
-                    <label className="text-sm font-semibold text-base-content/60">Rôles par agence</label>
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      {selectedUser.roles_agence.map((role, idx) => (
-                        <span key={idx} className="badge badge-primary badge-lg">
-                          {role.agence_nom}: {role.role_display}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                <div>
-                  <label className="text-sm font-semibold text-base-content/60">Date de création</label>
-                  <p className="mt-1 flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-primary" />
-                    {selectedUser.created_at ? new Date(selectedUser.created_at).toLocaleDateString() : '-'}
-                  </p>
-                </div>
-                
-                <div>
-                  <label className="text-sm font-semibold text-base-content/60">Dernière connexion</label>
-                  <p className="mt-1 flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-primary" />
-                    {selectedUser.last_login ? new Date(selectedUser.last_login).toLocaleDateString() : 'Jamais'}
-                  </p>
-                </div>
-              </div>
-            </div>
-            
-            <div className="modal-action">
-              <button 
-                className="btn btn-primary"
-                onClick={() => {
-                  setShowDetailsModal(false)
-                  navigate(`/utilisateurs/${selectedUser.id}/edit`)
-                }}
-              >
-                <Edit className="w-4 h-4" />
-                Modifier
-              </button>
-              <button 
-                className="btn btn-ghost"
-                onClick={() => setShowDetailsModal(false)}
-              >
-                Fermer
               </button>
             </div>
           </div>
