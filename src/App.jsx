@@ -24,6 +24,12 @@ import CategoryForm from './components/logistique/CategoryForm'
 import Utilisateurs from './components/users/Utilisateurs'
 import UtilisateurForm from './components/users/UtilisateurForm'
 import UtilisateurDetail from './components/users/UtilisateurDetail'
+import Fournisseurs from './components/achats/Fournisseurs'
+import FournisseurForm from './components/achats/FournisseurForm'
+import FournisseurDetail from './components/achats/FournisseurDetail'
+import CommandesFournisseurs from './components/achats/CommandesFournisseurs'
+import CommandeFournisseurForm from './components/achats/CommandeFournisseurForm'
+import CommandeFournisseurDetail from './components/achats/CommandeFournisseurDetail'
 
 
 
@@ -91,6 +97,22 @@ function App() {
                         <Route path="/utilisateurs/:id/edit" element={<UtilisateurForm />} />
                         <Route path="/utilisateurs/:id" element={<UtilisateurDetail />} />
                           
+
+
+                          
+                       {/* Gestion des Fourniseurs */}
+                      <Route path="/fournisseurs" element={<Fournisseurs />} />
+                       <Route path="/fournisseurs/nouveau" element={<FournisseurForm />} />
+                      <Route path="/fournisseurs/:id/edit" element={<FournisseurForm />} />
+                      <Route path="/fournisseurs/:id" element={<FournisseurDetail />} />
+
+
+  {/* Gestion des COMMADES */}
+                      <Route path="/commandes-fournisseurs" element={<CommandesFournisseurs />} />
+                      <Route path="/commandes-fournisseurs/nouveau" element={<CommandeFournisseurForm />} />
+                      <Route path="/commandes-fournisseurs/:id/edit" element={<CommandeFournisseurForm />} />
+                      <Route path="/commandes-fournisseurs/:id" element={<CommandeFournisseurDetail />} />
+
 
             </Route>
           </Routes>
