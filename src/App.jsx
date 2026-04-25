@@ -30,6 +30,9 @@ import FournisseurDetail from './components/achats/FournisseurDetail'
 import CommandesFournisseurs from './components/achats/CommandesFournisseurs'
 import CommandeFournisseurForm from './components/achats/CommandeFournisseurForm'
 import CommandeFournisseurDetail from './components/achats/CommandeFournisseurDetail'
+import Receptions from './components/achats/Receptions'
+import ReceptionForm from './components/achats/ReceptionForm'
+import ReceptionDetail from './components/achats/ReceptionDetail'
 
 
 
@@ -113,7 +116,11 @@ function App() {
                       <Route path="/commandes-fournisseurs/:id/edit" element={<CommandeFournisseurForm />} />
                       <Route path="/commandes-fournisseurs/:id" element={<CommandeFournisseurDetail />} />
 
-
+ {/* Gestion des RECEPTIOS */}
+<Route path="/receptions" element={<Receptions />} />
+<Route path="/receptions/nouveau" element={<ReceptionForm />} />
+<Route path="/receptions/:id/edit" element={<ReceptionForm />} />
+<Route path="/receptions/:id" element={<ReceptionDetail />} />
             </Route>
           </Routes>
         }

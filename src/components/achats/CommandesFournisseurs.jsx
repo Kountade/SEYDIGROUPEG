@@ -1,4 +1,4 @@
-// src/components/commandes-fournisseurs/CommandesFournisseurs.jsx
+// src/components/achats/CommandesFournisseurs.jsx
 import React, { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
@@ -23,16 +23,13 @@ import {
   Truck,
   Clock,
   DollarSign,
-  Package,
-  Send,
-  CheckSquare,
-  XCircle,
   Calendar,
   Building2,
-  Users,
   FileText,
-  Printer,
-  Download
+  XCircle,
+  Send,
+  CheckSquare,
+  Package
 } from 'lucide-react'
 
 const CommandesFournisseurs = () => {
@@ -57,6 +54,7 @@ const CommandesFournisseurs = () => {
     total: 0,
     draft: 0,
     confirmed: 0,
+    sent: 0,
     received: 0,
     cancelled: 0,
     totalAmount: 0
@@ -91,6 +89,7 @@ const CommandesFournisseurs = () => {
         return
       }
       
+      // Essayer d'abord avec /purchase-orders/ puis /commandes-fournisseurs/
       let response
       try {
         response = await AxiosInstance.get('/purchase-orders/')
@@ -105,14 +104,16 @@ const CommandesFournisseurs = () => {
       const orders = response.data || []
       setCommandes(orders)
       
+      // Calculer les statistiques
       const total = orders.length
       const draft = orders.filter(o => o.status === 'draft').length
       const confirmed = orders.filter(o => o.status === 'confirmed').length
+      const sent = orders.filter(o => o.status === 'sent').length
       const received = orders.filter(o => o.status === 'received').length
       const cancelled = orders.filter(o => o.status === 'cancelled').length
       const totalAmount = orders.reduce((sum, o) => sum + (parseFloat(o.total) || 0), 0)
       
-      setStats({ total, draft, confirmed, received, cancelled, totalAmount })
+      setStats({ total, draft, confirmed, sent, received, cancelled, totalAmount })
       
     } catch (error) {
       console.error('Erreur chargement commandes:', error)
@@ -142,6 +143,16 @@ const CommandesFournisseurs = () => {
       setCommandeToDelete(null)
     } catch (error) {
       showNotification('Erreur lors de la suppression', 'error')
+    }
+  }
+
+  const handleUpdateStatus = async (id, newStatus) => {
+    try {
+      await AxiosInstance.patch(`/purchase-orders/${id}/`, { status: newStatus })
+      showNotification(`Statut de la commande mis à jour avec succès`, 'success')
+      fetchData()
+    } catch (error) {
+      showNotification('Erreur lors de la mise à jour du statut', 'error')
     }
   }
 
@@ -179,13 +190,19 @@ const CommandesFournisseurs = () => {
     if (!amount) return '0 FCFA'
     return new Intl.NumberFormat('fr-FR', {
       style: 'currency',
-      currency: 'XOF'
+      currency: 'XOF',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
     }).format(amount)
   }
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A'
-    return new Date(dateString).toLocaleDateString('fr-FR')
+    try {
+      return new Date(dateString).toLocaleDateString('fr-FR')
+    } catch {
+      return 'N/A'
+    }
   }
 
   // Filtrage et tri
@@ -209,7 +226,7 @@ const CommandesFournisseurs = () => {
       if (sortField === 'total') {
         aVal = parseFloat(aVal) || 0
         bVal = parseFloat(bVal) || 0
-      } else if (sortField === 'order_date') {
+      } else if (sortField === 'order_date' || sortField === 'expected_date') {
         aVal = new Date(aVal)
         bVal = new Date(bVal)
       }
@@ -248,7 +265,7 @@ const CommandesFournisseurs = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
+      <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-base-200">
         <div className="text-center space-y-4">
           <div className="loading loading-spinner loading-lg text-primary w-12 h-12 sm:w-16 sm:h-16"></div>
           <p className="text-base sm:text-xl font-semibold text-base-content/70 animate-pulse">
@@ -261,7 +278,7 @@ const CommandesFournisseurs = () => {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
+      <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-base-200">
         <div className="text-center">
           <AlertCircle className="w-16 h-16 text-error mx-auto mb-4" />
           <h2 className="text-xl font-bold text-base-content mb-2">Erreur de chargement</h2>
@@ -276,7 +293,8 @@ const CommandesFournisseurs = () => {
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6 p-3 sm:p-4 lg:p-6">
+    <div className="space-y-4 sm:space-y-6 p-3 sm:p-4 lg:p-6 bg-base-200 min-h-screen">
+      
       {/* Notification */}
       {notification.show && (
         <div className="fixed top-16 right-3 sm:right-6 z-50 animate-slideDown">
@@ -327,55 +345,47 @@ const CommandesFournisseurs = () => {
       </div>
 
       {/* Cartes statistiques */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 lg:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 sm:gap-3 lg:gap-4">
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
-          <div className="stat-figure text-primary">
-            <ShoppingCart className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
-          </div>
+          <div className="stat-figure text-primary"><ShoppingCart className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" /></div>
           <div className="stat-title text-xs sm:text-sm font-semibold">Total</div>
           <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{stats.total}</div>
         </div>
         
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
-          <div className="stat-figure text-neutral">
-            <FileText className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
-          </div>
+          <div className="stat-figure text-neutral"><FileText className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" /></div>
           <div className="stat-title text-xs sm:text-sm font-semibold">Brouillons</div>
           <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{stats.draft}</div>
         </div>
         
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
-          <div className="stat-figure text-primary">
-            <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
-          </div>
+          <div className="stat-figure text-info"><Send className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" /></div>
+          <div className="stat-title text-xs sm:text-sm font-semibold">Envoyées</div>
+          <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{stats.sent}</div>
+        </div>
+        
+        <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
+          <div className="stat-figure text-primary"><CheckCircle className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" /></div>
           <div className="stat-title text-xs sm:text-sm font-semibold">Confirmées</div>
           <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{stats.confirmed}</div>
         </div>
         
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
-          <div className="stat-figure text-success">
-            <CheckSquare className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
-          </div>
+          <div className="stat-figure text-success"><CheckSquare className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" /></div>
           <div className="stat-title text-xs sm:text-sm font-semibold">Reçues</div>
           <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{stats.received}</div>
         </div>
         
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
-          <div className="stat-figure text-error">
-            <XCircle className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
-          </div>
+          <div className="stat-figure text-error"><XCircle className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" /></div>
           <div className="stat-title text-xs sm:text-sm font-semibold">Annulées</div>
           <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{stats.cancelled}</div>
         </div>
         
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
-          <div className="stat-figure text-info">
-            <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
-          </div>
+          <div className="stat-figure text-info"><DollarSign className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" /></div>
           <div className="stat-title text-xs sm:text-sm font-semibold">Total dépensé</div>
-          <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">
-            {formatCurrency(stats.totalAmount)}
-          </div>
+          <div className="stat-value text-xs sm:text-sm lg:text-base font-black truncate">{formatCurrency(stats.totalAmount)}</div>
         </div>
       </div>
 
@@ -470,18 +480,10 @@ const CommandesFournisseurs = () => {
         {filteredAndSortedOrders.length === 0 ? (
           <div className="p-8 sm:p-12 text-center">
             <ShoppingCart className="w-16 h-16 sm:w-20 sm:h-20 mx-auto mb-4 text-base-content/30" />
-            <p className="text-lg sm:text-xl font-semibold text-base-content/50">
-              Aucune commande trouvée
-            </p>
-            <p className="text-sm sm:text-base text-base-content/40 mt-2">
-              Commencez par créer votre première commande fournisseur
-            </p>
-            <button 
-              className="btn btn-primary mt-6 gap-2"
-              onClick={() => navigate('/commandes-fournisseurs/nouveau')}
-            >
-              <Plus className="w-4 h-4" />
-              Nouvelle commande
+            <p className="text-lg sm:text-xl font-semibold text-base-content/50">Aucune commande trouvée</p>
+            <p className="text-sm sm:text-base text-base-content/40 mt-2">Commencez par créer votre première commande fournisseur</p>
+            <button className="btn btn-primary mt-6 gap-2" onClick={() => navigate('/commandes-fournisseurs/nouveau')}>
+              <Plus className="w-4 h-4" /> Nouvelle commande
             </button>
           </div>
         ) : (
@@ -490,82 +492,31 @@ const CommandesFournisseurs = () => {
               <table className="table table-xs sm:table-sm lg:table-md w-full">
                 <thead>
                   <tr className="text-xs sm:text-sm">
-                    <th>
-                      <button 
-                        className="flex items-center gap-1 hover:text-primary"
-                        onClick={() => handleSort('order_number')}
-                      >
-                        N° Commande
-                        <ArrowUpDown className="w-3 h-3" />
-                      </button>
-                    </th>
+                    <th><button className="flex items-center gap-1 hover:text-primary" onClick={() => handleSort('order_number')}>N° Commande<ArrowUpDown className="w-3 h-3" /></button></th>
                     <th>Fournisseur</th>
-                    <th>
-                      <button 
-                        className="flex items-center gap-1 hover:text-primary"
-                        onClick={() => handleSort('order_date')}
-                      >
-                        Date
-                        <ArrowUpDown className="w-3 h-3" />
-                      </button>
-                    </th>
+                    <th><button className="flex items-center gap-1 hover:text-primary" onClick={() => handleSort('order_date')}>Date<ArrowUpDown className="w-3 h-3" /></button></th>
                     <th>Date livraison</th>
                     <th>Urgence</th>
                     <th>Statut</th>
-                    <th>
-                      <button 
-                        className="flex items-center gap-1 hover:text-primary"
-                        onClick={() => handleSort('total')}
-                      >
-                        Total
-                        <ArrowUpDown className="w-3 h-3" />
-                      </button>
-                    </th>
+                    <th><button className="flex items-center gap-1 hover:text-primary" onClick={() => handleSort('total')}>Total<ArrowUpDown className="w-3 h-3" /></button></th>
                     <th className="text-right">Actions</th>
-                   </tr>
+                  </tr>
                 </thead>
                 <tbody>
                   {paginatedOrders.map((commande) => (
                     <tr key={commande.id} className="hover">
-                      <td className="font-mono text-sm">
-                        {commande.order_number || commande.id}
-                      </td>
-                      <td>
-                        <div className="font-medium">{commande.supplier_name || commande.supplier?.company_name}</div>
-                      </td>
+                      <td className="font-mono text-sm">{commande.order_number || commande.id}</td>
+                      <td><div className="font-medium">{commande.supplier_name || commande.supplier?.company_name}</div></td>
                       <td>{formatDate(commande.order_date)}</td>
-                      <td>{formatDate(commande.expected_date)}</td>
+                      <td className={new Date(commande.expected_date) < new Date() ? 'text-warning' : ''}>{formatDate(commande.expected_date)}</td>
                       <td>{getUrgencyBadge(commande.urgency)}</td>
                       <td>{getStatusBadge(commande.status)}</td>
                       <td className="font-semibold">{formatCurrency(commande.total)}</td>
                       <td className="text-right">
                         <div className="flex justify-end gap-1 sm:gap-2">
-                          <button 
-                            onClick={() => navigate(`/commandes-fournisseurs/${commande.id}`)}
-                            className="btn btn-ghost btn-xs sm:btn-sm"
-                            title="Détails"
-                          >
-                            <Eye className="w-3 h-3 sm:w-4 sm:h-4" />
-                          </button>
-                          <button 
-                            onClick={() => navigate(`/commandes-fournisseurs/${commande.id}/edit`)}
-                            className="btn btn-ghost btn-xs sm:btn-sm text-primary"
-                            title="Modifier"
-                            disabled={commande.status === 'received' || commande.status === 'cancelled'}
-                          >
-                            <Edit className="w-3 h-3 sm:w-4 sm:h-4" />
-                          </button>
-                          <button 
-                            className="btn btn-ghost btn-xs sm:btn-sm text-error"
-                            onClick={() => {
-                              setCommandeToDelete(commande)
-                              setShowDeleteModal(true)
-                            }}
-                            title="Supprimer"
-                            disabled={commande.status !== 'draft'}
-                          >
-                            <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
-                          </button>
+                          <button onClick={() => navigate(`/commandes-fournisseurs/${commande.id}`)} className="btn btn-ghost btn-xs sm:btn-sm" title="Détails"><Eye className="w-3 h-3 sm:w-4 sm:h-4" /></button>
+                          <button onClick={() => navigate(`/commandes-fournisseurs/${commande.id}/edit`)} className="btn btn-ghost btn-xs sm:btn-sm text-primary" title="Modifier" disabled={commande.status === 'received' || commande.status === 'cancelled'}><Edit className="w-3 h-3 sm:w-4 sm:h-4" /></button>
+                          <button className="btn btn-ghost btn-xs sm:btn-sm text-error" onClick={() => { setCommandeToDelete(commande); setShowDeleteModal(true) }} title="Supprimer" disabled={commande.status !== 'draft'}><Trash2 className="w-3 h-3 sm:w-4 sm:h-4" /></button>
                         </div>
                       </td>
                     </tr>
@@ -581,62 +532,17 @@ const CommandesFournisseurs = () => {
                   <div className="text-xs sm:text-sm text-base-content/60 order-2 sm:order-1">
                     {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, filteredAndSortedOrders.length)} sur {filteredAndSortedOrders.length}
                   </div>
-                  
                   <div className="flex items-center gap-2 order-1 sm:order-2">
-                    <select 
-                      className="select select-bordered select-xs sm:select-sm"
-                      value={itemsPerPage}
-                      onChange={(e) => {
-                        setItemsPerPage(parseInt(e.target.value))
-                        setCurrentPage(1)
-                      }}
-                    >
-                      <option value="6">6</option>
-                      <option value="9">9</option>
-                      <option value="12">12</option>
-                      <option value="24">24</option>
-                      <option value="48">48</option>
+                    <select className="select select-bordered select-xs sm:select-sm" value={itemsPerPage} onChange={(e) => { setItemsPerPage(parseInt(e.target.value)); setCurrentPage(1) }}>
+                      <option value="6">6</option><option value="9">9</option><option value="12">12</option><option value="24">24</option><option value="48">48</option>
                     </select>
-                    
                     <div className="join">
-                      <button 
-                        className="join-item btn btn-xs sm:btn-sm"
-                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                        disabled={currentPage === 1}
-                      >
-                        <ChevronLeft className="w-3 h-3 sm:w-4 sm:h-4" />
-                      </button>
-                      
-                      {Array.from({ length: Math.min(3, totalPages) }, (_, i) => {
-                        let pageNum
-                        if (totalPages <= 3) {
-                          pageNum = i + 1
-                        } else if (currentPage <= 2) {
-                          pageNum = i + 1
-                        } else if (currentPage >= totalPages - 1) {
-                          pageNum = totalPages - 2 + i
-                        } else {
-                          pageNum = currentPage - 1 + i
-                        }
-                        
-                        return (
-                          <button
-                            key={i}
-                            className={`join-item btn btn-xs sm:btn-sm ${currentPage === pageNum ? 'btn-primary' : ''}`}
-                            onClick={() => setCurrentPage(pageNum)}
-                          >
-                            {pageNum}
-                          </button>
-                        )
+                      <button className="join-item btn btn-xs sm:btn-sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}><ChevronLeft className="w-3 h-3 sm:w-4 sm:h-4" /></button>
+                      {[...Array(Math.min(3, totalPages))].map((_, i) => {
+                        let pageNum; if (totalPages <= 3) { pageNum = i + 1 } else if (currentPage <= 2) { pageNum = i + 1 } else if (currentPage >= totalPages - 1) { pageNum = totalPages - 2 + i } else { pageNum = currentPage - 1 + i }
+                        return (<button key={i} className={`join-item btn btn-xs sm:btn-sm ${currentPage === pageNum ? 'btn-primary' : ''}`} onClick={() => setCurrentPage(pageNum)}>{pageNum}</button>)
                       })}
-                      
-                      <button 
-                        className="join-item btn btn-xs sm:btn-sm"
-                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                        disabled={currentPage === totalPages}
-                      >
-                        <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4" />
-                      </button>
+                      <button className="join-item btn btn-xs sm:btn-sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}><ChevronRight className="w-3 h-3 sm:w-4 sm:h-4" /></button>
                     </div>
                   </div>
                 </div>
@@ -651,36 +557,15 @@ const CommandesFournisseurs = () => {
         <div className="modal modal-open">
           <div className="modal-box w-11/12 max-w-md p-4 sm:p-6">
             <div className="text-center mb-4 sm:mb-6">
-              <div className="avatar placeholder mb-3 sm:mb-4">
-                <div className="bg-error/10 text-error rounded-full w-16 h-16 sm:w-20 sm:h-20">
-                  <AlertCircle className="w-8 h-8 sm:w-10 sm:h-10" />
-                </div>
-              </div>
+              <div className="avatar placeholder mb-3 sm:mb-4"><div className="bg-error/10 text-error rounded-full w-16 h-16 sm:w-20 sm:h-20"><AlertCircle className="w-8 h-8 sm:w-10 sm:h-10" /></div></div>
               <h3 className="font-bold text-lg sm:text-xl mb-2">Confirmer la suppression</h3>
-              <p className="text-sm text-base-content/70">
-                Voulez-vous vraiment supprimer la commande ?
-              </p>
-              <p className="text-base font-bold text-error mt-2">
-                "{commandeToDelete.order_number}"
-              </p>
-              <p className="text-xs text-base-content/50 mt-2">
-                Cette action est irréversible.
-              </p>
+              <p className="text-sm text-base-content/70">Voulez-vous vraiment supprimer la commande ?</p>
+              <p className="text-base font-bold text-error mt-2">"{commandeToDelete.order_number}"</p>
+              <p className="text-xs text-base-content/50 mt-2">Cette action est irréversible.</p>
             </div>
-            
             <div className="flex gap-3">
-              <button 
-                className="btn btn-ghost flex-1"
-                onClick={() => setShowDeleteModal(false)}
-              >
-                Annuler
-              </button>
-              <button 
-                className="btn btn-error flex-1"
-                onClick={handleDeleteCommande}
-              >
-                Supprimer
-              </button>
+              <button className="btn btn-ghost flex-1" onClick={() => setShowDeleteModal(false)}>Annuler</button>
+              <button className="btn btn-error flex-1" onClick={handleDeleteCommande}>Supprimer</button>
             </div>
           </div>
         </div>
