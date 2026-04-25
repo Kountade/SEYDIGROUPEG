@@ -1,11 +1,11 @@
-// src/components/receptions/ReceptionForm.jsx
+// src/components/achats/ReceptionForm.jsx
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
 import {
   ArrowLeft, Save, Plus, Trash2, AlertCircle, CheckCircle,
   Package, Truck, DollarSign, Calendar, Building2, FileText, X,
-  RefreshCw, ShoppingCart, Users, Clock
+  RefreshCw, ShoppingCart, Users, Clock, Filter
 } from 'lucide-react'
 
 const ReceptionForm = () => {
@@ -28,16 +28,24 @@ const ReceptionForm = () => {
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' })
   const [totalValue, setTotalValue] = useState(0)
 
-  // Charger les commandes éligibles (confirmées, en transit, partiellement reçues)
+  // Charger les commandes éligibles (non totalement reçues)
   const fetchCommandes = async () => {
     setLoadingCommandes(true)
     try {
-      const response = await AxiosInstance.get('/purchase-orders/', {
-        params: {
-          status__in: 'confirmed,in_transit,partially_received'
-        }
+      const response = await AxiosInstance.get('/purchase-orders/')
+      const allOrders = response.data || []
+      
+      const eligibleOrders = allOrders.filter(order => {
+        if (order.status === 'received') return false
+        const hasRemainingItems = order.items?.some(item => {
+          const ordered = item.quantity_ordered || 0
+          const received = item.quantity_received || 0
+          return received < ordered
+        })
+        return hasRemainingItems
       })
-      setCommandes(response.data || [])
+      
+      setCommandes(eligibleOrders)
     } catch (error) {
       console.error('Erreur chargement commandes:', error)
       showNotification('Erreur de chargement des commandes', 'error')
@@ -46,7 +54,7 @@ const ReceptionForm = () => {
     }
   }
 
-  // Charger les détails d'une commande avec ses articles
+  // Charger les détails d'une commande
   const loadCommandeDetails = async (orderId) => {
     if (!orderId) {
       setCommandeSelected(null)
@@ -61,29 +69,33 @@ const ReceptionForm = () => {
       const order = response.data
       setCommandeSelected(order)
       
-      // Créer les articles de réception basés sur les articles de la commande
-      // avec la quantité restante comme quantité par défaut
-      const items = (order.items || []).map(item => {
-        const ordered = item.quantity_ordered || 0
-        const received = item.quantity_received || 0
-        const remaining = ordered - received
-        
-        return {
-          id: item.id,
-          product_id: item.product,
-          product_name: item.product_name,
-          product_reference: item.product_reference,
-          quantity_ordered: ordered,
-          quantity_received: received,
-          remaining_quantity: remaining,
-          quantity: remaining > 0 ? remaining : 0,
-          unit_price: parseFloat(item.unit_price) || 0,
-          total: remaining > 0 ? (parseFloat(item.unit_price) || 0) * remaining : 0,
-          quality_ok: true,
-          lot_number: '',
-          notes: ''
-        }
-      }).filter(item => item.remaining_quantity > 0) // Garder uniquement les articles avec reste à recevoir
+      const items = (order.items || [])
+        .filter(item => {
+          const ordered = item.quantity_ordered || 0
+          const received = item.quantity_received || 0
+          return received < ordered
+        })
+        .map(item => {
+          const ordered = item.quantity_ordered || 0
+          const received = item.quantity_received || 0
+          const remaining = ordered - received
+          
+          return {
+            id: item.id,
+            product_id: item.product,
+            product_name: item.product_name,
+            product_reference: item.product_reference,
+            quantity_ordered: ordered,
+            quantity_received: received,
+            remaining_quantity: remaining,
+            quantity: 0,
+            unit_price: parseFloat(item.unit_price) || 0,
+            total: 0,
+            quality_ok: true,
+            lot_number: '',
+            notes: ''
+          }
+        })
       
       setFormData(prev => ({ ...prev, items }))
       calculateTotalValue(items)
@@ -96,21 +108,21 @@ const ReceptionForm = () => {
     }
   }
 
-  // Calculer la valeur totale des articles à recevoir
   const calculateTotalValue = (items) => {
     const total = items.reduce((sum, item) => sum + (item.total || 0), 0)
     setTotalValue(total)
     return total
   }
 
-  // Mettre à jour la quantité d'un article
   const updateItemQuantity = (index, quantity) => {
     const item = formData.items[index]
     const maxQty = item.remaining_quantity
     let newQuantity = parseInt(quantity) || 0
     
-    // Limiter à la quantité restante
-    if (newQuantity > maxQty) newQuantity = maxQty
+    if (newQuantity > maxQty) {
+      showNotification(`La quantité ne peut pas dépasser ${maxQty} (quantité restante)`, 'error')
+      newQuantity = maxQty
+    }
     if (newQuantity < 0) newQuantity = 0
     
     const newTotal = (item.unit_price || 0) * newQuantity
@@ -126,7 +138,6 @@ const ReceptionForm = () => {
     calculateTotalValue(updatedItems)
   }
 
-  // Mettre à jour la qualité d'un article
   const updateItemQuality = (index, qualityOk) => {
     const updatedItems = [...formData.items]
     updatedItems[index] = {
@@ -136,7 +147,6 @@ const ReceptionForm = () => {
     setFormData(prev => ({ ...prev, items: updatedItems }))
   }
 
-  // Mettre à jour le lot d'un article
   const updateItemLot = (index, lotNumber) => {
     const updatedItems = [...formData.items]
     updatedItems[index] = {
@@ -146,14 +156,12 @@ const ReceptionForm = () => {
     setFormData(prev => ({ ...prev, items: updatedItems }))
   }
 
-  // Supprimer un article de la réception (si on ne veut pas le recevoir)
   const removeItem = (index) => {
     const updatedItems = formData.items.filter((_, i) => i !== index)
     setFormData(prev => ({ ...prev, items: updatedItems }))
     calculateTotalValue(updatedItems)
   }
 
-  // Sélectionner/tout recevoir
   const selectAllItems = () => {
     const updatedItems = formData.items.map(item => ({
       ...item,
@@ -164,7 +172,6 @@ const ReceptionForm = () => {
     calculateTotalValue(updatedItems)
   }
 
-  // Désélectionner tout
   const deselectAllItems = () => {
     const updatedItems = formData.items.map(item => ({
       ...item,
@@ -289,7 +296,7 @@ const ReceptionForm = () => {
 
   if (loading && isEditMode) {
     return (
-      <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
+      <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-base-200">
         <div className="text-center">
           <div className="loading loading-spinner loading-lg text-primary"></div>
           <p className="mt-4 text-base-content/60">Chargement...</p>
@@ -297,6 +304,8 @@ const ReceptionForm = () => {
       </div>
     )
   }
+
+  const formatCurrency = (amount) => (amount || 0).toLocaleString() + ' FCFA'
 
   return (
     <div className="min-h-screen bg-base-200 py-4 sm:py-6 px-3 sm:px-4">
@@ -315,12 +324,8 @@ const ReceptionForm = () => {
 
         {/* Bouton retour */}
         <div className="mb-4">
-          <Link
-            to="/receptions"
-            className="btn btn-ghost btn-sm gap-2 text-base-content/70 hover:text-primary transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Retour à la liste
+          <Link to="/receptions" className="btn btn-ghost btn-sm gap-2 text-base-content/70 hover:text-primary">
+            <ArrowLeft className="w-4 h-4" /> Retour à la liste
           </Link>
         </div>
 
@@ -368,6 +373,11 @@ const ReceptionForm = () => {
                     Chargement des commandes...
                   </span>
                 )}
+                {commandes.length === 0 && !loadingCommandes && (
+                  <span className="text-warning text-xs mt-1">
+                    Aucune commande avec des articles restants à recevoir
+                  </span>
+                )}
                 {errors.purchase_order && <span className="text-error text-xs mt-1">{errors.purchase_order}</span>}
               </div>
 
@@ -380,21 +390,11 @@ const ReceptionForm = () => {
                       Détails de la commande
                     </h3>
                     <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={selectAllItems}
-                        className="btn btn-xs btn-primary gap-1"
-                      >
-                        <CheckCircle className="w-3 h-3" />
-                        Tout recevoir
+                      <button type="button" onClick={selectAllItems} className="btn btn-xs btn-primary gap-1">
+                        <CheckCircle className="w-3 h-3" /> Tout recevoir
                       </button>
-                      <button
-                        type="button"
-                        onClick={deselectAllItems}
-                        className="btn btn-xs btn-ghost gap-1"
-                      >
-                        <X className="w-3 h-3" />
-                        Tout annuler
+                      <button type="button" onClick={deselectAllItems} className="btn btn-xs btn-ghost gap-1">
+                        <X className="w-3 h-3" /> Tout annuler
                       </button>
                     </div>
                   </div>
@@ -412,8 +412,8 @@ const ReceptionForm = () => {
                       <p>{new Date(commandeSelected.order_date).toLocaleDateString()}</p>
                     </div>
                     <div>
-                      <span className="text-base-content/50">Total commande:</span>
-                      <p className="font-semibold">{commandeSelected.total?.toLocaleString()} FCFA</p>
+                      <span className="text-base-content/50">Statut:</span>
+                      <p className="badge badge-sm">{commandeSelected.status_display}</p>
                     </div>
                   </div>
                 </div>
@@ -444,72 +444,41 @@ const ReceptionForm = () => {
                           <th>Lot</th>
                           <th>Qualité</th>
                           <th></th>
-                         </tr>
+                        </tr>
                       </thead>
                       <tbody>
                         {formData.items.map((item, index) => (
                           <tr key={item.id || index} className="hover">
                             <td className="font-medium">{item.product_name}</td>
-                            <td className="text-xs text-base-content/60">{item.product_reference}</td>
+                            <td className="text-xs font-mono">{item.product_reference}</td>
+                            <td className="text-center"><span className="badge badge-neutral">{item.quantity_ordered}</span></td>
+                            <td className="text-center"><span className="badge badge-info">{item.quantity_received}</span></td>
+                            <td className="text-center"><span className="badge badge-warning">{item.remaining_quantity}</span></td>
                             <td className="text-center">
-                              <span className="badge badge-neutral">{item.quantity_ordered}</span>
-                             </td>
-                            <td className="text-center">
-                              <span className="badge badge-info">{item.quantity_received}</span>
-                             </td>
-                            <td className="text-center">
-                              <span className="badge badge-warning">{item.remaining_quantity}</span>
-                             </td>
-                            <td className="text-center">
-                              <input
-                                type="number"
-                                value={item.quantity}
-                                onChange={(e) => updateItemQuantity(index, e.target.value)}
-                                min="0"
-                                max={item.remaining_quantity}
-                                className="input input-bordered input-xs w-20 text-center"
-                                disabled={item.remaining_quantity === 0}
-                              />
-                             </td>
-                            <td className="text-right">{item.unit_price?.toLocaleString()} FCFA</td>
-                            <td className="text-right font-semibold">{(item.total || 0).toLocaleString()} FCFA</td>
+                              <input type="number" value={item.quantity} onChange={(e) => updateItemQuantity(index, e.target.value)} min="0" max={item.remaining_quantity} className="input input-bordered input-xs w-20 text-center" />
+                              <span className="text-xs text-base-content/50 ml-1">/ {item.remaining_quantity}</span>
+                            </td>
+                            <td className="text-right">{formatCurrency(item.unit_price)}</td>
+                            <td className="text-right font-semibold">{formatCurrency(item.total)}</td>
                             <td>
-                              <input
-                                type="text"
-                                value={item.lot_number || ''}
-                                onChange={(e) => updateItemLot(index, e.target.value)}
-                                placeholder="Lot"
-                                className="input input-bordered input-xs w-24"
-                                disabled={item.quantity === 0}
-                              />
-                             </td>
+                              <input type="text" value={item.lot_number || ''} onChange={(e) => updateItemLot(index, e.target.value)} placeholder="Lot" className="input input-bordered input-xs w-24" disabled={item.quantity === 0} />
+                            </td>
                             <td className="text-center">
-                              <input
-                                type="checkbox"
-                                checked={item.quality_ok !== false}
-                                onChange={(e) => updateItemQuality(index, e.target.checked)}
-                                className="checkbox checkbox-success checkbox-xs"
-                                disabled={item.quantity === 0}
-                              />
-                             </td>
-                            <td>
-                              <button
-                                type="button"
-                                onClick={() => removeItem(index)}
-                                className="btn btn-ghost btn-xs text-error"
-                                title="Ne pas recevoir cet article"
-                              >
+                              <input type="checkbox" checked={item.quality_ok !== false} onChange={(e) => updateItemQuality(index, e.target.checked)} className="checkbox checkbox-success checkbox-xs" disabled={item.quantity === 0} />
+                            </td>
+                            <td className="text-center">
+                              <button type="button" onClick={() => removeItem(index)} className="btn btn-ghost btn-xs text-error">
                                 <Trash2 className="w-3 h-3" />
                               </button>
-                             </td>
-                           </tr>
+                            </td>
+                          </tr>
                         ))}
                       </tbody>
                       <tfoot className="bg-base-100 border-t-2">
                         <tr>
                           <td colSpan="6" className="text-right font-bold">Valeur totale à recevoir</td>
-                          <td colSpan="4" className="font-bold text-primary text-lg">{totalValue.toLocaleString()} FCFA</td>
-                         </tr>
+                          <td colSpan="4" className="font-bold text-primary text-lg">{formatCurrency(totalValue)}</td>
+                        </tr>
                       </tfoot>
                     </table>
                   </div>
@@ -532,22 +501,12 @@ const ReceptionForm = () => {
                     Notes
                   </span>
                 </label>
-                <textarea
-                  value={formData.notes}
-                  onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-                  rows="3"
-                  className="textarea textarea-bordered w-full"
-                  placeholder="Observations sur la réception (qualité, anomalies, etc.)..."
-                />
+                <textarea value={formData.notes} onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))} rows="3" className="textarea textarea-bordered w-full" placeholder="Observations sur la réception..." />
               </div>
 
               {/* Boutons */}
               <div className="flex flex-col sm:flex-row gap-3 mt-6 pt-4 border-t border-base-200">
-                <button 
-                  type="submit"
-                  disabled={submitting || formData.items.filter(i => i.quantity > 0).length === 0}
-                  className="btn btn-primary flex-1"
-                >
+                <button type="submit" disabled={submitting || formData.items.filter(i => i.quantity > 0).length === 0} className="btn btn-primary flex-1">
                   {submitting ? (
                     <>
                       <span className="loading loading-spinner loading-sm"></span>
@@ -560,12 +519,7 @@ const ReceptionForm = () => {
                     </>
                   )}
                 </button>
-                <Link 
-                  to="/receptions" 
-                  className="btn btn-outline"
-                >
-                  Annuler
-                </Link>
+                <Link to="/receptions" className="btn btn-outline">Annuler</Link>
               </div>
             </form>
           </div>
