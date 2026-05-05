@@ -33,6 +33,7 @@ import CommandeFournisseurDetail from './components/achats/CommandeFournisseurDe
 import Receptions from './components/achats/Receptions'
 import ReceptionForm from './components/achats/ReceptionForm'
 import ReceptionDetail from './components/achats/ReceptionDetail'
+import AuditLog from './components/audit/AuditLog'
 
 
 
@@ -121,6 +122,8 @@ function App() {
 <Route path="/receptions/nouveau" element={<ReceptionForm />} />
 <Route path="/receptions/:id/edit" element={<ReceptionForm />} />
 <Route path="/receptions/:id" element={<ReceptionDetail />} />
+
+ <Route path="/audit" element={<AuditLog />} />
             </Route>
           </Routes>
         }
