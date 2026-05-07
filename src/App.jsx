@@ -33,6 +33,34 @@ import CommandeFournisseurDetail from './components/achats/CommandeFournisseurDe
 import Receptions from './components/achats/Receptions'
 import ReceptionForm from './components/achats/ReceptionForm'
 import ReceptionDetail from './components/achats/ReceptionDetail'
+import Positions from './components/grh/Positions'
+import PositionForm from './components/grh/PositionForm'
+import Departments from './components/grh/Departments'
+import PositionDetail from './components/grh/PositionDetail'
+import DepartmentForm from './components/grh/DepartmentForm'
+import Employees from './components/grh/Employees'
+import EmployeeForm from './components/grh/EmployeeForm'
+import EmployeeDetail from './components/grh/EmployeeDetail'
+import EmployeeQR from './components/grh/EmployeeQR'
+import Leaves from './components/grh/Leaves'
+import LeaveForm from './components/grh/LeaveForm'
+import LeaveCalendar from './components/grh/LeaveCalendar'
+import Payroll from './components/grh/Payroll'
+import PayrollForm from './components/grh/PayrollForm'
+import PayrollDetail from './components/grh/PositionDetail'
+import PayrollSlip from './components/grh/PayrollSlip'
+import Attendance from './components/grh/Attendance'
+import AttendanceForm from './components/grh/AttendanceForm'
+import Recruitments from './components/grh/Recruitments'
+import RecruitmentForm from './components/grh/RecruitmentForm'
+import Candidates from './components/grh/Candidates'
+import HRStats from './components/grh/HRStats'
+import Documents from './components/grh/Documents'
+import PerformanceReviews from './components/grh/PerformanceReviews'
+import ExpenseClaims from './components/grh/ExpenseClaims'
+import Trainings from './components/grh/Trainings'
+
+
 import AuditLog from './components/audit/AuditLog'
 
 
@@ -122,6 +150,63 @@ function App() {
 <Route path="/receptions/nouveau" element={<ReceptionForm />} />
 <Route path="/receptions/:id/edit" element={<ReceptionForm />} />
 <Route path="/receptions/:id" element={<ReceptionDetail />} />
+
+    {/* Departments */}
+          <Route path="/departments" element={<Departments />} />
+<Route path="/departments/new" element={<DepartmentForm />} />
+<Route path="/departments/:id/edit" element={<DepartmentForm />} />
+
+
+                       
+<Route path="/positions" element={<Positions />} />
+<Route path="/positions/new" element={<PositionForm />} />
+<Route path="/positions/:id/edit" element={<PositionForm />} />
+<Route path="/positions/:id" element={<PositionDetail />} />
+
+
+  {/* EMPLOYES  */}
+<Route path="/employees" element={<Employees />} />
+<Route path="/employees/new" element={<EmployeeForm />} />
+<Route path="/employees/:id/edit" element={<EmployeeForm />} />
+<Route path="/employees/:id" element={<EmployeeDetail />} />
+<Route path="/employees/:id/qr" element={<EmployeeQR />} />
+
+
+
+        <Route path="/attendance" element={<Attendance />} />
+<Route path="/attendance/checkin" element={<AttendanceForm />} />
+<Route path="/attendance/checkout" element={<AttendanceForm />} />
+
+
+ {/* Retours */}
+ <Route path="/leaves" element={<Leaves />} />
+        <Route path="/leaves/new" element={<LeaveForm />} />
+
+        <Route path="/leaves/calendar" element={<LeaveCalendar />} />
+
+
+   {/* PAIMET */}
+   <Route path="/payroll" element={<Payroll />} />
+        <Route path="/payroll/new" element={<PayrollForm />} />
+        <Route path="/payroll/:id" element={<PayrollDetail />} />
+        <Route path="/payroll/:id/edit" element={<PayrollForm />} />
+        <Route path="/payroll/:id/slip" element={<PayrollSlip />} />
+
+
+
+        // Routes
+<Route path="/recruitments" element={<Recruitments />} />
+<Route path="/recruitments/new" element={<RecruitmentForm />} />
+<Route path="/recruitments/:id/edit" element={<RecruitmentForm />} />
+<Route path="/candidates" element={<Candidates />} />
+<Route path="/performance" element={<PerformanceReviews />} />
+<Route path="/expenses" element={<ExpenseClaims />} />
+<Route path="/documents" element={<Documents />} />
+<Route path="/stats" element={<HRStats />} />
+<Route path="/trainings" element={<Trainings />} />
+
+
+
 
  <Route path="/audit" element={<AuditLog />} />
             </Route>

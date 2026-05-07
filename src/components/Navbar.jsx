@@ -1,4 +1,4 @@
-// src/components/Navbar.jsx - Version Ultra Professionnelle Complète
+// src/components/Navbar.jsx - Version Ultra Professionnelle Complète (corrigée)
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
@@ -54,6 +54,8 @@ import {
   ClipboardCheck,
   LineChart,
   MoveHorizontal,
+  GraduationCap,
+  BarChart3,
   Building
 } from 'lucide-react';
 
@@ -350,14 +352,24 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       ]
     },
     ...(canViewHR() ? [{
-      name: 'RESSOURCES HUMAINES',
-      icon: Users,
-      items: [
-        { id: 'employes', text: 'Employés', icon: Users, path: '/drh/employes', permission: true },
-        { id: 'conges', text: 'Congés', icon: Calendar, path: '/drh/demandes-conges', permission: true, badge: absencesEnAttente.length },
-        { id: 'recrutement', text: 'Recrutement', icon: UserPlus, path: '/drh/recrutement', permission: true },
-        { id: 'paie', text: 'Paie', icon: DollarSign, path: '/drh/paie', permission: isPDG }
-      ]
+   name: 'RESSOURCES HUMAINES',
+  icon: Users,
+  permission: canViewHR(),
+  items: [
+    { id: 'departements', text: 'Départements', icon: Building2, path: '/departments', permission: true },
+    { id: 'postes', text: 'Postes', icon: Briefcase, path: '/positions', permission: true },
+    { id: 'employes', text: 'Employés', icon: Users, path: '/employees', permission: true },
+    { id: 'conges', text: 'Congés', icon: Calendar, path: '/leaves', permission: true, badge: absencesEnAttente.length },
+    { id: 'pointage', text: 'Pointage', icon: Clock, path: '/attendance', permission: true },
+    { id: 'paie', text: 'Paie', icon: DollarSign, path: '/payroll', permission: isPDG },
+    { id: 'recrutement', text: 'Recrutements', icon: UserPlus, path: '/recruitments', permission: true },
+    { id: 'candidats', text: 'Candidats', icon: UserPlus, path: '/candidates', permission: true },
+    { id: 'formations', text: 'Formations', icon: GraduationCap, path: '/trainings', permission: true },
+    { id: 'evaluations', text: 'Évaluations', icon: TrendingUp, path: '/performance', permission: true },
+    { id: 'notes-frais', text: 'Notes de frais', icon: Receipt, path: '/expenses', permission: true },
+    { id: 'documents', text: 'Documents RH', icon: FileText, path: '/documents', permission: true },
+    { id: 'statistiques', text: 'Statistiques', icon: BarChart3, path: '/stats', permission: true }
+  ]
     }] : []),
     ...(canViewAdmin() ? [{
       name: 'ADMINISTRATION',
