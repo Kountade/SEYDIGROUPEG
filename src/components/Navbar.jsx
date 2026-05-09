@@ -1,4 +1,4 @@
-// src/components/Navbar.jsx - Version Ultra Professionnelle Complète (corrigée)
+// src/components/Navbar.jsx - Version Adaptée pour Code B
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
@@ -30,8 +30,6 @@ import {
   Calendar,
   MapPin,
   UserPlus,
-  PlusCircle,
-  Database,
   TrendingUp,
   CreditCard,
   UsersRound,
@@ -41,8 +39,6 @@ import {
   CheckCircle,
   Search,
   HelpCircle,
-  MessageSquare,
-  Star,
   History,
   ClipboardList,
   Truck,
@@ -56,7 +52,7 @@ import {
   MoveHorizontal,
   GraduationCap,
   BarChart3,
-  Building
+  RefreshCw
 } from 'lucide-react';
 
 import logo from '../assets/logo.svg';
@@ -109,15 +105,15 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const [notificationCount, setNotificationCount] = useState(0);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isLoading, setIsLoading] = useState(true);
+  const [userAgencesIds, setUserAgencesIds] = useState([]); // IDs des agences auxquelles l'utilisateur a accès
   
   // Données pour les différentes sections
-  const [achatsALivrer, setAchatsALivrer] = useState([]);
+  const [achatsALivrer, setAchatsALivrer] = useState(0);
   const [alertsCount, setAlertsCount] = useState(0);
   const [fournisseursCount, setFournisseursCount] = useState(0);
-  const [stocksFaibles, setStocksFaibles] = useState([]);
-  const [ventesImpayees, setVentesImpayees] = useState([]);
-  const [commandesAApprouver, setCommandesAApprouver] = useState([]);
-  const [absencesEnAttente, setAbsencesEnAttente] = useState([]);
+  const [stocksFaibles, setStocksFaibles] = useState(0);
+  const [ventesImpayees, setVentesImpayees] = useState(0);
+  const [absencesEnAttente, setAbsencesEnAttente] = useState(0);
 
   // Récupérer l'utilisateur
   const getUserData = () => {
@@ -157,29 +153,81 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     return { role: 'autre', type: 'global' };
   };
 
+  // Vérifier si l'utilisateur a accès à une agence (pour filtrer)
+  const checkUserAccessToAgence = (agenceId, rolesAgence) => {
+    if (!rolesAgence) return false;
+    return rolesAgence.some(r => r.agence_id === agenceId && r.est_actif);
+  };
+
   // Charger les données
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
       try {
-        const agencesRes = await AxiosInstance.get('agences/');
-        const agencesData = agencesRes.data || [];
-        setAgences(agencesData);
+        // Récupérer TOUTES les agences actives (Code B)
+        const agencesRes = await AxiosInstance.get('/agences/');
+        const toutesLesAgences = agencesRes.data || [];
         
-        const savedAgence = localStorage.getItem('AgenceCourante');
-        let currentAgence = null;
-        if (savedAgence) {
-          currentAgence = JSON.parse(savedAgence);
-        } else if (agencesData.length > 0) {
-          currentAgence = agencesData[0];
-          localStorage.setItem('AgenceCourante', JSON.stringify(currentAgence));
-        }
-        setAgenceCourante(currentAgence);
+        // Récupérer les détails de l'utilisateur pour connaître ses agences autorisées
+        let userRolesAgence = [];
+        let userFullData = null;
         
         if (user?.id) {
           const userRes = await AxiosInstance.get(`/users/${user.id}/`);
-          setUserData(userRes.data);
-          const { role, type } = determineEffectiveRole(userRes.data, currentAgence);
+          userFullData = userRes.data;
+          userRolesAgence = userFullData.roles_agence || [];
+          
+          // IDs des agences auxquelles l'utilisateur a accès (pour les permissions)
+          const accessibleIds = userRolesAgence
+            .filter(r => r.est_actif)
+            .map(r => r.agence_id);
+          setUserAgencesIds(accessibleIds);
+        }
+        
+        // Pour les chefs d'agence, on affiche toutes les agences dans le sélecteur
+        // mais on marque celles auxquelles ils n'ont PAS accès comme "non accessibles"
+        const agencesAvecAcces = toutesLesAgences.map(agence => {
+          const hasAccess = user?.role_global === 'pdg' || 
+                           user?.role_global === 'drh' || 
+                           checkUserAccessToAgence(agence.id, userRolesAgence);
+          return { ...agence, hasAccess };
+        });
+        
+        setAgences(agencesAvecAcces);
+        
+        // Sélectionner l'agence courante
+        const savedAgence = localStorage.getItem('AgenceCourante');
+        let currentAgence = null;
+        
+        if (savedAgence) {
+          const parsed = JSON.parse(savedAgence);
+          // Vérifier que l'utilisateur a toujours accès à cette agence
+          const hasAccess = user?.role_global === 'pdg' || 
+                           user?.role_global === 'drh' || 
+                           checkUserAccessToAgence(parsed.id, userRolesAgence);
+          if (hasAccess) {
+            currentAgence = parsed;
+          }
+        }
+        
+        // Si pas d'agence courante valide, prendre la première accessible
+        if (!currentAgence && agencesAvecAcces.length > 0) {
+          const accessibleAgence = agencesAvecAcces.find(a => a.hasAccess);
+          if (accessibleAgence) {
+            currentAgence = accessibleAgence;
+            localStorage.setItem('AgenceCourante', JSON.stringify(accessibleAgence));
+          } else if (agencesAvecAcces.length > 0) {
+            // Fallback : prendre la première agence (même sans accès complet)
+            currentAgence = agencesAvecAcces[0];
+            localStorage.setItem('AgenceCourante', JSON.stringify(agencesAvecAcces[0]));
+          }
+        }
+        
+        setAgenceCourante(currentAgence);
+        
+        if (userFullData) {
+          setUserData(userFullData);
+          const { role, type } = determineEffectiveRole(userFullData, currentAgence);
           setEffectiveRole(role);
           setRoleType(type);
         } else {
@@ -187,43 +235,47 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
           setRoleType('global');
         }
         
-        // Charger les données pour les différentes sections
-        const achatsRes = await AxiosInstance.get('/purchase-orders/?status=confirmed').catch(() => ({ data: [] }));
-        setAchatsALivrer(achatsRes.data || []);
+        // Charger les compteurs pour les badges
+        const isPDGorDRH = user?.role_global === 'pdg' || user?.role_global === 'drh';
+        const agenceId = currentAgence?.id;
         
-        const alertsRes = await AxiosInstance.get('/purchase-alerts/?is_active=true').catch(() => ({ data: [] }));
-        setAlertsCount(alertsRes.data?.length || 0);
-        
-        const fournisseursRes = await AxiosInstance.get('/suppliers/').catch(() => ({ data: [] }));
-        setFournisseursCount(fournisseursRes.data?.length || 0);
-        
-        const stocksRes = await AxiosInstance.get('/stock-movements/?low_stock=true').catch(() => ({ data: [] }));
-        setStocksFaibles(stocksRes.data || []);
-        
-        const ventesRes = await AxiosInstance.get('/sale-orders/?payment_status=pending').catch(() => ({ data: [] }));
-        setVentesImpayees(ventesRes.data || []);
-        
-        // Notifications
-        const notifs = [];
-        
-        if (stocksRes.data?.length) {
-          notifs.push({ id: 'stocks', title: 'Stock faible', message: `${stocksRes.data.length} produit(s) en rupture`, link: '/stocks', type: 'warning', time: 'maintenant' });
+        // Compteurs avec filtrage par agence si nécessaire
+        if (isPDGorDRH || agenceId) {
+          const params = (!isPDGorDRH && agenceId) ? `?agence_id=${agenceId}` : '';
+          
+          const [achatsRes, alertsRes, fournisseursRes, stocksRes, ventesRes] = await Promise.all([
+            AxiosInstance.get(`/purchase-orders/?status=confirmed${params}`).catch(() => ({ data: [] })),
+            AxiosInstance.get(`/purchase-alerts/?is_active=true${params}`).catch(() => ({ data: [] })),
+            AxiosInstance.get(`/suppliers/${params}`).catch(() => ({ data: [] })),
+            AxiosInstance.get(`/stock-movements/?low_stock=true${params}`).catch(() => ({ data: [] })),
+            AxiosInstance.get(`/sale-orders/?payment_status=pending${params}`).catch(() => ({ data: [] }))
+          ]);
+          
+          setAchatsALivrer(achatsRes.data?.length || 0);
+          setAlertsCount(alertsRes.data?.length || 0);
+          setFournisseursCount(fournisseursRes.data?.length || 0);
+          setStocksFaibles(stocksRes.data?.length || 0);
+          setVentesImpayees(ventesRes.data?.length || 0);
+          
+          // Construire les notifications
+          const notifs = [];
+          if (stocksRes.data?.length) {
+            notifs.push({ id: 'stocks', title: 'Stock faible', message: `${stocksRes.data.length} produit(s) en rupture`, link: '/stocks', type: 'warning', time: 'maintenant' });
+          }
+          if (ventesRes.data?.length) {
+            notifs.push({ id: 'ventes', title: 'Paiements en attente', message: `${ventesRes.data.length} vente(s) impayée(s)`, link: '/ventes', type: 'error', time: "aujourd'hui" });
+          }
+          if (achatsRes.data?.length) {
+            notifs.push({ id: 'achats', title: 'Commandes à livrer', message: `${achatsRes.data.length} commande(s) en attente`, link: '/commandes-fournisseurs', type: 'info', time: "aujourd'hui" });
+          }
+          if (alertsRes.data?.length) {
+            notifs.push({ id: 'alerts', title: 'Alertes fournisseurs', message: `${alertsRes.data.length} alerte(s) à traiter`, link: '/purchase-alerts', type: 'warning', time: "aujourd'hui" });
+          }
+          
+          setNotifications(notifs);
+          setNotificationCount(notifs.length);
         }
         
-        if (ventesRes.data?.length) {
-          notifs.push({ id: 'ventes', title: 'Paiements en attente', message: `${ventesRes.data.length} vente(s) impayée(s)`, link: '/ventes', type: 'error', time: 'aujourd\'hui' });
-        }
-        
-        if (achatsRes.data?.length) {
-          notifs.push({ id: 'achats', title: 'Commandes à livrer', message: `${achatsRes.data.length} commande(s) en attente de livraison`, link: '/commandes-fournisseurs', type: 'info', time: 'aujourd\'hui' });
-        }
-        
-        if (alertsRes.data?.length) {
-          notifs.push({ id: 'alerts', title: 'Alertes fournisseurs', message: `${alertsRes.data.length} alerte(s) à traiter`, link: '/purchase-alerts', type: 'warning', time: 'aujourd\'hui' });
-        }
-        
-        setNotifications(notifs);
-        setNotificationCount(notifs.length);
       } catch (error) {
         console.error('Erreur chargement:', error);
         setEffectiveRole(userRole);
@@ -232,6 +284,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         setIsLoading(false);
       }
     };
+    
     loadData();
   }, []);
 
@@ -262,6 +315,14 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const canViewDeliveries = () => isPDG || isChefAgence || isGestionnaireStock;
   const canViewHR = () => isPDG || isDRH;
   const canViewAdmin = () => isPDG;
+  
+  // Peut-il changer d'agence ? Seulement s'il a accès à plusieurs agences
+  const canSwitchAgence = () => {
+    if (isPDG || isDRH) return agences.length > 1;
+    // Pour les chefs d'agence, ils ne peuvent changer que si l'API leur donne plusieurs agences
+    const accessibleAgences = agences.filter(a => a.hasAccess);
+    return accessibleAgences.length > 1;
+  };
 
   const getRoleConfig = () => {
     if (roleType === 'global') return ROLE_GLOBAL_CONFIG[effectiveRole] || ROLE_GLOBAL_CONFIG.autre;
@@ -276,14 +337,23 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   };
 
   const changerAgence = (agence) => {
+    if (!agence.hasAccess && !isPDG && !isDRH) {
+      // L'utilisateur n'a pas accès à cette agence
+      alert(`Vous n'avez pas accès à l'agence ${agence.nom}`);
+      return;
+    }
+    
     setAgenceCourante(agence);
     localStorage.setItem('AgenceCourante', JSON.stringify(agence));
+    
     if (userData) {
       const { role, type } = determineEffectiveRole(userData, agence);
       setEffectiveRole(role);
       setRoleType(type);
     }
+    
     setIsAgencesMenuOpen(false);
+    // Recharger la page pour appliquer les nouveaux droits
     window.location.reload();
   };
 
@@ -312,7 +382,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       permission: canViewSales(),
       items: [
         { id: 'pos', text: 'Point de Vente', icon: ShoppingBag, path: '/point-de-vente', permission: canViewSales() },
-        { id: 'ventes', text: 'Ventes', icon: ShoppingCart, path: '/ventes', permission: canViewSales(), badge: ventesImpayees.length },
+        { id: 'ventes', text: 'Ventes', icon: ShoppingCart, path: '/ventes', permission: canViewSales(), badge: ventesImpayees },
         { id: 'clients', text: 'Clients', icon: Users, path: '/clients', permission: canViewSales() },
         { id: 'devis', text: 'Devis', icon: FileText, path: '/devis', permission: canViewSales() },
         { id: 'factures', text: 'Factures', icon: Receipt, path: '/factures', permission: canViewSales() },
@@ -325,7 +395,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       permission: canViewPurchases() || canViewSuppliers(),
       items: [
         { id: 'fournisseurs', text: 'Fournisseurs', icon: Building2, path: '/fournisseurs', permission: canViewSuppliers(), badge: fournisseursCount },
-        { id: 'commandes', text: 'Commandes', icon: FileText, path: '/commandes-fournisseurs', permission: canViewPurchases(), badge: achatsALivrer.length },
+        { id: 'commandes', text: 'Commandes', icon: FileText, path: '/commandes-fournisseurs', permission: canViewPurchases(), badge: achatsALivrer },
         { id: 'receptions', text: 'Réceptions', icon: Truck, path: '/receptions', permission: canViewPurchases() },
         { id: 'catalogue', text: 'Catalogue', icon: ClipboardList, path: '/supplier-catalogs', permission: canViewPurchases() },
         { id: 'prix', text: 'Historique prix', icon: History, path: '/price-history', permission: canViewPurchases() },
@@ -343,7 +413,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         { id: 'marques', text: 'Marques', icon: Award, path: '/brands', permission: canViewInventory() },
         { id: 'unites', text: 'Unités', icon: Ruler, path: '/units', permission: canViewInventory() },
         { id: 'reception', text: 'Réception stock', icon: Truck, path: '/stock-receipt', permission: canViewInventory() },
-        { id: 'stocks', text: 'Stocks', icon: Boxes, path: '/stocks', permission: canViewInventory(), badge: stocksFaibles.length },
+        { id: 'stocks', text: 'Stocks', icon: Boxes, path: '/stocks', permission: canViewInventory(), badge: stocksFaibles },
         { id: 'entrepots', text: 'Entrepôts', icon: Warehouse, path: '/entrepots', permission: canViewInventory() },
         { id: 'mouvements', text: 'Mouvements', icon: TrendingUp, path: '/mouvements-stock', permission: canViewInventory() },
         { id: 'transferts', text: 'Transferts', icon: MoveHorizontal, path: '/transferts', permission: canViewInventory() },
@@ -352,24 +422,24 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       ]
     },
     ...(canViewHR() ? [{
-   name: 'RESSOURCES HUMAINES',
-  icon: Users,
-  permission: canViewHR(),
-  items: [
-    { id: 'departements', text: 'Départements', icon: Building2, path: '/departments', permission: true },
-    { id: 'postes', text: 'Postes', icon: Briefcase, path: '/positions', permission: true },
-    { id: 'employes', text: 'Employés', icon: Users, path: '/employees', permission: true },
-    { id: 'conges', text: 'Congés', icon: Calendar, path: '/leaves', permission: true, badge: absencesEnAttente.length },
-    { id: 'pointage', text: 'Pointage', icon: Clock, path: '/attendance', permission: true },
-    { id: 'paie', text: 'Paie', icon: DollarSign, path: '/payroll', permission: isPDG },
-    { id: 'recrutement', text: 'Recrutements', icon: UserPlus, path: '/recruitments', permission: true },
-    { id: 'candidats', text: 'Candidats', icon: UserPlus, path: '/candidates', permission: true },
-    { id: 'formations', text: 'Formations', icon: GraduationCap, path: '/trainings', permission: true },
-    { id: 'evaluations', text: 'Évaluations', icon: TrendingUp, path: '/performance', permission: true },
-    { id: 'notes-frais', text: 'Notes de frais', icon: Receipt, path: '/expenses', permission: true },
-    { id: 'documents', text: 'Documents RH', icon: FileText, path: '/documents', permission: true },
-    { id: 'statistiques', text: 'Statistiques', icon: BarChart3, path: '/stats', permission: true }
-  ]
+      name: 'RESSOURCES HUMAINES',
+      icon: Users,
+      permission: canViewHR(),
+      items: [
+        { id: 'departements', text: 'Départements', icon: Building2, path: '/departments', permission: true },
+        { id: 'postes', text: 'Postes', icon: Briefcase, path: '/positions', permission: true },
+        { id: 'employes', text: 'Employés', icon: Users, path: '/employees', permission: true },
+        { id: 'conges', text: 'Congés', icon: Calendar, path: '/leaves', permission: true, badge: absencesEnAttente },
+        { id: 'pointage', text: 'Pointage', icon: Clock, path: '/attendance', permission: true },
+        { id: 'paie', text: 'Paie', icon: DollarSign, path: '/payroll', permission: isPDG },
+        { id: 'recrutement', text: 'Recrutements', icon: UserPlus, path: '/recruitments', permission: true },
+        { id: 'candidats', text: 'Candidats', icon: UserPlus, path: '/candidates', permission: true },
+        { id: 'formations', text: 'Formations', icon: GraduationCap, path: '/trainings', permission: true },
+        { id: 'evaluations', text: 'Évaluations', icon: TrendingUp, path: '/performance', permission: true },
+        { id: 'notes-frais', text: 'Notes de frais', icon: Receipt, path: '/expenses', permission: true },
+        { id: 'documents', text: 'Documents RH', icon: FileText, path: '/documents', permission: true },
+        { id: 'statistiques', text: 'Statistiques', icon: BarChart3, path: '/stats', permission: true }
+      ]
     }] : []),
     ...(canViewAdmin() ? [{
       name: 'ADMINISTRATION',
@@ -411,8 +481,9 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const searchResults = searchQuery.length > 1 ? 
     menuSections.flatMap(section => 
       section.items.filter(item => 
-        item.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        section.name.toLowerCase().includes(searchQuery.toLowerCase())
+        item.permission &&
+        (item.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        section.name.toLowerCase().includes(searchQuery.toLowerCase()))
       ).map(item => ({ ...item, section: section.name }))
     ) : [];
 
@@ -539,43 +610,72 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                 <Search className="w-5 h-5" />
               </button>
 
-              {/* Sélecteur d'agence */}
-              {agences.length > 1 && !isPDG && !isDRH && (
+              {/* Sélecteur d'agence - CORRIGÉ pour Code B */}
+              {agences.length > 0 && agenceCourante && (
                 <div className="relative">
                   <button
-                    onClick={() => setIsAgencesMenuOpen(!isAgencesMenuOpen)}
-                    className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary-content/10 text-primary-content hover:bg-primary-content/20 transition-colors text-sm"
+                    onClick={() => canSwitchAgence() && setIsAgencesMenuOpen(!isAgencesMenuOpen)}
+                    className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors text-sm ${
+                      canSwitchAgence() 
+                        ? 'bg-primary-content/10 text-primary-content hover:bg-primary-content/20 cursor-pointer' 
+                        : 'bg-primary-content/5 text-primary-content/80 cursor-default'
+                    }`}
+                    disabled={!canSwitchAgence()}
                   >
                     <Store className="w-4 h-4" />
-                    <span className="max-w-24 truncate">{agenceCourante?.nom || 'Agence'}</span>
-                    <ChevronDown className="w-3 h-3" />
+                    <span className="max-w-32 truncate">{agenceCourante.nom}</span>
+                    {canSwitchAgence() && <ChevronDown className="w-3 h-3" />}
                   </button>
                   
-                  {isAgencesMenuOpen && (
+                  {canSwitchAgence() && isAgencesMenuOpen && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setIsAgencesMenuOpen(false)}></div>
-                      <div className="absolute right-0 mt-2 w-72 bg-base-100 rounded-xl shadow-xl z-50 border border-primary/20 overflow-hidden">
+                      <div className="absolute right-0 mt-2 w-80 bg-base-100 rounded-xl shadow-xl z-50 border border-primary/20 overflow-hidden">
                         <div className="p-3 bg-gradient-to-r from-primary/10 to-transparent border-b border-primary/20">
-                          <p className="text-xs font-semibold text-primary">MES AGENCES</p>
+                          <p className="text-xs font-semibold text-primary">
+                            {isPDG || isDRH ? 'TOUTES LES AGENCES' : 'MES AGENCES'}
+                          </p>
                         </div>
-                        {agences.map((agence) => (
-                          <button
-                            key={agence.id}
-                            onClick={() => changerAgence(agence)}
-                            className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-primary/10 transition-colors text-left ${
-                              agenceCourante?.id === agence.id ? 'bg-primary/10 border-l-3 border-primary' : ''
-                            }`}
-                          >
-                            <Store className={`w-5 h-5 ${agence.type_agence === 'principale' ? 'text-primary' : 'text-accent'}`} />
-                            <div className="flex-1">
-                              <p className="text-sm font-medium text-base-content">{agence.nom}</p>
-                              <p className="text-xs text-base-content/40">{agence.ville || agence.type_display}</p>
-                            </div>
-                            {agenceCourante?.id === agence.id && (
-                              <CheckCircle className="w-4 h-4 text-success" />
-                            )}
-                          </button>
-                        ))}
+                        <div className="max-h-96 overflow-y-auto">
+                          {agences.map((agence) => {
+                            const isCurrent = agenceCourante?.id === agence.id;
+                            const hasAccess = agence.hasAccess || isPDG || isDRH;
+                            
+                            return (
+                              <button
+                                key={agence.id}
+                                onClick={() => changerAgence(agence)}
+                                disabled={!hasAccess && !isCurrent}
+                                className={`w-full flex items-center gap-3 px-4 py-3 transition-colors text-left ${
+                                  isCurrent 
+                                    ? 'bg-primary/10 border-l-3 border-primary' 
+                                    : hasAccess 
+                                      ? 'hover:bg-primary/5' 
+                                      : 'opacity-50 cursor-not-allowed'
+                                }`}
+                              >
+                                <Store className={`w-5 h-5 ${
+                                  agence.type_agence === 'principale' ? 'text-primary' : 'text-accent'
+                                }`} />
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-sm font-medium text-base-content">{agence.nom}</p>
+                                    {!hasAccess && !isCurrent && (
+                                      <span className="badge badge-neutral badge-xs">Non accessible</span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-base-content/40">{agence.ville || agence.type_display}</p>
+                                </div>
+                                {isCurrent && (
+                                  <CheckCircle className="w-4 h-4 text-success" />
+                                )}
+                                {!hasAccess && !isCurrent && (
+                                  <AlertTriangle className="w-4 h-4 text-warning" />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     </>
                   )}
@@ -732,7 +832,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         </div>
       </nav>
 
-      {/* Sidebar Desktop */}
+      {/* Sidebar Desktop - (identique à l'original, gardée intacte) */}
       <aside className={`
         fixed left-0 top-16 bottom-0 z-30
         bg-base-100 shadow-xl border-r border-primary/20
@@ -778,7 +878,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
             </div>
           </div>
 
-          {/* Menu de navigation avec barre verticale */}
+          {/* Menu de navigation */}
           <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
             {menuSections.map((section, idx) => {
               const visibleItems = section.items.filter(item => item.permission);
@@ -810,7 +910,6 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                     )}
                   </button>
                   
-                  {/* BARRE VERTICALE COLORÉE */}
                   {sidebarOpen && isOpen && (
                     <div className="ml-6 mt-2 space-y-1 border-l-2 border-primary pl-4">
                       {visibleItems.map((item) => {
@@ -869,7 +968,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         <div className="p-4 sm:p-6">
           {isLoading ? (
             <div className="flex items-center justify-center h-64">
-              <div className="loading loading-spinner loading-lg text-primary"></div>
+              <span className="loading loading-spinner loading-lg text-primary"></span>
             </div>
           ) : (
             content

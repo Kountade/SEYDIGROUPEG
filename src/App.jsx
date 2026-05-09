@@ -59,6 +59,9 @@ import Documents from './components/grh/Documents'
 import PerformanceReviews from './components/grh/PerformanceReviews'
 import ExpenseClaims from './components/grh/ExpenseClaims'
 import Trainings from './components/grh/Trainings'
+import Transferts from './components/inventaire/Transferts'
+import TransfertForm from './components/inventaire/TransfertForm'
+import TransfertDetail from './components/inventaire/TransfertDetail'
 
 
 import AuditLog from './components/audit/AuditLog'
@@ -121,6 +124,12 @@ function App() {
                         <Route path="/produits/nouveau" element={<ProductForm />} />
                         <Route path="/produits/:id" element={<ProductDetails />} />
                         <Route path="/produits/:id/modifier" element={<ProductForm />} />
+
+  {/* Gestion des transfert */}
+
+                        <Route path="/transferts" element={<Transferts />} />
+<Route path="/transferts/nouveau" element={<TransfertForm />} />
+<Route path="/transferts/:id" element={<TransfertDetail />} />
 
 
           {/* Gestion des UTILISATEURS */}
