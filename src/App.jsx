@@ -62,6 +62,13 @@ import Trainings from './components/grh/Trainings'
 import Transferts from './components/inventaire/Transferts'
 import TransfertForm from './components/inventaire/TransfertForm'
 import TransfertDetail from './components/inventaire/TransfertDetail'
+import Entrepots from './components/inventaire/entrepots'
+import EntrepotDetail from './components/inventaire/EntrepotDetail'
+import EntrepotForm from './components/inventaire/EntrepotForm'
+import MouvementsStock from './components/inventaire/MouvementsStock'
+import MouvementStockDetail from './components/inventaire/MouvementStockDetail'
+import Stocks from './components/inventaire/Stocks'
+import StockDetail from './components/inventaire/StockDetail'
 
 
 import AuditLog from './components/audit/AuditLog'
@@ -131,6 +138,19 @@ function App() {
 <Route path="/transferts/nouveau" element={<TransfertForm />} />
 <Route path="/transferts/:id" element={<TransfertDetail />} />
 
+ {/* Gestion des entrepot */}
+<Route path="/entrepots" element={<Entrepots />} />
+<Route path="/entrepots/:id" element={<EntrepotDetail />} />
+<Route path="/entrepots/nouveau" element={<EntrepotForm />} />
+<Route path="/entrepots/:id/modifier" element={<EntrepotForm />} />
+{/* Gestion des MOUvements de stock */}
+<Route path="/mouvements-stock" element={<MouvementsStock />} />
+<Route path="/mouvements-stock/:id" element={<MouvementStockDetail />} />
+
+
+ {/* Gestion des stock */}
+<Route path="/stocks" element={<Stocks />} />
+<Route path="/stocks/:id" element={<StockDetail />} />
 
           {/* Gestion des UTILISATEURS */}
                         <Route path="/utilisateurs" element={<Utilisateurs />} />
