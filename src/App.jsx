@@ -69,7 +69,8 @@ import MouvementsStock from './components/inventaire/MouvementsStock'
 import MouvementStockDetail from './components/inventaire/MouvementStockDetail'
 import Stocks from './components/inventaire/Stocks'
 import StockDetail from './components/inventaire/StockDetail'
-
+import AddStockToWarehouse from './components/inventaire/AddStockToWarehouse'
+import ProductPricingManager from './components/logistique/ProductPricingManager'
 
 import AuditLog from './components/audit/AuditLog'
 
@@ -130,7 +131,9 @@ function App() {
                         <Route path="/produits" element={<Products />} />
                         <Route path="/produits/nouveau" element={<ProductForm />} />
                         <Route path="/produits/:id" element={<ProductDetails />} />
+                        <Route path="/produits/:id/prix" element={<ProductPricingManager />} />
                         <Route path="/produits/:id/modifier" element={<ProductForm />} />
+                      
 
   {/* Gestion des transfert */}
 
@@ -149,6 +152,8 @@ function App() {
 
 
  {/* Gestion des stock */}
+
+ <Route path="/stocks/ajouter" element={<AddStockToWarehouse />} />
 <Route path="/stocks" element={<Stocks />} />
 <Route path="/stocks/:id" element={<StockDetail />} />
 

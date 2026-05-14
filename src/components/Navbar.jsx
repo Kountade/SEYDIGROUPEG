@@ -52,7 +52,8 @@ import {
   MoveHorizontal,
   GraduationCap,
   BarChart3,
-  RefreshCw
+  RefreshCw,
+  Plus
 } from 'lucide-react';
 
 import logo from '../assets/logo.svg';
@@ -402,25 +403,26 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         { id: 'alertes', text: 'Alertes', icon: AlertTriangle, path: '/purchase-alerts', permission: canViewPurchases(), badge: alertsCount }
       ]
     },
-    {
-      name: 'STOCK & LOGISTIQUE',
-      icon: Package,
-      permission: canViewInventory() || canViewDeliveries(),
-      items: [
-        { id: 'categories', text: 'Catégories', icon: Tags, path: '/categories', permission: canViewInventory() },
-        { id: 'produits', text: 'Produits', icon: Package, path: '/produits', permission: canViewInventory() },
-        { id: 'variants', text: 'Variantes', icon: Grid3x3, path: '/variants', permission: canViewInventory() },
-        { id: 'marques', text: 'Marques', icon: Award, path: '/brands', permission: canViewInventory() },
-        { id: 'unites', text: 'Unités', icon: Ruler, path: '/units', permission: canViewInventory() },
-        { id: 'reception', text: 'Réception stock', icon: Truck, path: '/stock-receipt', permission: canViewInventory() },
-        { id: 'stocks', text: 'Stocks', icon: Boxes, path: '/stocks', permission: canViewInventory(), badge: stocksFaibles },
-        { id: 'entrepots', text: 'Entrepôts', icon: Warehouse, path: '/entrepots', permission: canViewInventory() },
-        { id: 'mouvements', text: 'Mouvements', icon: TrendingUp, path: '/mouvements-stock', permission: canViewInventory() },
-        { id: 'transferts', text: 'Transferts', icon: MoveHorizontal, path: '/transferts', permission: canViewInventory() },
-        { id: 'inventaire', text: 'Inventaire', icon: ClipboardCheck, path: '/inventaire', permission: canViewInventory() },
-        { id: 'livraisons', text: 'Livraisons', icon: Truck, path: '/livraisons', permission: canViewDeliveries() }
-      ]
-    },
+   {
+  name: 'STOCK & LOGISTIQUE',
+  icon: Package,
+  permission: canViewInventory() || canViewDeliveries(),
+  items: [
+    { id: 'categories', text: 'Catégories', icon: Tags, path: '/categories', permission: canViewInventory() },
+    { id: 'produits', text: 'Produits', icon: Package, path: '/produits', permission: canViewInventory() },
+    { id: 'variants', text: 'Variantes', icon: Grid3x3, path: '/variants', permission: canViewInventory() },
+    { id: 'marques', text: 'Marques', icon: Award, path: '/brands', permission: canViewInventory() },
+    { id: 'unites', text: 'Unités', icon: Ruler, path: '/units', permission: canViewInventory() },
+    { id: 'reception', text: 'Réception stock', icon: Truck, path: '/stock-receipt', permission: canViewInventory() },
+    { id: 'stocks', text: 'Stocks', icon: Boxes, path: '/stocks', permission: canViewInventory() },
+    { id: 'add-stock', text: 'Ajouter du stock', icon: Package, path: '/stocks/ajouter', permission: canViewInventory() }, // ← Utilise Package au lieu de Plus si Plus n'est pas disponible
+    { id: 'entrepots', text: 'Entrepôts', icon: Warehouse, path: '/entrepots', permission: canViewInventory() },
+    { id: 'mouvements', text: 'Mouvements', icon: TrendingUp, path: '/mouvements-stock', permission: canViewInventory() },
+    { id: 'transferts', text: 'Transferts', icon: MoveHorizontal, path: '/transferts', permission: canViewInventory() },
+    { id: 'inventaire', text: 'Inventaire', icon: ClipboardCheck, path: '/inventaire', permission: canViewInventory() },
+    { id: 'livraisons', text: 'Livraisons', icon: Truck, path: '/livraisons', permission: canViewDeliveries() }
+  ]
+},
     ...(canViewHR() ? [{
       name: 'RESSOURCES HUMAINES',
       icon: Users,

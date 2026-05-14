@@ -1,4 +1,4 @@
-// src/components/ProductDetails.jsx
+// src/components/logistique/ProductDetails.jsx
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
@@ -15,14 +15,14 @@ import {
   MapPin,
   Weight,
   Box,
-  Tag,
   Building2,
   Layers,
   AlertCircle,
   X,
-  RefreshCw,
-  Image as ImageIcon,
-  Hash
+  Hash,
+  Warehouse,
+  Plus,
+  RefreshCw
 } from 'lucide-react'
 
 const ProductDetails = () => {
@@ -32,9 +32,13 @@ const ProductDetails = () => {
   const [product, setProduct] = useState(null)
   const [images, setImages] = useState([])
   const [variants, setVariants] = useState([])
+  const [pricesByWarehouse, setPricesByWarehouse] = useState([])
+  const [stocksByWarehouse, setStocksByWarehouse] = useState([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' })
   const [selectedImage, setSelectedImage] = useState(null)
+  const [showWarehousePrices, setShowWarehousePrices] = useState(true)
 
   const productTypes = { 
     simple: 'Simple', 
@@ -45,10 +49,15 @@ const ProductDetails = () => {
 
   const formatNumber = (number) => {
     if (typeof number !== 'number') number = parseFloat(number) || 0
+    return new Intl.NumberFormat('fr-FR').format(number)
+  }
+
+  const formatPrice = (price) => {
+    if (!price) return '0 FCFA'
     return new Intl.NumberFormat('fr-FR', { 
-      minimumFractionDigits: 2, 
-      maximumFractionDigits: 2 
-    }).format(number)
+      minimumFractionDigits: 0, 
+      maximumFractionDigits: 0 
+    }).format(price) + ' FCFA'
   }
 
   const showNotification = (message, type = 'success') => {
@@ -59,14 +68,18 @@ const ProductDetails = () => {
   const fetchData = async () => {
     setLoading(true)
     try {
-      const [prodRes, imgRes, varRes] = await Promise.all([
+      const [prodRes, imgRes, varRes, pricesRes, stocksRes] = await Promise.all([
         AxiosInstance.get(`/products/${id}/`),
         AxiosInstance.get(`/products/${id}/images/`).catch(() => ({ data: [] })),
-        AxiosInstance.get(`/products/${id}/variants/`).catch(() => ({ data: [] }))
+        AxiosInstance.get(`/products/${id}/variants/`).catch(() => ({ data: [] })),
+        AxiosInstance.get(`/products/${id}/prices/`).catch(() => ({ data: [] })),
+        AxiosInstance.get(`/warehouse-stocks/by_product/?product_id=${id}`).catch(() => ({ data: [] }))
       ])
       setProduct(prodRes.data)
       setImages(imgRes.data || [])
       setVariants(varRes.data || [])
+      setPricesByWarehouse(pricesRes.data || [])
+      setStocksByWarehouse(stocksRes.data || [])
     } catch (error) {
       console.error(error)
       showNotification('Erreur de chargement du produit', 'error')
@@ -75,30 +88,26 @@ const ProductDetails = () => {
     }
   }
 
+  const refreshData = async () => {
+    setRefreshing(true)
+    await fetchData()
+    setRefreshing(false)
+    showNotification('Données actualisées', 'success')
+  }
+
   useEffect(() => { 
     fetchData() 
   }, [id])
 
-  const calculateMargin = () => {
-    if (!product) return { amount: 0, percentage: 0 }
-    const purchase = parseFloat(product.purchase_price) || 0
-    const sale = parseFloat(product.sale_price) || 0
-    const margin = sale - purchase
-    const percentage = purchase > 0 ? (margin / purchase) * 100 : 0
-    return { amount: margin, percentage }
-  }
-
-  const margin = calculateMargin()
   const mainImage = product?.main_image || (images.length > 0 ? images.find(img => img.is_main)?.image : null)
+  const totalStock = stocksByWarehouse.reduce((sum, s) => sum + (s.quantity || 0), 0)
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-200px)]">
-        <div className="text-center space-y-4">
-          <span className="loading loading-spinner loading-lg text-primary"></span>
-          <p className="text-base font-medium text-base-content/70 animate-pulse">
-            Chargement du produit...
-          </p>
+      <div className="flex items-center justify-center min-h-screen bg-base-100">
+        <div className="text-center">
+          <div className="loading loading-spinner loading-lg text-primary"></div>
+          <p className="mt-4 text-base-content/60">Chargement du produit...</p>
         </div>
       </div>
     )
@@ -106,14 +115,13 @@ const ProductDetails = () => {
 
   if (!product) {
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-200px)]">
+      <div className="flex items-center justify-center min-h-screen bg-base-100">
         <div className="text-center">
-          <Package className="w-16 h-16 mx-auto mb-4 text-base-content/30" />
-          <p className="text-lg font-medium text-base-content/50">Produit non trouvé</p>
-          <button 
-            onClick={() => navigate('/produits')}
-            className="btn btn-primary btn-sm mt-4"
-          >
+          <div className="w-20 h-20 mx-auto rounded-full bg-error/10 flex items-center justify-center mb-4">
+            <Package className="w-10 h-10 text-error" />
+          </div>
+          <h2 className="text-xl font-bold">Produit non trouvé</h2>
+          <button onClick={() => navigate('/produits')} className="btn btn-primary btn-sm mt-6">
             Retour à la liste
           </button>
         </div>
@@ -122,340 +130,213 @@ const ProductDetails = () => {
   }
 
   return (
-    <div className="space-y-4 lg:space-y-6 p-3 lg:p-6">
-      {/* Notification */}
-      {notification.show && (
-        <div className="fixed top-16 lg:top-20 right-3 lg:right-6 z-50 animate-slideDown w-[calc(100%-1.5rem)] lg:w-auto max-w-md">
-          <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-lg`}>
-            {notification.type === 'success' ? (
-              <CheckCircle className="w-4 h-4 lg:w-5 lg:h-5" />
-            ) : (
-              <AlertCircle className="w-4 h-4 lg:w-5 lg:h-5" />
-            )}
-            <span className="text-sm lg:text-base font-medium">{notification.message}</span>
+    <div className="min-h-screen bg-base-100">
+      <div className="p-4 lg:p-8">
+        {/* Notification */}
+        {notification.show && (
+          <div className="fixed top-20 right-6 z-50 animate-slideDown">
+            <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-lg`}>
+              {notification.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+              <span>{notification.message}</span>
+              <button className="btn btn-ghost btn-xs" onClick={() => setNotification({ ...notification, show: false })}>
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* En-tête */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
+          <div className="flex items-center gap-3">
+            <button onClick={() => navigate('/produits')} className="btn btn-ghost btn-sm btn-circle">
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <div>
+              <h1 className="text-2xl lg:text-3xl font-bold text-primary">{product.name}</h1>
+              <div className="flex flex-wrap items-center gap-2 mt-1">
+                <span className="badge badge-outline gap-1">
+                  <Hash className="w-3 h-3" /> {product.reference}
+                </span>
+                <span className="badge badge-primary badge-sm">
+                  {productTypes[product.product_type] || 'Simple'}
+                </span>
+                {!product.is_active && (
+                  <span className="badge badge-error badge-sm gap-1">
+                    <XCircle className="w-3 h-3" /> Inactif
+                  </span>
+                )}
+                {product.is_featured && (
+                  <span className="badge badge-warning badge-sm gap-1">★ En vedette</span>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex gap-2">
+            <button onClick={refreshData} disabled={refreshing} className="btn btn-outline btn-sm gap-2">
+              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+              Actualiser
+            </button>
             <button 
-              className="btn btn-ghost btn-xs btn-circle"
-              onClick={() => setNotification({ ...notification, show: false })}
+              onClick={() => navigate(`/produits/${id}/prix`)}
+              className="btn btn-outline btn-primary btn-sm gap-2"
             >
-              <X className="w-3 h-3 lg:w-4 lg:h-4" />
+              <DollarSign className="w-4 h-4" />
+              Prix par entrepôt
+            </button>
+            <button 
+              onClick={() => navigate(`/produits/${id}/modifier`)}
+              className="btn btn-primary btn-sm gap-2"
+            >
+              <Edit className="w-4 h-4" />
+              Modifier
             </button>
           </div>
         </div>
-      )}
 
-      {/* En-tête */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={() => navigate('/produits')}
-            className="btn btn-ghost btn-sm btn-circle"
-          >
-            <ArrowLeft className="w-4 h-4 lg:w-5 lg:h-5" />
-          </button>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-xl lg:text-2xl font-bold text-base-content truncate">
-              {product.name}
-            </h1>
-            <div className="flex flex-wrap items-center gap-2 mt-1">
-              <span className="badge badge-outline gap-1">
-                <Hash className="w-3 h-3" />
-                {product.reference}
-              </span>
-              <span className={`badge ${product.product_type === 'simple' ? 'badge-primary' : 'badge-secondary'} badge-sm`}>
-                {productTypes[product.product_type] || 'Simple'}
-              </span>
-              {!product.is_active && (
-                <span className="badge badge-error badge-sm gap-1">
-                  <XCircle className="w-3 h-3" />
-                  Inactif
-                </span>
-              )}
-              {product.is_featured && (
-                <span className="badge badge-warning badge-sm gap-1">
-                  ★ En avant
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-        
-        <button 
-          onClick={() => navigate(`/produits/${id}/modifier`)}
-          className="btn btn-primary btn-sm lg:btn-md gap-2"
-        >
-          <Edit className="w-3 h-3 lg:w-4 lg:h-4" />
-          Modifier le produit
-        </button>
-      </div>
-
-      {/* Contenu principal */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
-        {/* Colonne gauche - Image et description */}
-        <div className="lg:col-span-1 space-y-4 lg:space-y-6">
-          {/* Image principale */}
-          <div className="bg-base-100 rounded-xl lg:rounded-2xl shadow-sm border border-base-300 overflow-hidden">
-            <div className="p-4 lg:p-6">
-              {mainImage ? (
-                <div className="relative">
+        {/* Contenu principal - Version simplifiée pour éviter les erreurs */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Colonne gauche */}
+          <div className="lg:col-span-1">
+            <div className="card bg-base-200 shadow-xl">
+              <div className="card-body">
+                {mainImage ? (
                   <img 
                     src={mainImage} 
                     alt={product.name}
-                    className="w-full h-64 lg:h-80 object-contain rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                    className="w-full h-64 object-contain rounded-lg cursor-pointer"
                     onClick={() => setSelectedImage(mainImage)}
                   />
-                  {images.length > 1 && (
-                    <span className="absolute bottom-2 right-2 badge badge-neutral">
-                      +{images.length - 1} images
-                    </span>
-                  )}
-                </div>
-              ) : (
-                <div className="w-full h-64 lg:h-80 bg-base-200 rounded-lg flex items-center justify-center">
-                  <div className="text-center">
-                    <Package className="w-16 h-16 mx-auto mb-2 text-base-content/30" />
-                    <p className="text-base-content/50">Aucune image</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Description */}
-          <div className="bg-base-100 rounded-xl lg:rounded-2xl shadow-sm border border-base-300 overflow-hidden">
-            <div className="p-4 lg:p-6 border-b border-base-300 bg-base-200/50">
-              <div className="flex items-center gap-2">
-                <Info className="w-4 h-4 lg:w-5 lg:h-5 text-info" />
-                <h2 className="text-base lg:text-lg font-bold text-base-content">Description</h2>
-              </div>
-            </div>
-            <div className="p-4 lg:p-6">
-              {product.description ? (
-                <p className="text-sm lg:text-base text-base-content/80 whitespace-pre-wrap">
-                  {product.description}
-                </p>
-              ) : (
-                <p className="text-sm text-base-content/50 italic">
-                  Aucune description disponible
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* Galerie d'images */}
-          {images.length > 0 && (
-            <div className="bg-base-100 rounded-xl lg:rounded-2xl shadow-sm border border-base-300 overflow-hidden">
-              <div className="p-4 lg:p-6 border-b border-base-300 bg-base-200/50">
-                <div className="flex items-center gap-2">
-                  <ImageIcon className="w-4 h-4 lg:w-5 lg:h-5 text-secondary" />
-                  <h2 className="text-base lg:text-lg font-bold text-base-content">
-                    Galerie ({images.length})
-                  </h2>
-                </div>
-              </div>
-              <div className="p-4 lg:p-6">
-                <div className="grid grid-cols-3 gap-2">
-                  {images.slice(0, 6).map((img) => (
-                    <img
-                      key={img.id}
-                      src={img.image}
-                      alt={img.alt_text || product.name}
-                      className="w-full h-20 lg:h-24 object-cover rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
-                      onClick={() => setSelectedImage(img.image)}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Colonne droite - Détails */}
-        <div className="lg:col-span-2 space-y-4 lg:space-y-6">
-          {/* Informations générales */}
-          <div className="bg-base-100 rounded-xl lg:rounded-2xl shadow-sm border border-base-300 overflow-hidden">
-            <div className="p-4 lg:p-6 border-b border-base-300 bg-base-200/50">
-              <div className="flex items-center gap-2">
-                <Info className="w-4 h-4 lg:w-5 lg:h-5 text-primary" />
-                <h2 className="text-base lg:text-lg font-bold text-base-content">
-                  Informations générales
-                </h2>
-              </div>
-            </div>
-            <div className="p-4 lg:p-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs text-base-content/60 flex items-center gap-1 mb-1">
-                    <Folder className="w-3 h-3" />
-                    Catégorie
-                  </label>
-                  <p className="font-medium text-sm lg:text-base">
-                    {product.category_name || product.category_details?.name || '-'}
-                  </p>
-                </div>
-                
-                <div>
-                  <label className="text-xs text-base-content/60 flex items-center gap-1 mb-1">
-                    <Building2 className="w-3 h-3" />
-                    Marque
-                  </label>
-                  <p className="font-medium text-sm lg:text-base">
-                    {product.brand_name || product.brand_details?.name || '-'}
-                  </p>
-                </div>
-                
-                <div>
-                  <label className="text-xs text-base-content/60 flex items-center gap-1 mb-1">
-                    <Box className="w-3 h-3" />
-                    Unité
-                  </label>
-                  <p className="font-medium text-sm lg:text-base">
-                    {product.unit_name} ({product.unit_abbrev || product.unit_details?.abbreviation})
-                  </p>
-                </div>
-                
-                <div>
-                  <label className="text-xs text-base-content/60 flex items-center gap-1 mb-1">
-                    <Barcode className="w-3 h-3" />
-                    Code-barres
-                  </label>
-                  <p className="font-medium text-sm lg:text-base font-mono">
-                    {product.barcode || '-'}
-                  </p>
-                </div>
-                
-                <div>
-                  <label className="text-xs text-base-content/60 flex items-center gap-1 mb-1">
-                    <MapPin className="w-3 h-3" />
-                    Emplacement
-                  </label>
-                  <p className="font-medium text-sm lg:text-base">
-                    {product.location || '-'}
-                  </p>
-                </div>
-                
-                <div>
-                  <label className="text-xs text-base-content/60 flex items-center gap-1 mb-1">
-                    <Weight className="w-3 h-3" />
-                    Poids / Volume
-                  </label>
-                  <p className="font-medium text-sm lg:text-base">
-                    {product.weight ? `${product.weight} kg` : '-'} / {product.volume ? `${product.volume} m³` : '-'}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Prix et Stock */}
-          <div className="bg-base-100 rounded-xl lg:rounded-2xl shadow-sm border border-base-300 overflow-hidden">
-            <div className="p-4 lg:p-6 border-b border-base-300 bg-base-200/50">
-              <div className="flex items-center gap-2">
-                <DollarSign className="w-4 h-4 lg:w-5 lg:h-5 text-success" />
-                <h2 className="text-base lg:text-lg font-bold text-base-content">
-                  Prix et Stock
-                </h2>
-              </div>
-            </div>
-            <div className="p-4 lg:p-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 lg:gap-6">
-                {/* Prix */}
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs text-base-content/60">Prix d'achat (HT)</label>
-                    <p className="text-lg font-medium">{formatNumber(product.purchase_price)} €</p>
-                  </div>
-                  
-                  <div>
-                    <label className="text-xs text-base-content/60">Prix de vente (HT)</label>
-                    <p className="text-2xl lg:text-3xl font-bold text-primary">
-                      {formatNumber(product.sale_price)} €
-                    </p>
-                  </div>
-                  
-                  {product.wholesale_price && (
-                    <div>
-                      <label className="text-xs text-base-content/60">Prix de gros</label>
-                      <p className="text-base">{formatNumber(product.wholesale_price)} €</p>
-                    </div>
-                  )}
-                  
-                  <div>
-                    <label className="text-xs text-base-content/60">TVA</label>
-                    <p className="text-base">{product.tax_rate}%</p>
-                  </div>
-                </div>
-
-                {/* Marge et Stock */}
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs text-base-content/60">Marge</label>
-                    <p className="text-lg font-semibold text-success">
-                      {formatNumber(margin.amount)} €
-                    </p>
-                    <span className="badge badge-success badge-sm">
-                      {margin.percentage.toFixed(2)}%
-                    </span>
-                  </div>
-                  
-                  <div className="divider my-2"></div>
-                  
-                  <div>
-                    <label className="text-xs text-base-content/60">Stock actuel</label>
-                    <div className="flex items-center gap-2">
-                      <p className={`text-2xl lg:text-3xl font-bold ${product.is_low_stock ? 'text-warning' : 'text-base-content'}`}>
-                        {product.stock_quantity || 0}
-                      </p>
-                      <span className="text-sm text-base-content/60">
-                        {product.unit_abbrev || ''}
-                      </span>
-                    </div>
-                  </div>
-                  
-                  {product.is_low_stock && (
-                    <div className="alert alert-warning py-2">
-                      <AlertTriangle className="w-4 h-4" />
-                      <span className="text-sm">Stock faible (min: {product.minimum_stock})</span>
-                    </div>
-                  )}
-                  
-                  <div>
-                    <label className="text-xs text-base-content/60">Stock min / max</label>
-                    <p className="text-sm">
-                      {product.minimum_stock || 0} / {product.maximum_stock || '∞'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Variantes */}
-          {product.has_variants && (
-            <div className="bg-base-100 rounded-xl lg:rounded-2xl shadow-sm border border-base-300 overflow-hidden">
-              <div className="p-4 lg:p-6 border-b border-base-300 bg-base-200/50">
-                <div className="flex items-center gap-2">
-                  <Layers className="w-4 h-4 lg:w-5 lg:h-5 text-accent" />
-                  <h2 className="text-base lg:text-lg font-bold text-base-content">
-                    Variantes ({variants.length})
-                  </h2>
-                </div>
-              </div>
-              <div className="p-4 lg:p-6">
-                {variants.length === 0 ? (
-                  <p className="text-sm text-base-content/50 text-center py-4">
-                    Aucune variante définie
-                  </p>
                 ) : (
+                  <div className="w-full h-64 bg-base-300 rounded-lg flex flex-col items-center justify-center">
+                    <Package className="w-16 h-16 text-base-content/30 mb-2" />
+                    <p className="text-base-content/50 text-sm">Aucune image</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="card bg-base-200 shadow-xl mt-6">
+              <div className="card-body">
+                <h2 className="text-lg font-semibold mb-2">Description</h2>
+                <p className="text-base-content/80">
+                  {product.description || 'Aucune description disponible'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Colonne droite */}
+          <div className="lg:col-span-2">
+            {/* Informations générales */}
+            <div className="card bg-base-200 shadow-xl">
+              <div className="card-body">
+                <h2 className="text-lg font-semibold mb-4">Informations générales</h2>
+                <div className="grid grid-cols-2 gap-4">
+                  <div><p className="text-xs text-base-content/60">Catégorie</p><p className="font-medium">{product.category_name || '-'}</p></div>
+                  <div><p className="text-xs text-base-content/60">Marque</p><p className="font-medium">{product.brand_name || '-'}</p></div>
+                  <div><p className="text-xs text-base-content/60">Unité</p><p className="font-medium">{product.unit_abbrev || '-'}</p></div>
+                  <div><p className="text-xs text-base-content/60">Code-barres</p><p className="font-mono">{product.barcode || '-'}</p></div>
+                  <div><p className="text-xs text-base-content/60">Emplacement</p><p>{product.location || '-'}</p></div>
+                  <div><p className="text-xs text-base-content/60">Poids/Volume</p><p>{product.weight ? `${product.weight} kg` : '-'} / {product.volume ? `${product.volume} m³` : '-'}</p></div>
+                </div>
+              </div>
+            </div>
+
+            {/* Stock total */}
+            <div className="card bg-primary/10 shadow-xl mt-6">
+              <div className="card-body text-center">
+                <Package className="w-8 h-8 mx-auto text-primary mb-2" />
+                <p className="text-sm text-base-content/60">Stock total tous entrepôts</p>
+                <p className="text-4xl font-bold text-primary">{formatNumber(totalStock)}</p>
+                <p className="text-xs text-base-content/50">unités</p>
+              </div>
+            </div>
+
+            {/* Bouton pour voir les prix */}
+            <div className="card bg-base-200 shadow-xl mt-6">
+              <div className="card-body">
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <DollarSign className="w-5 h-5 text-success" />
+                    <h2 className="text-lg font-semibold">Prix par entrepôt</h2>
+                  </div>
+                  <button 
+                    className="btn btn-primary btn-sm"
+                    onClick={() => navigate(`/produits/${id}/prix`)}
+                  >
+                    <Plus className="w-3 h-3 mr-1" />
+                    Gérer les prix
+                  </button>
+                </div>
+                
+                {pricesByWarehouse.length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    {pricesByWarehouse.slice(0, 3).map((price) => (
+                      <div key={price.id} className="bg-base-100 rounded-lg p-3">
+                        <div className="flex items-center gap-2">
+                          <Warehouse className="w-4 h-4 text-primary" />
+                          <span className="font-semibold">{price.warehouse_name}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 mt-2 text-sm">
+                          <div>Achat: {formatPrice(price.purchase_price)}</div>
+                          <div>Vente: {formatPrice(price.sale_price)}</div>
+                        </div>
+                      </div>
+                    ))}
+                    {pricesByWarehouse.length > 3 && (
+                      <p className="text-center text-sm text-base-content/50 mt-2">
+                        +{pricesByWarehouse.length - 3} autres entrepôts
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Stock par entrepôt */}
+            <div className="card bg-base-200 shadow-xl mt-6">
+              <div className="card-body">
+                <div className="flex items-center gap-2 mb-4">
+                  <Warehouse className="w-5 h-5 text-secondary" />
+                  <h2 className="text-lg font-semibold">Stock par entrepôt</h2>
+                </div>
+                {stocksByWarehouse.length === 0 ? (
+                  <div className="text-center py-6">
+                    <Package className="w-12 h-12 mx-auto mb-2 text-base-content/30" />
+                    <p className="text-base-content/50">Aucun stock</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {stocksByWarehouse.map((stock, idx) => (
+                      <div key={idx} className="bg-base-100 rounded-lg p-3">
+                        <div className="flex justify-between items-center">
+                          <span className="font-semibold">{stock.warehouse_name}</span>
+                          <span className={`badge ${stock.quantity === 0 ? 'badge-error' : stock.quantity <= 5 ? 'badge-warning' : 'badge-success'}`}>
+                            {stock.quantity === 0 ? 'Rupture' : stock.quantity <= 5 ? 'Faible' : 'Normal'}
+                          </span>
+                        </div>
+                        <p className="text-2xl font-bold text-center my-2">{formatNumber(stock.quantity)}</p>
+                        <p className="text-xs text-center text-base-content/60">unités</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Variantes */}
+            {product.has_variants && variants.length > 0 && (
+              <div className="card bg-base-200 shadow-xl mt-6">
+                <div className="card-body">
+                  <h2 className="text-lg font-semibold mb-4">Variantes ({variants.length})</h2>
                   <div className="overflow-x-auto">
-                    <table className="table table-zebra table-sm lg:table-md">
+                    <table className="table table-sm">
                       <thead>
-                        <tr className="bg-base-200">
+                        <tr className="bg-base-300">
                           <th>SKU</th>
                           <th>Attributs</th>
-                          <th className="text-right">Prix achat</th>
-                          <th className="text-right">Prix vente</th>
-                          <th className="text-center">Stock</th>
-                          <th className="text-center">Statut</th>
+                          <th>Stock</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -463,76 +344,34 @@ const ProductDetails = () => {
                           <tr key={v.id}>
                             <td className="font-mono text-sm">{v.sku}</td>
                             <td>
-                              <div className="flex flex-wrap gap-1">
-                                {Object.entries(v.attributes).map(([key, val]) => (
-                                  <span key={key} className="badge badge-sm">
-                                    {key}: {val}
-                                  </span>
-                                ))}
-                              </div>
+                              {Object.entries(v.attributes).map(([key, val]) => (
+                                <span key={key} className="badge badge-sm mr-1">{key}: {val}</span>
+                              ))}
                             </td>
-                            <td className="text-right text-sm">{formatNumber(v.purchase_price)} €</td>
-                            <td className="text-right text-sm font-semibold text-primary">
-                              {formatNumber(v.sale_price)} €
-                            </td>
-                            <td className="text-center text-sm">{v.stock_quantity}</td>
-                            <td className="text-center">
-                              {v.is_active ? (
-                                <CheckCircle className="w-4 h-4 text-success inline" />
-                              ) : (
-                                <XCircle className="w-4 h-4 text-error inline" />
-                              )}
-                            </td>
+                            <td>{v.stock_quantity}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
-                )}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Modal pour afficher l'image en grand */}
+      {/* Modal image */}
       {selectedImage && (
         <div className="modal modal-open" onClick={() => setSelectedImage(null)}>
           <div className="modal-box max-w-4xl p-2" onClick={(e) => e.stopPropagation()}>
-            <button 
-              className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2 z-10"
-              onClick={() => setSelectedImage(null)}
-            >
+            <button className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" onClick={() => setSelectedImage(null)}>
               <X className="w-4 h-4" />
             </button>
-            <img 
-              src={selectedImage} 
-              alt="Aperçu" 
-              className="w-full h-auto max-h-[80vh] object-contain rounded-lg"
-            />
+            <img src={selectedImage} alt="Aperçu" className="w-full h-auto max-h-[80vh] object-contain" />
           </div>
         </div>
       )}
-
-      {/* Barre d'actions flottante pour mobile */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-base-100 border-t border-base-300 p-3 shadow-lg z-40">
-        <div className="flex gap-2">
-          <button 
-            onClick={() => navigate('/produits')}
-            className="btn btn-outline btn-sm flex-1"
-          >
-            <ArrowLeft className="w-3 h-3" />
-            Retour
-          </button>
-          <button 
-            onClick={() => navigate(`/produits/${id}/modifier`)}
-            className="btn btn-primary btn-sm flex-1"
-          >
-            <Edit className="w-3 h-3" />
-            Modifier
-          </button>
-        </div>
-      </div>
     </div>
   )
 }
