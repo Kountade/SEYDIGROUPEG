@@ -1,487 +1,405 @@
 // src/pages/stocks/Stocks.jsx
-import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import AxiosInstance from '../AxiosInstance'
 import {
-  Package, Search, Filter, RefreshCw, AlertCircle, 
-  TrendingUp, TrendingDown, Eye, Box, Building2,
-  DollarSign, ChevronLeft, ChevronRight, Download,
-  Printer, X, CheckCircle, Clock, Truck
-} from 'lucide-react';
-import AxiosInstance from '../AxiosInstance';
+  Plus, Edit, Trash2, Search, RefreshCw, Filter, X,
+  AlertCircle, CheckCircle, Package, Eye, ChevronLeft,
+  ChevronRight, AlertTriangle, ArrowUpDown, ChevronUp,
+  ChevronDown, Barcode, DollarSign, Box
+} from 'lucide-react'
 
 const Stocks = () => {
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const navigate = useNavigate()
+  const [products, setProducts] = useState([])
+  const [categories, setCategories] = useState([])
+  const [brands, setBrands] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [filterCategory, setFilterCategory] = useState('')
+  const [filterBrand, setFilterBrand] = useState('')
+  const [filterStockStatus, setFilterStockStatus] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage, setItemsPerPage] = useState(10)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [productToDelete, setProductToDelete] = useState(null)
+  const [notification, setNotification] = useState({ show: false, message: '', type: 'success' })
+  const [sortField, setSortField] = useState('name')
+  const [sortDirection, setSortDirection] = useState('asc')
+  const [showMobileFilters, setShowMobileFilters] = useState(false)
   const [stats, setStats] = useState({
-    total_products: 0,
-    total_value: 0,
-    low_stock_count: 0,
-    out_of_stock_count: 0
-  });
-  
-  const [filters, setFilters] = useState({
-    search: '',
-    category: '',
-    stock_status: '',
-    min_stock: '',
-    max_stock: ''
-  });
-  const [showFilters, setShowFilters] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalItems, setTotalItems] = useState(0);
-  const [categories, setCategories] = useState([]);
-  const itemsPerPage = 20;
-
-  // Récupérer les produits
-  const fetchProducts = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams();
-      params.append('page', currentPage);
-      params.append('page_size', itemsPerPage);
-      if (filters.search) params.append('search', filters.search);
-      if (filters.category) params.append('category', filters.category);
-      if (filters.stock_status) {
-        if (filters.stock_status === 'low') params.append('is_low_stock', 'true');
-        if (filters.stock_status === 'out') params.append('stock_quantity', '0');
-      }
-      if (filters.min_stock) params.append('min_stock', filters.min_stock);
-      if (filters.max_stock) params.append('max_stock', filters.max_stock);
-      
-      const response = await AxiosInstance.get(`/produits/?${params.toString()}`);
-      
-      let data = [];
-      if (response.data.results) {
-        data = response.data.results;
-        setTotalPages(Math.ceil(response.data.count / itemsPerPage));
-        setTotalItems(response.data.count);
-      } else if (Array.isArray(response.data)) {
-        data = response.data;
-        setTotalPages(1);
-        setTotalItems(data.length);
-      }
-      
-      setProducts(data);
-      calculateStats(data);
-      
-    } catch (error) {
-      console.error('Erreur:', error);
-      setError('Impossible de charger les produits');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Récupérer les catégories
-  const fetchCategories = async () => {
-    try {
-      const response = await AxiosInstance.get('/categories/');
-      setCategories(response.data);
-    } catch (error) {
-      console.error('Erreur chargement catégories:', error);
-    }
-  };
-
-  // Calculer les statistiques
-  const calculateStats = (data) => {
-    const newStats = {
-      total_products: data.length,
-      total_value: 0,
-      low_stock_count: 0,
-      out_of_stock_count: 0
-    };
-    
-    data.forEach(product => {
-      newStats.total_value += (product.stock_quantity || 0) * (product.purchase_price || 0);
-      if (product.is_low_stock) newStats.low_stock_count++;
-      if (product.stock_quantity === 0) newStats.out_of_stock_count++;
-    });
-    
-    setStats(newStats);
-  };
-
-  useEffect(() => {
-    fetchProducts();
-    fetchCategories();
-  }, [currentPage, filters.search, filters.category, filters.stock_status]);
-
-  const resetFilters = () => {
-    setFilters({
-      search: '',
-      category: '',
-      stock_status: '',
-      min_stock: '',
-      max_stock: ''
-    });
-    setCurrentPage(1);
-  };
+    total: 0,
+    active: 0,
+    lowStock: 0,
+    outOfStock: 0,
+    totalValue: 0
+  })
 
   const formatCurrency = (amount) => {
-    if (!amount) return '0 FCFA';
-    return Math.round(amount).toLocaleString() + ' FCFA';
-  };
+    if (!amount && amount !== 0) return '0 FCFA'
+    return Math.round(parseFloat(amount)).toLocaleString() + ' FCFA'
+  }
 
-  const getStockStatus = (product) => {
-    if (product.stock_quantity === 0) {
-      return { label: 'Rupture', color: 'error', icon: AlertCircle };
+  const fetchData = async () => {
+    setLoading(true)
+    try {
+      const [prodRes, catRes, brandRes] = await Promise.all([
+        AxiosInstance.get('/products/'),
+        AxiosInstance.get('/categories/'),
+        AxiosInstance.get('/brands/')
+      ])
+      
+      let productsData = []
+      if (prodRes.data.results) {
+        productsData = prodRes.data.results
+      } else if (Array.isArray(prodRes.data)) {
+        productsData = prodRes.data
+      }
+      
+      let categoriesData = []
+      if (catRes.data.results) {
+        categoriesData = catRes.data.results
+      } else if (Array.isArray(catRes.data)) {
+        categoriesData = catRes.data
+      }
+      
+      let brandsData = []
+      if (brandRes.data.results) {
+        brandsData = brandRes.data.results
+      } else if (Array.isArray(brandRes.data)) {
+        brandsData = brandRes.data
+      }
+      
+      setProducts(productsData)
+      setCategories(categoriesData)
+      setBrands(brandsData)
+      
+      const total = productsData.length
+      const active = productsData.filter(p => p.is_active).length
+      const lowStock = productsData.filter(p => p.is_low_stock).length
+      const outOfStock = productsData.filter(p => (p.stock_quantity || 0) === 0).length
+      const totalValue = productsData.reduce((sum, p) => 
+        sum + ((p.stock_quantity || 0) * (parseFloat(p.purchase_price) || 0)), 0
+      )
+      
+      setStats({ total, active, lowStock, outOfStock, totalValue })
+      
+    } catch (error) {
+      console.error(error)
+      showNotification('Erreur de chargement des produits', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchData()
+  }, [])
+
+  const showNotification = (message, type = 'success') => {
+    setNotification({ show: true, message, type })
+    setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 4000)
+  }
+
+  const handleDeleteProduct = async () => {
+    if (!productToDelete) return
+    try {
+      await AxiosInstance.delete(`/products/${productToDelete.id}/`)
+      showNotification(`Produit supprimé avec succès`, 'success')
+      fetchData()
+      setShowDeleteModal(false)
+      setProductToDelete(null)
+    } catch (error) {
+      showNotification('Erreur lors de la suppression', 'error')
+    }
+  }
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDirection('asc')
+    }
+  }
+
+  const filteredAndSortedProducts = React.useMemo(() => {
+    let filtered = products.filter(p => {
+      const search = searchTerm.toLowerCase()
+      const name = (p.name || '').toLowerCase()
+      const ref = (p.reference || '').toLowerCase()
+      const matchesSearch = name.includes(search) || ref.includes(search)
+      const matchesCategory = !filterCategory || p.category === parseInt(filterCategory)
+      const matchesBrand = !filterBrand || p.brand === parseInt(filterBrand)
+      
+      let matchesStockStatus = true
+      if (filterStockStatus === 'low') {
+        matchesStockStatus = p.is_low_stock === true
+      } else if (filterStockStatus === 'out') {
+        matchesStockStatus = (p.stock_quantity || 0) === 0
+      } else if (filterStockStatus === 'ok') {
+        matchesStockStatus = (p.stock_quantity || 0) > 0 && !p.is_low_stock
+      }
+      
+      return matchesSearch && matchesCategory && matchesBrand && matchesStockStatus
+    })
+
+    filtered.sort((a, b) => {
+      let aVal = a[sortField] || ''
+      let bVal = b[sortField] || ''
+      if (['purchase_price', 'sale_price', 'stock_quantity'].includes(sortField)) {
+        aVal = parseFloat(aVal) || 0
+        bVal = parseFloat(bVal) || 0
+      }
+      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1
+      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1
+      return 0
+    })
+    return filtered
+  }, [products, searchTerm, filterCategory, filterBrand, filterStockStatus, sortField, sortDirection])
+
+  const totalPages = Math.ceil(filteredAndSortedProducts.length / itemsPerPage)
+  const paginatedProducts = filteredAndSortedProducts.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  )
+
+  const getStockStatusBadge = (product) => {
+    const stockQty = product.stock_quantity || 0
+    if (stockQty === 0) {
+      return { label: 'Rupture', color: 'error', icon: AlertCircle }
     }
     if (product.is_low_stock) {
-      return { label: 'Stock faible', color: 'warning', icon: Clock };
+      return { label: 'Stock faible', color: 'warning', icon: AlertTriangle }
     }
-    return { label: 'En stock', color: 'success', icon: CheckCircle };
-  };
+    return { label: 'En stock', color: 'success', icon: CheckCircle }
+  }
 
-  const getStockBarColor = (stock, minStock) => {
-    if (stock === 0) return 'bg-error';
-    if (stock <= minStock) return 'bg-warning';
-    return 'bg-success';
-  };
+  const SortIcon = ({ field }) => {
+    if (sortField !== field) return <ArrowUpDown className="w-3 h-3 opacity-40" />
+    return sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+  }
 
-  const getStockPercentage = (stock, minStock) => {
-    if (stock === 0) return 0;
-    const maxStock = minStock * 10;
-    const percentage = (stock / maxStock) * 100;
-    return Math.min(percentage, 100);
-  };
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-200px)]">
+        <div className="text-center space-y-4">
+          <span className="loading loading-spinner loading-lg text-primary"></span>
+          <p className="text-base font-medium text-base-content/70">Chargement des stocks...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="p-4 md:p-6">
+    <div className="space-y-4 lg:space-y-6 p-3 lg:p-6">
+      {/* Notification */}
+      {notification.show && (
+        <div className="fixed top-16 lg:top-20 right-3 lg:right-6 z-50 animate-slideDown w-[calc(100%-1.5rem)] lg:w-auto max-w-md">
+          <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-lg`}>
+            {notification.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+            <span className="text-sm lg:text-base font-medium">{notification.message}</span>
+            <button className="btn btn-ghost btn-xs btn-circle" onClick={() => setNotification({ ...notification, show: false })}>
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* En-tête */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Package className="w-7 h-7 text-primary" />
-            Gestion des stocks
-          </h1>
-          <p className="text-base-content/60 text-sm mt-1">
-            Suivi des niveaux de stock et valeur d'inventaire
-          </p>
+          <h1 className="text-2xl lg:text-3xl font-bold text-base-content">Gestion des stocks</h1>
+          <p className="text-xs lg:text-sm text-base-content/60">Suivez les niveaux de stock et la valeur de votre inventaire</p>
         </div>
-        
         <div className="flex gap-2">
-          <button className="btn btn-outline btn-sm gap-1">
-            <Download className="w-4 h-4" />
-            Exporter
+          <button onClick={fetchData} className="btn btn-ghost btn-sm lg:btn-md gap-1">
+            <RefreshCw className="w-3 h-3 lg:w-4 lg:h-4" />
+            <span className="hidden sm:inline">Actualiser</span>
           </button>
-          <button className="btn btn-outline btn-sm gap-1">
-            <Printer className="w-4 h-4" />
-            Imprimer
+          <button onClick={() => navigate('/produits/nouveau')} className="btn btn-primary btn-sm lg:btn-md gap-1">
+            <Plus className="w-3 h-3 lg:w-4 lg:h-4" />
+            <span className="hidden sm:inline">Nouveau produit</span>
           </button>
         </div>
       </div>
 
-      {/* Cartes statistiques */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div className="card bg-primary/10 shadow-sm">
-          <div className="card-body p-4">
-            <div className="flex justify-between items-center">
-              <div>
-                <p className="text-primary text-sm font-medium">Total produits</p>
-                <p className="text-2xl font-bold">{stats.total_products}</p>
-              </div>
-              <Package className="w-8 h-8 text-primary opacity-60" />
-            </div>
-          </div>
+      {/* Cartes statistiques - sans bordures */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 lg:gap-3">
+        <div className="stat bg-primary/5 rounded-lg p-2 lg:p-4">
+          <div className="stat-figure text-primary"><Package className="w-5 h-5" /></div>
+          <div className="stat-title text-xs">Total produits</div>
+          <div className="stat-value text-lg lg:text-2xl">{stats.total}</div>
         </div>
-        
-        <div className="card bg-success/10 shadow-sm">
-          <div className="card-body p-4">
-            <div className="flex justify-between items-center">
-              <div>
-                <p className="text-success text-sm font-medium">Valeur du stock</p>
-                <p className="text-xl font-bold">{formatCurrency(stats.total_value)}</p>
-              </div>
-              <DollarSign className="w-8 h-8 text-success opacity-60" />
-            </div>
-          </div>
+        <div className="stat bg-success/5 rounded-lg p-2 lg:p-4">
+          <div className="stat-figure text-success"><CheckCircle className="w-5 h-5" /></div>
+          <div className="stat-title text-xs">Actifs</div>
+          <div className="stat-value text-lg lg:text-2xl">{stats.active}</div>
         </div>
-        
-        <div className="card bg-warning/10 shadow-sm">
-          <div className="card-body p-4">
-            <div className="flex justify-between items-center">
-              <div>
-                <p className="text-warning text-sm font-medium">Stock faible</p>
-                <p className="text-2xl font-bold">{stats.low_stock_count}</p>
-              </div>
-              <TrendingDown className="w-8 h-8 text-warning opacity-60" />
-            </div>
-          </div>
+        <div className="stat bg-warning/5 rounded-lg p-2 lg:p-4">
+          <div className="stat-figure text-warning"><AlertTriangle className="w-5 h-5" /></div>
+          <div className="stat-title text-xs">Stock faible</div>
+          <div className="stat-value text-lg lg:text-2xl">{stats.lowStock}</div>
         </div>
-        
-        <div className="card bg-error/10 shadow-sm">
-          <div className="card-body p-4">
-            <div className="flex justify-between items-center">
-              <div>
-                <p className="text-error text-sm font-medium">En rupture</p>
-                <p className="text-2xl font-bold">{stats.out_of_stock_count}</p>
-              </div>
-              <AlertCircle className="w-8 h-8 text-error opacity-60" />
-            </div>
-          </div>
+        <div className="stat bg-error/5 rounded-lg p-2 lg:p-4">
+          <div className="stat-figure text-error"><AlertCircle className="w-5 h-5" /></div>
+          <div className="stat-title text-xs">Rupture</div>
+          <div className="stat-value text-lg lg:text-2xl">{stats.outOfStock}</div>
+        </div>
+        <div className="stat bg-info/5 rounded-lg p-2 lg:p-4 col-span-2 lg:col-span-1">
+          <div className="stat-figure text-info"><DollarSign className="w-5 h-5" /></div>
+          <div className="stat-title text-xs">Valeur stock</div>
+          <div className="stat-value text-base lg:text-xl truncate">{formatCurrency(stats.totalValue)}</div>
         </div>
       </div>
 
-      {/* Filtres */}
-      <div className="card bg-base-100 shadow-md mb-6">
-        <div className="card-body p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Filter className="w-5 h-5 text-base-content/60" />
-              <span className="font-medium">Filtres</span>
-              <button onClick={() => setShowFilters(!showFilters)} className="btn btn-sm btn-ghost">
-                {showFilters ? 'Masquer' : 'Afficher'}
-              </button>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={fetchProducts} className="btn btn-sm btn-outline gap-1">
-                <RefreshCw className="w-4 h-4" />
-                Actualiser
-              </button>
-              {(filters.search || filters.category || filters.stock_status) && (
-                <button onClick={resetFilters} className="btn btn-sm btn-ghost">
-                  Réinitialiser
-                </button>
-              )}
-            </div>
-          </div>
-
-          {showFilters && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
-              <div className="form-control w-full">
-                <label className="label">
-                  <span className="label-text">Recherche</span>
-                </label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/40" />
-                  <input
-                    type="text"
-                    placeholder="Nom, référence..."
-                    className="input input-bordered w-full pl-9"
-                    value={filters.search}
-                    onChange={(e) => setFilters({...filters, search: e.target.value, currentPage: 1})}
-                  />
-                </div>
-              </div>
-
-              <div className="form-control w-full">
-                <label className="label">
-                  <span className="label-text">Catégorie</span>
-                </label>
-                <select
-                  className="select select-bordered"
-                  value={filters.category}
-                  onChange={(e) => setFilters({...filters, category: e.target.value, currentPage: 1})}
-                >
-                  <option value="">Toutes</option>
-                  {categories.map(cat => (
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="form-control w-full">
-                <label className="label">
-                  <span className="label-text">Statut stock</span>
-                </label>
-                <select
-                  className="select select-bordered"
-                  value={filters.stock_status}
-                  onChange={(e) => setFilters({...filters, stock_status: e.target.value, currentPage: 1})}
-                >
-                  <option value="">Tous</option>
-                  <option value="ok">En stock</option>
-                  <option value="low">Stock faible</option>
-                  <option value="out">Rupture</option>
-                </select>
-              </div>
-
-              <div className="form-control w-full">
-                <label className="label">
-                  <span className="label-text">Valeur stock</span>
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="number"
-                    placeholder="Min"
-                    className="input input-bordered w-1/2"
-                    value={filters.min_stock}
-                    onChange={(e) => setFilters({...filters, min_stock: e.target.value})}
-                  />
-                  <input
-                    type="number"
-                    placeholder="Max"
-                    className="input input-bordered w-1/2"
-                    value={filters.max_stock}
-                    onChange={(e) => setFilters({...filters, max_stock: e.target.value})}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
+      {/* Barre de recherche */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="flex-1 relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/40" />
+          <input
+            type="text"
+            placeholder="Rechercher par nom ou référence..."
+            className="input input-bordered w-full pl-9"
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value)
+              setCurrentPage(1)
+            }}
+          />
         </div>
-      </div>
-
-      {/* Tableau des produits */}
-      <div className="overflow-x-auto bg-base-100 rounded-xl shadow-md">
-        {loading ? (
-          <div className="flex justify-center items-center py-12">
-            <div className="loading loading-spinner loading-lg text-primary"></div>
-          </div>
-        ) : error ? (
-          <div className="alert alert-error shadow-lg m-4">
-            <AlertCircle className="w-6 h-6" />
-            <span>{error}</span>
-          </div>
-        ) : products.length === 0 ? (
-          <div className="text-center py-12">
-            <Package className="w-16 h-16 mx-auto text-base-content/20 mb-4" />
-            <p className="text-base-content/60">Aucun produit trouvé</p>
-          </div>
-        ) : (
-          <>
-            <table className="table table-zebra">
-              <thead>
-                <tr className="bg-base-200">
-                  <th>Référence</th>
-                  <th>Produit</th>
-                  <th>Catégorie</th>
-                  <th>Stock</th>
-                  <th>Statut</th>
-                  <th>PA</th>
-                  <th>PV</th>
-                  <th>Valeur stock</th>
-                  <th className="text-center">Actions</th>
-                 </tr>
-              </thead>
-              <tbody>
-                {products.map((product) => {
-                  const stockStatus = getStockStatus(product);
-                  const StockIcon = stockStatus.icon;
-                  const stockValue = (product.stock_quantity || 0) * (product.purchase_price || 0);
-                  const stockPercentage = getStockPercentage(product.stock_quantity, product.minimum_stock);
-                  
-                  return (
-                    <tr key={product.id} className="hover">
-                      <td className="font-mono text-sm">{product.reference}</td>
-                      <td>
-                        <div className="flex items-center gap-2">
-                          {product.main_image ? (
-                            <img 
-                              src={product.main_image} 
-                              alt={product.name} 
-                              className="w-8 h-8 rounded object-cover"
-                            />
-                          ) : (
-                            <div className="w-8 h-8 rounded bg-base-200 flex items-center justify-center">
-                              <Package className="w-4 h-4 text-base-content/40" />
-                            </div>
-                          )}
-                          <div>
-                            <p className="font-medium">{product.name}</p>
-                            {product.barcode && (
-                              <p className="text-xs text-base-content/50 font-mono">{product.barcode}</p>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <span className="badge badge-ghost badge-sm">
-                          {product.category_name || '-'}
-                        </span>
-                      </td>
-                      <td>
-                        <div className="w-32">
-                          <div className="flex justify-between text-xs mb-1">
-                            <span>{product.stock_quantity || 0}</span>
-                            <span className="text-base-content/50">min: {product.minimum_stock || 0}</span>
-                          </div>
-                          <div className="w-full h-2 bg-base-200 rounded-full overflow-hidden">
-                            <div 
-                              className={`h-full ${getStockBarColor(product.stock_quantity, product.minimum_stock)} transition-all`}
-                              style={{ width: `${stockPercentage}%` }}
-                            />
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <span className={`badge badge-${stockStatus.color} gap-1`}>
-                          <StockIcon className="w-3 h-3" />
-                          {stockStatus.label}
-                        </span>
-                      </td>
-                      <td className="text-sm">{formatCurrency(product.purchase_price)}</td>
-                      <td className="text-sm font-semibold">{formatCurrency(product.sale_price)}</td>
-                      <td className="font-medium">{formatCurrency(stockValue)}</td>
-                      <td className="text-center">
-                        <div className="flex justify-center gap-1">
-                          <Link 
-                            to={`/stocks/${product.id}`} 
-                            className="btn btn-xs btn-ghost"
-                            title="Détails"
-                          >
-                            <Eye className="w-3 h-3" />
-                          </Link>
-                          <Link 
-                            to={`/mouvements-stock/by-product/${product.id}`} 
-                            className="btn btn-xs btn-ghost"
-                            title="Historique"
-                          >
-                            <TrendingUp className="w-3 h-3" />
-                          </Link>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex justify-between items-center p-4 border-t">
-                <div className="text-sm text-base-content/60">
-                  Total: {totalItems} produits
-                </div>
-                <div className="join">
-                  <button
-                    className="join-item btn btn-sm"
-                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                    disabled={currentPage === 1}
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <span className="join-item btn btn-sm">
-                    Page {currentPage} / {totalPages}
-                  </span>
-                  <button
-                    className="join-item btn btn-sm"
-                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                    disabled={currentPage === totalPages}
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            )}
-          </>
+        
+        <select 
+          className="select select-bordered w-full sm:w-48"
+          value={filterCategory}
+          onChange={(e) => {
+            setFilterCategory(e.target.value)
+            setCurrentPage(1)
+          }}
+        >
+          <option value="">Toutes catégories</option>
+          {categories.map(cat => (
+            <option key={cat.id} value={cat.id}>{cat.name}</option>
+          ))}
+        </select>
+        
+        <select 
+          className="select select-bordered w-full sm:w-48"
+          value={filterStockStatus}
+          onChange={(e) => {
+            setFilterStockStatus(e.target.value)
+            setCurrentPage(1)
+          }}
+        >
+          <option value="">Tous les stocks</option>
+          <option value="ok">En stock</option>
+          <option value="low">Stock faible</option>
+          <option value="out">Rupture</option>
+        </select>
+        
+        {(searchTerm || filterCategory || filterStockStatus) && (
+          <button 
+            className="btn btn-ghost"
+            onClick={() => {
+              setFilterCategory('')
+              setFilterStockStatus('')
+              setSearchTerm('')
+              setCurrentPage(1)
+            }}
+          >
+            <X className="w-4 h-4" />
+            Réinitialiser
+          </button>
         )}
       </div>
 
-      {/* Légende */}
-      <div className="mt-4 p-3 bg-base-200 rounded-lg text-xs text-base-content/60">
-        <div className="flex flex-wrap gap-4">
-          <span className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-success"></div> Stock normal</span>
-          <span className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-warning"></div> Stock faible</span>
-          <span className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-error"></div> Rupture</span>
-          <span className="flex items-center gap-1">PA: Prix d'achat</span>
-          <span className="flex items-center gap-1">PV: Prix de vente</span>
+      {/* Tableau - sans bordures */}
+      <div className="bg-base-100 rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="table table-zebra">
+            <thead>
+              <tr className="bg-base-200">
+                <th><button className="flex items-center gap-1" onClick={() => handleSort('reference')}>Référence <SortIcon field="reference" /></button></th>
+                <th><button className="flex items-center gap-1" onClick={() => handleSort('name')}>Produit <SortIcon field="name" /></button></th>
+                <th>Catégorie</th>
+                <th><button className="flex items-center gap-1" onClick={() => handleSort('purchase_price')}>PA <SortIcon field="purchase_price" /></button></th>
+                <th><button className="flex items-center gap-1" onClick={() => handleSort('sale_price')}>PV <SortIcon field="sale_price" /></button></th>
+                <th><button className="flex items-center gap-1" onClick={() => handleSort('stock_quantity')}>Stock <SortIcon field="stock_quantity" /></button></th>
+                <th>Statut</th>
+                <th>Valeur</th>
+                <th className="text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginatedProducts.map((product) => {
+                const stockStatus = getStockStatusBadge(product)
+                const StatusIcon = stockStatus.icon
+                const stockValue = (product.stock_quantity || 0) * (parseFloat(product.purchase_price) || 0)
+                return (
+                  <tr key={product.id} className="hover">
+                    <td className="font-mono text-xs">{product.reference}</td>
+                    <td><div className="font-medium text-sm">{product.name}</div></td>
+                    <td className="text-sm">{product.category_name || '-'}</td>
+                    <td className="text-sm text-right">{formatCurrency(product.purchase_price)}</td>
+                    <td className="text-sm text-right font-semibold text-primary">{formatCurrency(product.sale_price)}</td>
+                    <td className="text-sm">{product.stock_quantity || 0}</td>
+                    <td><span className={`badge badge-${stockStatus.color} badge-sm gap-1`}><StatusIcon className="w-3 h-3" />{stockStatus.label}</span></td>
+                    <td className="text-sm font-medium">{formatCurrency(stockValue)}</td>
+                    <td className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <button className="btn btn-ghost btn-xs" onClick={() => navigate(`/stocks/${product.id}`)}><Eye className="w-3 h-3" /></button>
+                        <button className="btn btn-ghost btn-xs text-error" onClick={() => { setProductToDelete(product); setShowDeleteModal(true) }}><Trash2 className="w-3 h-3" /></button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
-    </div>
-  );
-};
 
-export default Stocks;
+      {/* Pagination */}
+      {filteredAndSortedProducts.length > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="text-xs text-base-content/60">
+            {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, filteredAndSortedProducts.length)} sur {filteredAndSortedProducts.length} produits
+          </div>
+          <div className="join">
+            <button className="join-item btn btn-sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+              <ChevronLeft className="w-3 h-3" />
+            </button>
+            <span className="join-item btn btn-sm no-animation">{currentPage} / {totalPages}</span>
+            <button className="join-item btn btn-sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+              <ChevronRight className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal suppression */}
+      {showDeleteModal && (
+        <div className="modal modal-open">
+          <div className="modal-box w-11/12 max-w-md">
+            <div className="text-center">
+              <div className="avatar placeholder mb-4">
+                <div className="bg-error/10 text-error rounded-full w-16 h-16 flex items-center justify-center">
+                  <AlertTriangle className="w-8 h-8" />
+                </div>
+              </div>
+              <h3 className="font-bold text-xl mb-2">Confirmer la suppression</h3>
+              <p className="text-base-content/70 text-sm">Supprimer "{productToDelete?.name}" ?</p>
+              <p className="text-xs text-base-content/50 mt-3">Cette action est irréversible.</p>
+            </div>
+            <div className="modal-action">
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowDeleteModal(false)}>Annuler</button>
+              <button className="btn btn-error btn-sm" onClick={handleDeleteProduct}>Supprimer</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default Stocks
