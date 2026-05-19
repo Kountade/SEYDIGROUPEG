@@ -377,19 +377,64 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         { id: 'analyses', text: 'Analyses', icon: LineChart, path: '/analyses', permission: isPDG }
       ]
     },
-    {
-      name: 'COMMERCIAL',
-      icon: ShoppingCart,
-      permission: canViewSales(),
-      items: [
-        { id: 'pos', text: 'Point de Vente', icon: ShoppingBag, path: '/point-de-vente', permission: canViewSales() },
-        { id: 'ventes', text: 'Ventes', icon: ShoppingCart, path: '/ventes', permission: canViewSales(), badge: ventesImpayees },
-        { id: 'clients', text: 'Clients', icon: Users, path: '/clients', permission: canViewSales() },
-        { id: 'devis', text: 'Devis', icon: FileText, path: '/devis', permission: canViewSales() },
-        { id: 'factures', text: 'Factures', icon: Receipt, path: '/factures', permission: canViewSales() },
-        { id: 'paiements', text: 'Paiements', icon: CreditCard, path: '/paiements', permission: canViewSales() }
-      ]
+   // Menu principal - Dans votre fichier de configuration du menu
+{
+  name: 'COMMERCIAL',
+  icon: ShoppingCart,
+  permission: canViewSales(),
+  items: [
+    { 
+      id: 'dashboard-commercial', 
+      text: 'Tableau de bord', 
+      icon: LayoutDashboard, 
+      path: 'dashboard/ventes', 
+      permission: canViewSales() 
     },
+    { 
+      id: 'pos', 
+      text: 'Point de Vente', 
+      icon: ShoppingBag, 
+      path: '/point-de-vente', 
+      permission: canViewSales() 
+    },
+    { 
+      id: 'ventes', 
+      text: 'Ventes', 
+      icon: ShoppingCart, 
+      path: '/ventes', 
+      permission: canViewSales(), 
+      badge: ventesImpayees 
+    },
+    { 
+      id: 'clients', 
+      text: 'Clients', 
+      icon: Users, 
+      path: '/clients', 
+      permission: canViewSales() 
+    },
+    { 
+      id: 'devis', 
+      text: 'Devis', 
+      icon: FileText, 
+      path: '/devis', 
+      permission: canViewSales() 
+    },
+    { 
+      id: 'factures', 
+      text: 'Factures', 
+      icon: Receipt, 
+      path: '/factures', 
+      permission: canViewSales() 
+    },
+    { 
+      id: 'paiements', 
+      text: 'Paiements', 
+      icon: CreditCard, 
+      path: '/paiements', 
+      permission: canViewSales() 
+    }
+  ]
+},
     {
       name: 'ACHATS',
       icon: ShoppingBag,

@@ -71,6 +71,10 @@ import MouvementStockDetail from './components/inventaire/MouvementStockDetail'
 import Stocks from './components/inventaire/Stocks'
 import StockDetail from './components/inventaire/StockDetail'
 import AddStockToWarehouse from './components/inventaire/AddStockToWarehouse'
+import SalesDashboard from './components/ventes/SalesDashboard'
+import ClientsList from './components/ventes/ClientsList'
+import ClientForm from './components/ventes/ClientForm'
+import ClientDetail from './components/ventes/ClientDetail'
 
 
 import AuditLog from './components/audit/AuditLog'
@@ -240,7 +244,12 @@ function App() {
 <Route path="/stats" element={<HRStats />} />
 <Route path="/trainings" element={<Trainings />} />
 
-
+                      <Route path="/dashboard/ventes" element={<SalesDashboard />} />
+                      
+<Route path="/clients" element={<ClientsList />} />
+<Route path="/clients/nouveau" element={<ClientForm />} />
+<Route path="/clients/:id" element={<ClientDetail />} />
+<Route path="/clients/:id/modifier" element={<ClientForm />} />
 
 
  <Route path="/audit" element={<AuditLog />} />
