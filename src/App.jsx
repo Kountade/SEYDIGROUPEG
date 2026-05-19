@@ -19,6 +19,7 @@ import VariantForm from './components/logistique/VariantForm'
 import Products from './components/logistique/Products'
 import ProductForm from './components/logistique/ProductForm'
 import ProductDetails from './components/logistique/ProductDetails'
+import ProductPricingManager from './components/logistique/ProductPricingManager'
 import Categories from './components/logistique/Categories'
 import CategoryForm from './components/logistique/CategoryForm'
 import Utilisateurs from './components/users/Utilisateurs'
@@ -70,7 +71,7 @@ import MouvementStockDetail from './components/inventaire/MouvementStockDetail'
 import Stocks from './components/inventaire/Stocks'
 import StockDetail from './components/inventaire/StockDetail'
 import AddStockToWarehouse from './components/inventaire/AddStockToWarehouse'
-import ProductPricingManager from './components/logistique/ProductPricingManager'
+
 
 import AuditLog from './components/audit/AuditLog'
 

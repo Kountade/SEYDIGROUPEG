@@ -1,28 +1,12 @@
-// src/components/logistique/ProductDetails.jsx
+// ProductDetails.jsx - Version corrigée
+
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
 import {
-  Edit,
-  ArrowLeft,
-  Package,
-  DollarSign,
-  AlertTriangle,
-  CheckCircle,
-  XCircle,
-  Info,
-  Barcode,
-  MapPin,
-  Weight,
-  Box,
-  Building2,
-  Layers,
-  AlertCircle,
-  X,
-  Hash,
-  Warehouse,
-  Plus,
-  RefreshCw
+  Edit, ArrowLeft, Package, DollarSign, AlertCircle,
+  CheckCircle, XCircle, Hash, Warehouse, Plus, RefreshCw,
+  Building2, Box, X
 } from 'lucide-react'
 
 const ProductDetails = () => {
@@ -30,22 +14,12 @@ const ProductDetails = () => {
   const { id } = useParams()
 
   const [product, setProduct] = useState(null)
-  const [images, setImages] = useState([])
-  const [variants, setVariants] = useState([])
   const [pricesByWarehouse, setPricesByWarehouse] = useState([])
   const [stocksByWarehouse, setStocksByWarehouse] = useState([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' })
   const [selectedImage, setSelectedImage] = useState(null)
-  const [showWarehousePrices, setShowWarehousePrices] = useState(true)
-
-  const productTypes = { 
-    simple: 'Simple', 
-    variable: 'Variable', 
-    service: 'Service', 
-    digital: 'Numérique' 
-  }
 
   const formatNumber = (number) => {
     if (typeof number !== 'number') number = parseFloat(number) || 0
@@ -68,18 +42,28 @@ const ProductDetails = () => {
   const fetchData = async () => {
     setLoading(true)
     try {
-      const [prodRes, imgRes, varRes, pricesRes, stocksRes] = await Promise.all([
-        AxiosInstance.get(`/products/${id}/`),
-        AxiosInstance.get(`/products/${id}/images/`).catch(() => ({ data: [] })),
-        AxiosInstance.get(`/products/${id}/variants/`).catch(() => ({ data: [] })),
-        AxiosInstance.get(`/products/${id}/prices/`).catch(() => ({ data: [] })),
-        AxiosInstance.get(`/warehouse-stocks/by_product/?product_id=${id}`).catch(() => ({ data: [] }))
-      ])
+      // Récupérer le produit
+      const prodRes = await AxiosInstance.get(`/products/${id}/`)
       setProduct(prodRes.data)
-      setImages(imgRes.data || [])
-      setVariants(varRes.data || [])
-      setPricesByWarehouse(pricesRes.data || [])
-      setStocksByWarehouse(stocksRes.data || [])
+      
+      // Récupérer les prix par entrepôt
+      try {
+        const pricesRes = await AxiosInstance.get(`/products/${id}/prices/`)
+        setPricesByWarehouse(pricesRes.data || [])
+      } catch (err) {
+        console.log('Pas de prix trouvés', err)
+        setPricesByWarehouse([])
+      }
+      
+      // Récupérer les stocks par entrepôt
+      try {
+        const stocksRes = await AxiosInstance.get(`/warehouse-stocks/by_product/?product_id=${id}`)
+        setStocksByWarehouse(stocksRes.data || [])
+      } catch (err) {
+        console.log('Pas de stocks trouvés', err)
+        setStocksByWarehouse([])
+      }
+      
     } catch (error) {
       console.error(error)
       showNotification('Erreur de chargement du produit', 'error')
@@ -99,7 +83,6 @@ const ProductDetails = () => {
     fetchData() 
   }, [id])
 
-  const mainImage = product?.main_image || (images.length > 0 ? images.find(img => img.is_main)?.image : null)
   const totalStock = stocksByWarehouse.reduce((sum, s) => sum + (s.quantity || 0), 0)
 
   if (loading) {
@@ -157,16 +140,10 @@ const ProductDetails = () => {
                 <span className="badge badge-outline gap-1">
                   <Hash className="w-3 h-3" /> {product.reference}
                 </span>
-                <span className="badge badge-primary badge-sm">
-                  {productTypes[product.product_type] || 'Simple'}
-                </span>
                 {!product.is_active && (
                   <span className="badge badge-error badge-sm gap-1">
                     <XCircle className="w-3 h-3" /> Inactif
                   </span>
-                )}
-                {product.is_featured && (
-                  <span className="badge badge-warning badge-sm gap-1">★ En vedette</span>
                 )}
               </div>
             </div>
@@ -194,18 +171,18 @@ const ProductDetails = () => {
           </div>
         </div>
 
-        {/* Contenu principal - Version simplifiée pour éviter les erreurs */}
+        {/* Contenu principal */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Colonne gauche */}
+          {/* Colonne gauche - Image */}
           <div className="lg:col-span-1">
             <div className="card bg-base-200 shadow-xl">
               <div className="card-body">
-                {mainImage ? (
+                {product.main_image ? (
                   <img 
-                    src={mainImage} 
+                    src={product.main_image} 
                     alt={product.name}
                     className="w-full h-64 object-contain rounded-lg cursor-pointer"
-                    onClick={() => setSelectedImage(mainImage)}
+                    onClick={() => setSelectedImage(product.main_image)}
                   />
                 ) : (
                   <div className="w-full h-64 bg-base-300 rounded-lg flex flex-col items-center justify-center">
@@ -233,12 +210,22 @@ const ProductDetails = () => {
               <div className="card-body">
                 <h2 className="text-lg font-semibold mb-4">Informations générales</h2>
                 <div className="grid grid-cols-2 gap-4">
-                  <div><p className="text-xs text-base-content/60">Catégorie</p><p className="font-medium">{product.category_name || '-'}</p></div>
-                  <div><p className="text-xs text-base-content/60">Marque</p><p className="font-medium">{product.brand_name || '-'}</p></div>
-                  <div><p className="text-xs text-base-content/60">Unité</p><p className="font-medium">{product.unit_abbrev || '-'}</p></div>
-                  <div><p className="text-xs text-base-content/60">Code-barres</p><p className="font-mono">{product.barcode || '-'}</p></div>
-                  <div><p className="text-xs text-base-content/60">Emplacement</p><p>{product.location || '-'}</p></div>
-                  <div><p className="text-xs text-base-content/60">Poids/Volume</p><p>{product.weight ? `${product.weight} kg` : '-'} / {product.volume ? `${product.volume} m³` : '-'}</p></div>
+                  <div>
+                    <p className="text-xs text-base-content/60">Catégorie</p>
+                    <p className="font-medium">{product.category?.name || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-base-content/60">Marque</p>
+                    <p className="font-medium">{product.brand?.name || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-base-content/60">Unité</p>
+                    <p className="font-medium">{product.unit?.abbreviation || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-base-content/60">Code-barres</p>
+                    <p className="font-mono">{product.barcode || '-'}</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -253,7 +240,7 @@ const ProductDetails = () => {
               </div>
             </div>
 
-            {/* Bouton pour voir les prix */}
+            {/* Prix par entrepôt */}
             <div className="card bg-base-200 shadow-xl mt-6">
               <div className="card-body">
                 <div className="flex justify-between items-center">
@@ -270,25 +257,37 @@ const ProductDetails = () => {
                   </button>
                 </div>
                 
-                {pricesByWarehouse.length > 0 && (
+                {pricesByWarehouse.length === 0 ? (
+                  <div className="text-center py-6">
+                    <DollarSign className="w-12 h-12 mx-auto mb-2 text-base-content/30" />
+                    <p className="text-base-content/50">Aucun prix défini</p>
+                    <button 
+                      className="btn btn-outline btn-primary btn-sm mt-2"
+                      onClick={() => navigate(`/produits/${id}/prix`)}
+                    >
+                      Définir un prix
+                    </button>
+                  </div>
+                ) : (
                   <div className="mt-4 space-y-2">
-                    {pricesByWarehouse.slice(0, 3).map((price) => (
+                    {pricesByWarehouse.map((price) => (
                       <div key={price.id} className="bg-base-100 rounded-lg p-3">
                         <div className="flex items-center gap-2">
                           <Warehouse className="w-4 h-4 text-primary" />
                           <span className="font-semibold">{price.warehouse_name}</span>
                         </div>
                         <div className="grid grid-cols-2 gap-2 mt-2 text-sm">
-                          <div>Achat: {formatPrice(price.purchase_price)}</div>
-                          <div>Vente: {formatPrice(price.sale_price)}</div>
+                          <div>
+                            <span className="text-base-content/60">Achat:</span>{' '}
+                            <span className="font-medium">{formatPrice(price.purchase_price)}</span>
+                          </div>
+                          <div>
+                            <span className="text-base-content/60">Vente:</span>{' '}
+                            <span className="font-medium text-primary">{formatPrice(price.sale_price)}</span>
+                          </div>
                         </div>
                       </div>
                     ))}
-                    {pricesByWarehouse.length > 3 && (
-                      <p className="text-center text-sm text-base-content/50 mt-2">
-                        +{pricesByWarehouse.length - 3} autres entrepôts
-                      </p>
-                    )}
                   </div>
                 )}
               </div>
@@ -303,7 +302,7 @@ const ProductDetails = () => {
                 </div>
                 {stocksByWarehouse.length === 0 ? (
                   <div className="text-center py-6">
-                    <Package className="w-12 h-12 mx-auto mb-2 text-base-content/30" />
+                    <Box className="w-12 h-12 mx-auto mb-2 text-base-content/30" />
                     <p className="text-base-content/50">Aucun stock</p>
                   </div>
                 ) : (
@@ -324,39 +323,6 @@ const ProductDetails = () => {
                 )}
               </div>
             </div>
-
-            {/* Variantes */}
-            {product.has_variants && variants.length > 0 && (
-              <div className="card bg-base-200 shadow-xl mt-6">
-                <div className="card-body">
-                  <h2 className="text-lg font-semibold mb-4">Variantes ({variants.length})</h2>
-                  <div className="overflow-x-auto">
-                    <table className="table table-sm">
-                      <thead>
-                        <tr className="bg-base-300">
-                          <th>SKU</th>
-                          <th>Attributs</th>
-                          <th>Stock</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {variants.map((v) => (
-                          <tr key={v.id}>
-                            <td className="font-mono text-sm">{v.sku}</td>
-                            <td>
-                              {Object.entries(v.attributes).map(([key, val]) => (
-                                <span key={key} className="badge badge-sm mr-1">{key}: {val}</span>
-                              ))}
-                            </td>
-                            <td>{v.stock_quantity}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>
