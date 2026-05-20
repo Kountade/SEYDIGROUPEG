@@ -78,6 +78,11 @@ import ClientDetail from './components/ventes/ClientDetail'
 import VentesList from './components/ventes/VentesList'
 import VenteForm from './components/ventes/VenteForm'
 import VenteDetail from './components/ventes/VenteDetail'
+import FacturesList from './components/ventes/FacturesList'
+import FactureForm from './components/ventes/FactureForm'
+import FactureDetail from './components/ventes/FactureDetail' 
+
+
 
 
 import AuditLog from './components/audit/AuditLog'
@@ -259,6 +264,11 @@ function App() {
 <Route path="/ventes/nouveau" element={<VenteForm />} />
 <Route path="/ventes/:id" element={<VenteDetail />} />
 
+
+          <Route path="/factures" element={<FacturesList />} />
+          <Route path="/factures/nouveau" element={<FactureForm />} />
+          <Route path="/factures/:id" element={<FactureDetail />} />
+          <Route path="/factures/:id/modifier" element={<FactureForm />} />
 
  <Route path="/audit" element={<AuditLog />} />
             </Route>

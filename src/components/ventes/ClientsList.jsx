@@ -1,108 +1,114 @@
-// src/components/sales/VentesList.jsx
+// src/components/sales/ClientsList.jsx
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
 import {
-  ShoppingCart, Eye, CheckCircle, XCircle, Clock, Search,
-  RefreshCw, Filter, Calendar, TrendingUp, AlertCircle,
-  ChevronLeft, ChevronRight, Users, FileText, CreditCard,
-  X, Download, Printer, Plus, DollarSign
+  Plus, Edit, Trash2, Search, Users, Building2, User,
+  Phone, Mail, MapPin, RefreshCw, X, CheckCircle, AlertCircle,
+  Eye, Star, StarOff, Filter, Download, Printer,
+  ChevronLeft, ChevronRight, GraduationCap, Calendar, Clock
 } from 'lucide-react';
 
-const VentesList = () => {
+const ClientsList = () => {
   const navigate = useNavigate();
-  const [ventes, setVentes] = useState([]);
+  const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
-  const [dateRange, setDateRange] = useState({ start: '', end: '' });
+  const [statusFilter, setStatusFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
-  const [showFilters, setShowFilters] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [venteToDelete, setVenteToDelete] = useState(null);
+  const [clientToDelete, setClientToDelete] = useState(null);
+  const [showFilters, setShowFilters] = useState(false);
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
-  const [stats, setStats] = useState(null);
 
   const showNotification = (message, type) => {
     setNotification({ show: true, message, type });
-    setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 4000);
+    setTimeout(() => setNotification({ ...notification, show: false }), 4000);
   };
 
-  const statusConfig = {
-    draft: { label: 'Brouillon', icon: Clock, color: 'text-gray-500', bgColor: 'bg-gray-100' },
-    pending_approval: { label: 'En attente', icon: Clock, color: 'text-orange-500', bgColor: 'bg-orange-100' },
-    approved: { label: 'Approuvée', icon: CheckCircle, color: 'text-blue-500', bgColor: 'bg-blue-100' },
-    rejected: { label: 'Rejetée', icon: XCircle, color: 'text-red-500', bgColor: 'bg-red-100' },
-    completed: { label: 'Complétée', icon: CheckCircle, color: 'text-green-500', bgColor: 'bg-green-100' },
-    cancelled: { label: 'Annulée', icon: XCircle, color: 'text-gray-500', bgColor: 'bg-gray-100' }
-  };
-
-  const fetchVentes = async () => {
+  const fetchClients = async () => {
     setLoading(true);
     try {
-      const response = await AxiosInstance.get('/ventes/');
-      setVentes(response.data);
-      
-      const total = response.data.reduce((sum, v) => sum + (v.total || 0), 0);
-      const pending = response.data.filter(v => v.status === 'pending_approval').length;
-      const completed = response.data.filter(v => v.status === 'completed').length;
-      const rejected = response.data.filter(v => v.status === 'rejected').length;
-      setStats({ total, pending, completed, rejected, count: response.data.length });
+      const response = await AxiosInstance.get('/clients/');
+      setClients(response.data);
     } catch (error) {
       console.error('Erreur:', error);
-      showNotification('Erreur de chargement des ventes', 'error');
+      showNotification('Erreur de chargement des clients', 'error');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchVentes();
+    fetchClients();
   }, []);
 
   const handleDelete = async () => {
-    if (!venteToDelete) return;
+    if (!clientToDelete) return;
     try {
-      await AxiosInstance.delete(`/ventes/${venteToDelete.id}/`);
-      showNotification('Vente supprimée avec succès', 'success');
-      fetchVentes();
+      await AxiosInstance.delete(`/clients/${clientToDelete.id}/`);
+      showNotification('Client supprimé avec succès', 'success');
+      fetchClients();
       setShowDeleteModal(false);
-      setVenteToDelete(null);
+      setClientToDelete(null);
     } catch (error) {
       showNotification('Erreur lors de la suppression', 'error');
     }
   };
 
-  const filteredVentes = ventes.filter(vente => {
-    const matchesSearch = !searchTerm || 
-      (vente.reference?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-      (vente.client_nom?.toLowerCase() || '').includes(searchTerm.toLowerCase());
-    
-    const matchesStatus = statusFilter === 'all' || vente.status === statusFilter;
-    const matchesType = typeFilter === 'all' || vente.type_vente === typeFilter;
-    
-    const matchesDateStart = !dateRange.start || new Date(vente.date_vente) >= new Date(dateRange.start);
-    const matchesDateEnd = !dateRange.end || new Date(vente.date_vente) <= new Date(dateRange.end);
-    
-    return matchesSearch && matchesStatus && matchesType && matchesDateStart && matchesDateEnd;
-  });
-
-  const totalPages = Math.ceil(filteredVentes.length / itemsPerPage);
-  const paginatedVentes = filteredVentes.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-
-  const formatPrice = (price) => {
-    if (!price) return '0 FCFA';
-    return new Intl.NumberFormat('fr-FR').format(price) + ' FCFA';
+  const toggleActive = async (client) => {
+    try {
+      await AxiosInstance.patch(`/clients/${client.id}/`, { is_active: !client.is_active });
+      showNotification(client.is_active ? 'Client désactivé' : 'Client activé', 'success');
+      fetchClients();
+    } catch (error) {
+      showNotification('Erreur lors de la modification', 'error');
+    }
   };
 
-  const formatDate = (date) => {
-    if (!date) return '-';
-    return new Date(date).toLocaleDateString('fr-FR', {
-      day: '2-digit', month: 'short', year: 'numeric',
-      hour: '2-digit', minute: '2-digit'
-    });
+  const filteredClients = clients.filter(client => {
+    const matchesSearch = !searchTerm || 
+      (client.nom?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (client.prenom?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (client.email?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (client.telephone?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (client.raison_sociale?.toLowerCase() || '').includes(searchTerm.toLowerCase());
+    
+    const matchesType = typeFilter === 'all' || client.client_type === typeFilter;
+    const matchesStatus = statusFilter === 'all' || 
+      (statusFilter === 'active' && client.is_active) ||
+      (statusFilter === 'inactive' && !client.is_active);
+    
+    return matchesSearch && matchesType && matchesStatus;
+  });
+
+  const totalPages = Math.ceil(filteredClients.length / itemsPerPage);
+  const paginatedClients = filteredClients.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  const stats = {
+    total: clients.length,
+    particuliers: clients.filter(c => c.client_type === 'particulier').length,
+    entreprises: clients.filter(c => c.client_type === 'entreprise').length,
+    revendeurs: clients.filter(c => c.est_revendeur).length,
+    actifs: clients.filter(c => c.is_active).length
+  };
+
+  const getClientTypeIcon = (type) => {
+    switch(type) {
+      case 'entreprise': return <Building2 className="w-4 h-4" />;
+      case 'revendeur': return <Star className="w-4 h-4" />;
+      default: return <User className="w-4 h-4" />;
+    }
+  };
+
+  const getClientTypeLabel = (type) => {
+    switch(type) {
+      case 'entreprise': return 'Entreprise';
+      case 'revendeur': return 'Revendeur';
+      default: return 'Particulier';
+    }
   };
 
   if (loading) {
@@ -111,7 +117,7 @@ const VentesList = () => {
         <div className="text-center space-y-4">
           <div className="loading loading-spinner loading-lg text-primary w-12 h-12 sm:w-16 sm:h-16"></div>
           <p className="text-base sm:text-xl font-semibold text-base-content/70 animate-pulse">
-            Chargement des ventes...
+            Chargement des clients...
           </p>
         </div>
       </div>
@@ -128,7 +134,7 @@ const VentesList = () => {
               {notification.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
               <span className="font-medium">{notification.message}</span>
             </div>
-            <button className="btn btn-ghost btn-xs btn-circle" onClick={() => setNotification({ show: false, message: '', type: 'success' })}>
+            <button className="btn btn-ghost btn-xs btn-circle" onClick={() => setNotification({ ...notification, show: false })}>
               <X className="w-3 h-3" />
             </button>
           </div>
@@ -136,7 +142,7 @@ const VentesList = () => {
       )}
 
       {/* Modal Suppression */}
-      {showDeleteModal && venteToDelete && (
+      {showDeleteModal && clientToDelete && (
         <div className="modal modal-open">
           <div className="modal-box max-w-md p-0 overflow-hidden">
             <div className="bg-error/10 p-4 text-center">
@@ -146,8 +152,8 @@ const VentesList = () => {
               <h3 className="text-xl font-bold text-error">Confirmer la suppression</h3>
             </div>
             <div className="p-6 text-center">
-              <p className="text-base-content/70">Voulez-vous vraiment supprimer cette vente ?</p>
-              <p className="font-semibold text-error mt-2">{venteToDelete.reference}</p>
+              <p className="text-base-content/70">Voulez-vous vraiment supprimer ce client ?</p>
+              <p className="font-semibold text-error mt-2">{clientToDelete.nom} {clientToDelete.prenom || ''}</p>
             </div>
             <div className="flex gap-3 p-4 bg-gray-50">
               <button className="btn btn-ghost flex-1" onClick={() => setShowDeleteModal(false)}>Annuler</button>
@@ -166,71 +172,79 @@ const VentesList = () => {
           <div>
             <div className="flex items-center gap-3 mb-2">
               <div className="p-2 bg-primary/10 rounded-xl">
-                <ShoppingCart className="w-7 h-7 text-primary" />
+                <Users className="w-7 h-7 text-primary" />
               </div>
-              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-primary">Ventes</h1>
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-primary">Clients</h1>
             </div>
             <p className="text-sm text-base-content/60 ml-1">
-              Gérez toutes vos ventes – {stats?.count || 0} vente(s)
+              Gérez votre base de clients – {stats.total} client(s)
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <button onClick={fetchVentes} className="btn btn-sm sm:btn-md btn-outline gap-2 hover:bg-primary/10 transition-all">
+            <button onClick={fetchClients} className="btn btn-sm sm:btn-md btn-outline gap-2 hover:bg-primary/10 transition-all">
               <RefreshCw className="w-4 h-4" />
               Actualiser
             </button>
-            <button onClick={() => navigate('/point-de-vente')} className="btn btn-sm sm:btn-md bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary text-white border-none shadow-lg hover:shadow-xl transition-all gap-2">
+            <button onClick={() => navigate('/clients/nouveau')} className="btn btn-sm sm:btn-md bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary text-white border-none shadow-lg hover:shadow-xl transition-all gap-2">
               <Plus className="w-4 h-4" />
-              Nouvelle vente
+              Nouveau client
             </button>
           </div>
         </div>
       </div>
 
       {/* Cartes statistiques */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <div className="card bg-white shadow-md hover:shadow-lg transition-all rounded-xl border border-gray-200">
           <div className="card-body p-3 sm:p-4">
             <div className="flex items-center justify-between">
-              <div><p className="text-xs text-gray-500 font-medium uppercase">CA total</p><p className="text-xl sm:text-2xl font-bold text-primary">{formatPrice(stats?.total)}</p></div>
-              <DollarSign className="w-8 h-8 text-primary/20" />
+              <div><p className="text-xs text-gray-500 font-medium uppercase">Total</p><p className="text-xl sm:text-2xl font-bold text-primary">{stats.total}</p></div>
+              <Users className="w-8 h-8 text-primary/20" />
             </div>
           </div>
         </div>
         <div className="card bg-white shadow-md hover:shadow-lg transition-all rounded-xl border border-gray-200">
           <div className="card-body p-3 sm:p-4">
             <div className="flex items-center justify-between">
-              <div><p className="text-xs text-gray-500 font-medium uppercase">En attente</p><p className="text-xl sm:text-2xl font-bold text-orange-500">{stats?.pending || 0}</p></div>
-              <Clock className="w-8 h-8 text-orange-500/20" />
+              <div><p className="text-xs text-gray-500 font-medium uppercase">Particuliers</p><p className="text-xl sm:text-2xl font-bold text-info">{stats.particuliers}</p></div>
+              <User className="w-8 h-8 text-info/20" />
             </div>
           </div>
         </div>
         <div className="card bg-white shadow-md hover:shadow-lg transition-all rounded-xl border border-gray-200">
           <div className="card-body p-3 sm:p-4">
             <div className="flex items-center justify-between">
-              <div><p className="text-xs text-gray-500 font-medium uppercase">Complétées</p><p className="text-xl sm:text-2xl font-bold text-green-500">{stats?.completed || 0}</p></div>
-              <CheckCircle className="w-8 h-8 text-green-500/20" />
+              <div><p className="text-xs text-gray-500 font-medium uppercase">Entreprises</p><p className="text-xl sm:text-2xl font-bold text-secondary">{stats.entreprises}</p></div>
+              <Building2 className="w-8 h-8 text-secondary/20" />
             </div>
           </div>
         </div>
         <div className="card bg-white shadow-md hover:shadow-lg transition-all rounded-xl border border-gray-200">
           <div className="card-body p-3 sm:p-4">
             <div className="flex items-center justify-between">
-              <div><p className="text-xs text-gray-500 font-medium uppercase">Rejetées</p><p className="text-xl sm:text-2xl font-bold text-red-500">{stats?.rejected || 0}</p></div>
-              <XCircle className="w-8 h-8 text-red-500/20" />
+              <div><p className="text-xs text-gray-500 font-medium uppercase">Revendeurs</p><p className="text-xl sm:text-2xl font-bold text-warning">{stats.revendeurs}</p></div>
+              <Star className="w-8 h-8 text-warning/20" />
+            </div>
+          </div>
+        </div>
+        <div className="card bg-white shadow-md hover:shadow-lg transition-all rounded-xl border border-gray-200">
+          <div className="card-body p-3 sm:p-4">
+            <div className="flex items-center justify-between">
+              <div><p className="text-xs text-gray-500 font-medium uppercase">Actifs</p><p className="text-xl sm:text-2xl font-bold text-success">{stats.actifs}</p></div>
+              <CheckCircle className="w-8 h-8 text-success/20" />
             </div>
           </div>
         </div>
       </div>
 
       {/* Filtres avancés */}
-      <div className="bg-white rounded-xl shadow-md p-4">
+      <div className="bg-white rounded-xl shadow-md border border-gray-200 p-4">
         <div className="flex flex-col gap-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input 
               type="text" 
-              placeholder="Rechercher par référence ou client..." 
+              placeholder="Rechercher par nom, prénom, email, téléphone..." 
               className="input input-bordered w-full pl-9 py-3 focus:border-primary focus:ring-1 focus:ring-primary transition-all" 
               value={searchTerm} 
               onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }} 
@@ -239,111 +253,151 @@ const VentesList = () => {
           <button onClick={() => setShowFilters(!showFilters)} className="btn btn-outline btn-sm sm:hidden gap-2">
             <Filter className="w-4 h-4" /> {showFilters ? 'Masquer les filtres' : 'Afficher les filtres'}
           </button>
-          <div className={`${showFilters ? 'grid' : 'hidden'} sm:grid grid-cols-1 sm:grid-cols-4 gap-3`}>
-            <select className="select select-bordered w-full focus:border-primary" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}>
-              <option value="all">Tous les statuts</option>
-              <option value="draft">Brouillon</option>
-              <option value="pending_approval">En attente</option>
-              <option value="approved">Approuvée</option>
-              <option value="completed">Complétée</option>
-              <option value="rejected">Rejetée</option>
-              <option value="cancelled">Annulée</option>
-            </select>
+          <div className={`${showFilters ? 'grid' : 'hidden'} sm:grid grid-cols-1 sm:grid-cols-3 gap-3`}>
             <select className="select select-bordered w-full focus:border-primary" value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setCurrentPage(1); }}>
               <option value="all">Tous les types</option>
-              <option value="comptoir">Comptoir</option>
-              <option value="livraison">Livraison</option>
-              <option value="en_ligne">En ligne</option>
+              <option value="particulier">Particuliers</option>
+              <option value="entreprise">Entreprises</option>
+              <option value="revendeur">Revendeurs</option>
             </select>
-            <input type="date" className="input input-bordered w-full focus:border-primary" placeholder="Date début" value={dateRange.start} onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))} />
-            <input type="date" className="input input-bordered w-full focus:border-primary" placeholder="Date fin" value={dateRange.end} onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))} />
+            <select className="select select-bordered w-full focus:border-primary" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}>
+              <option value="all">Tous les statuts</option>
+              <option value="active">Actifs</option>
+              <option value="inactive">Inactifs</option>
+            </select>
+            <button className="btn btn-outline gap-2 hover:bg-primary/10 transition-all" onClick={() => { setTypeFilter('all'); setStatusFilter('all'); setSearchTerm(''); setCurrentPage(1); }}>
+              <RefreshCw className="w-4 h-4" /> Réinitialiser
+            </button>
           </div>
         </div>
       </div>
 
       {/* Tableau professionnel */}
-      <div className="bg-white rounded-xl shadow-xl overflow-hidden">
+      <div className="bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="table table-zebra w-full">
             <thead>
               <tr className="bg-gradient-to-r from-gray-50 to-white text-sm">
-                <th className="py-4 font-semibold">Référence</th>
                 <th className="py-4 font-semibold">Client</th>
-                <th className="py-4 font-semibold">Date</th>
-                <th className="py-4 font-semibold text-right">Montant</th>
+                <th className="py-4 font-semibold hidden md:table-cell">Contact</th>
+                <th className="py-4 font-semibold hidden lg:table-cell">Adresse</th>
+                <th className="py-4 font-semibold text-center">Type</th>
                 <th className="py-4 font-semibold text-center">Statut</th>
-                <th className="py-4 font-semibold text-center">Paiement</th>
                 <th className="py-4 font-semibold text-center">Actions</th>
-              </tr>
+               </tr>
             </thead>
             <tbody>
-              {paginatedVentes.length === 0 ? (
+              {paginatedClients.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="text-center py-16">
+                  <td colSpan="6" className="text-center py-16">
                     <div className="flex flex-col items-center gap-3">
                       <div className="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center">
-                        <ShoppingCart className="w-10 h-10 text-gray-300" />
+                        <Users className="w-10 h-10 text-gray-300" />
                       </div>
-                      <p className="text-gray-500 font-medium">Aucune vente trouvée</p>
-                      <button onClick={() => navigate('/point-de-vente')} className="btn btn-primary btn-sm gap-2 mt-2">
-                        <Plus className="w-4 h-4" /> Créer une vente
+                      <p className="text-gray-500 font-medium">Aucun client trouvé</p>
+                      <button onClick={() => navigate('/clients/nouveau')} className="btn btn-primary btn-sm gap-2 mt-2">
+                        <Plus className="w-4 h-4" /> Ajouter un client
                       </button>
                     </div>
                   </td>
                 </tr>
               ) : (
-                paginatedVentes.map((vente) => {
-                  const status = statusConfig[vente.status] || statusConfig.draft;
-                  const StatusIcon = status.icon;
-                  return (
-                    <tr key={vente.id} className="hover:bg-gray-50 transition-colors group cursor-pointer" onClick={() => navigate(`/ventes/${vente.id}`)}>
-                      <td className="font-mono text-sm">{vente.reference}</td>
-                      <td>{vente.client_nom || 'Anonyme'}</td>
-                      <td className="text-sm">{formatDate(vente.date_vente)}</td>
-                      <td className="text-right font-semibold text-primary">{formatPrice(vente.total)}</td>
-                      <td className="text-center">
-                        <span className={`badge ${status.bgColor} ${status.color} gap-1 px-3 py-2`}>
-                          <StatusIcon className="w-3 h-3" /> {status.label}
-                        </span>
-                      </td>
-                      <td className="text-center">
-                        {vente.est_paye ? (
-                          <span className="badge badge-success gap-1 px-3 py-2">
-                            <CheckCircle className="w-3 h-3" /> Payé
-                          </span>
-                        ) : (
-                          <span className="badge badge-error gap-1 px-3 py-2">
-                            <AlertCircle className="w-3 h-3" /> {formatPrice(vente.montant_du)}
-                          </span>
-                        )}
-                      </td>
-                      <td className="text-center">
-                        <div className="flex justify-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
-                          <button 
-                            className="btn btn-ghost btn-sm btn-circle"
-                            onClick={(e) => { e.stopPropagation(); navigate(`/ventes/${vente.id}`); }}
-                            title="Détails"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
+                paginatedClients.map((client) => (
+                  <tr key={client.id} className="hover:bg-gray-50 transition-colors group">
+                    <td>
+                      <div className="flex items-center gap-3">
+                        <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${client.client_type === 'entreprise' ? 'from-secondary/20 to-secondary/5' : client.client_type === 'revendeur' ? 'from-warning/20 to-warning/5' : 'from-primary/20 to-primary/5'} flex items-center justify-center`}>
+                          {getClientTypeIcon(client.client_type)}
                         </div>
-                      </td>
-                    </tr>
-                  );
-                })
+                        <div>
+                          <p className="font-semibold">{client.nom} {client.prenom || ''}</p>
+                          {client.raison_sociale && (
+                            <p className="text-xs text-gray-500">{client.raison_sociale}</p>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="hidden md:table-cell">
+                      <div className="space-y-1">
+                        {client.telephone && (
+                          <div className="flex items-center gap-1 text-sm">
+                            <Phone className="w-3 h-3 text-gray-400" />
+                            <span>{client.telephone}</span>
+                          </div>
+                        )}
+                        {client.email && (
+                          <div className="flex items-center gap-1 text-sm">
+                            <Mail className="w-3 h-3 text-gray-400" />
+                            <span className="truncate max-w-[150px]">{client.email}</span>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="hidden lg:table-cell">
+                      {client.adresse && (
+                        <div className="flex items-center gap-1 text-sm">
+                          <MapPin className="w-3 h-3 text-gray-400" />
+                          <span className="truncate max-w-[150px]">{client.adresse}</span>
+                        </div>
+                      )}
+                    </td>
+                    <td className="text-center">
+                      <span className={`badge ${client.client_type === 'entreprise' ? 'badge-secondary' : client.client_type === 'revendeur' ? 'badge-warning' : 'badge-primary'}`}>
+                        {getClientTypeLabel(client.client_type)}
+                      </span>
+                    </td>
+                    <td className="text-center">
+                      <span className={`badge ${client.is_active ? 'badge-success' : 'badge-error'}`}>
+                        {client.is_active ? 'Actif' : 'Inactif'}
+                      </span>
+                    </td>
+                    <td className="text-center">
+                      <div className="flex justify-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
+                        <button 
+                          onClick={() => navigate(`/clients/${client.id}`)} 
+                          className="btn btn-ghost btn-sm btn-circle" 
+                          title="Détails"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => navigate(`/clients/${client.id}/modifier`)} 
+                          className="btn btn-ghost btn-sm btn-circle" 
+                          title="Modifier"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => toggleActive(client)} 
+                          className="btn btn-ghost btn-sm btn-circle" 
+                          title={client.is_active ? 'Désactiver' : 'Activer'}
+                        >
+                          {client.is_active ? <Star className="w-4 h-4 text-success" /> : <StarOff className="w-4 h-4" />}
+                        </button>
+                        <button 
+                          onClick={() => { setClientToDelete(client); setShowDeleteModal(true); }} 
+                          className="btn btn-ghost btn-sm btn-circle text-error" 
+                          title="Supprimer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
         </div>
 
         {/* Pagination élégante */}
-        {filteredVentes.length > 0 && (
+        {filteredClients.length > 0 && (
           <div className="px-6 py-4 border-t border-gray-200 bg-white">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="text-sm text-gray-500">
                 Affichage de <span className="font-semibold text-primary">{((currentPage-1)*itemsPerPage)+1}</span> à{' '}
-                <span className="font-semibold text-primary">{Math.min(currentPage*itemsPerPage, filteredVentes.length)}</span>{' '}
-                sur <span className="font-semibold">{filteredVentes.length}</span> ventes
+                <span className="font-semibold text-primary">{Math.min(currentPage*itemsPerPage, filteredClients.length)}</span>{' '}
+                sur <span className="font-semibold">{filteredClients.length}</span> clients
               </div>
               <div className="flex items-center gap-3">
                 <select className="select select-bordered select-sm" value={itemsPerPage} onChange={(e) => { setItemsPerPage(parseInt(e.target.value)); setCurrentPage(1); }}>
@@ -363,11 +417,7 @@ const VentesList = () => {
                     else if (currentPage >= totalPages-2) pageNum = totalPages-4+i;
                     else pageNum = currentPage-2+i;
                     return (
-                      <button 
-                        key={pageNum} 
-                        onClick={() => setCurrentPage(pageNum)} 
-                        className={`join-item btn btn-sm ${currentPage === pageNum ? 'btn-primary text-white' : ''}`}
-                      >
+                      <button key={pageNum} onClick={() => setCurrentPage(pageNum)} className={`join-item btn btn-sm ${currentPage === pageNum ? 'btn-primary text-white' : ''}`}>
                         {pageNum}
                       </button>
                     );
@@ -385,4 +435,4 @@ const VentesList = () => {
   );
 };
 
-export default VentesList;
+export default ClientsList;
