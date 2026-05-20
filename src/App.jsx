@@ -75,6 +75,9 @@ import SalesDashboard from './components/ventes/SalesDashboard'
 import ClientsList from './components/ventes/ClientsList'
 import ClientForm from './components/ventes/ClientForm'
 import ClientDetail from './components/ventes/ClientDetail'
+import VentesList from './components/ventes/VentesList'
+import VenteForm from './components/ventes/VenteForm'
+import VenteDetail from './components/ventes/VenteDetail'
 
 
 import AuditLog from './components/audit/AuditLog'
@@ -250,6 +253,11 @@ function App() {
 <Route path="/clients/nouveau" element={<ClientForm />} />
 <Route path="/clients/:id" element={<ClientDetail />} />
 <Route path="/clients/:id/modifier" element={<ClientForm />} />
+
+
+<Route path="/ventes" element={<VentesList />} />
+<Route path="/ventes/nouveau" element={<VenteForm />} />
+<Route path="/ventes/:id" element={<VenteDetail />} />
 
 
  <Route path="/audit" element={<AuditLog />} />
