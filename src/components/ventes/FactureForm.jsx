@@ -2,7 +2,23 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
-import { Save, X, ArrowLeft, User, Calendar, Building2, CheckCircle, AlertCircle, Loader2, Receipt, DollarSign } from 'lucide-react';
+import {
+  Save,
+  X,
+  ArrowLeft,
+  Receipt,
+  FileText,
+  Calendar,
+  DollarSign,
+  AlertCircle,
+  CheckCircle,
+  Loader2,
+  Building2,
+  User,
+  Info,
+  CreditCard,
+  Plus
+} from 'lucide-react';
 
 const FactureForm = () => {
   const navigate = useNavigate();
@@ -12,11 +28,7 @@ const FactureForm = () => {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [ventes, setVentes] = useState([]);
-  const [clients, setClients] = useState([]);
-  const [agences, setAgences] = useState([]);
   const [selectedVente, setSelectedVente] = useState(null);
-  const [selectedClient, setSelectedClient] = useState(null);
-  const [selectedAgence, setSelectedAgence] = useState(null);
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
   const [formData, setFormData] = useState({
     type_facture: 'finale',
@@ -25,78 +37,65 @@ const FactureForm = () => {
     notes: '',
     pied_de_page: ''
   });
+  const [formErrors, setFormErrors] = useState({});
 
-  const showNotification = (message, type) => {
+  const showNotification = (message, type = 'success') => {
     setNotification({ show: true, message, type });
     setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 4000);
   };
 
-  const fetchData = async () => {
+  const fetchVentesEligibles = async () => {
     setLoading(true);
     try {
-      const [ventesRes, clientsRes, agencesRes] = await Promise.all([
-        AxiosInstance.get('/ventes/?status=completed'),
-        AxiosInstance.get('/clients/?is_active=true'),
-        AxiosInstance.get('/agences/')
-      ]);
-      setVentes(ventesRes.data || []);
-      setClients(clientsRes.data || []);
-      setAgences(agencesRes.data || []);
+      const response = await AxiosInstance.get('/ventes/sans_facture/');
+      setVentes(response.data || []);
+      // Date d'échéance par défaut : +30 jours
+      const echeance = new Date();
+      echeance.setDate(echeance.getDate() + 30);
+      setFormData(prev => ({ ...prev, date_echeance: echeance.toISOString().split('T')[0] }));
     } catch (error) {
-      console.error('Erreur:', error);
-      showNotification('Erreur de chargement', 'error');
+      console.error(error);
+      showNotification('Erreur de chargement des ventes', 'error');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchData();
+    fetchVentesEligibles();
   }, []);
 
   const handleVenteChange = (venteId) => {
     const vente = ventes.find(v => v.id === parseInt(venteId));
-    setSelectedVente(vente);
-    if (vente) {
-      setSelectedClient(vente.client || null);
-      setSelectedAgence(vente.agence || null);
-      if (!formData.date_echeance) {
-        const echeance = new Date();
-        echeance.setDate(echeance.getDate() + 30);
-        setFormData(prev => ({ ...prev, date_echeance: echeance.toISOString().split('T')[0] }));
-      }
-    } else {
-      setSelectedClient(null);
-      setSelectedAgence(null);
-    }
+    setSelectedVente(vente || null);
+    setFormErrors(prev => ({ ...prev, vente: null }));
+  };
+
+  const validateForm = () => {
+    const errors = {};
+    if (!selectedVente) errors.vente = 'La vente est obligatoire';
+    if (!formData.date_echeance) errors.date_echeance = 'La date d\'échéance est obligatoire';
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   const handleSubmit = async () => {
-    if (!selectedVente) {
-      showNotification('Sélectionnez une vente', 'error');
-      return;
-    }
-    if (!formData.date_echeance) {
-      showNotification('La date d\'échéance est requise', 'error');
+    if (!validateForm()) {
+      showNotification('Veuillez corriger les erreurs', 'error');
       return;
     }
 
     setSubmitting(true);
     try {
-      // On envoie l'agence si elle existe, sinon le backend la récupérera de la vente
       const payload = {
         vente: selectedVente.id,
-        client: selectedClient?.id || null,
-        agence: selectedAgence?.id || null,  // Peut être null, le backend gérera
         type_facture: formData.type_facture,
         date_echeance: formData.date_echeance,
         conditions_paiement: formData.conditions_paiement,
         notes: formData.notes,
         pied_de_page: formData.pied_de_page
       };
-      
-      console.log('Payload envoyé:', payload);
-      
+
       if (isEditMode) {
         await AxiosInstance.put(`/factures/${id}/`, payload);
         showNotification('Facture modifiée avec succès', 'success');
@@ -106,10 +105,12 @@ const FactureForm = () => {
       }
       setTimeout(() => navigate('/factures'), 1500);
     } catch (error) {
-      console.error('Erreur détaillée:', error.response?.data);
-      const errorMsg = error.response?.data?.error || 
-                       (typeof error.response?.data === 'object' ? JSON.stringify(error.response?.data) : error.response?.data) ||
-                       'Erreur lors de l\'enregistrement';
+      console.error(error);
+      const errorData = error.response?.data;
+      let errorMsg = 'Erreur lors de l\'enregistrement';
+      if (errorData?.vente) errorMsg = errorData.vente[0];
+      else if (errorData?.error) errorMsg = errorData.error;
+      else if (typeof errorData === 'string') errorMsg = errorData;
       showNotification(errorMsg, 'error');
     } finally {
       setSubmitting(false);
@@ -120,110 +121,313 @@ const FactureForm = () => {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="loading loading-spinner loading-lg text-primary"></div>
+      <div className="flex items-center justify-center h-[calc(100vh-200px)]">
+        <div className="text-center space-y-4">
+          <div className="loading loading-spinner loading-lg text-primary"></div>
+          <p className="text-base font-medium text-base-content/70 animate-pulse">
+            Chargement des données...
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6 p-3 sm:p-4 lg:p-6 bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
+    <div className="space-y-4 lg:space-y-6 p-3 lg:p-6 bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
       {/* Notification */}
       {notification.show && (
-        <div className="fixed top-20 right-4 sm:right-6 z-50 animate-slideDown max-w-md">
-          <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-xl rounded-xl`}>
-            <div className="flex items-center gap-2">
-              {notification.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-              <span>{notification.message}</span>
-            </div>
-            <button className="btn btn-ghost btn-xs btn-circle" onClick={() => setNotification({ show: false, message: '', type: 'success' })}>
-              <X className="w-3 h-3" />
+        <div className="fixed top-16 lg:top-20 right-3 lg:right-6 z-50 animate-slideDown w-[calc(100%-1.5rem)] lg:w-auto max-w-md">
+          <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-lg`}>
+            {notification.type === 'success' ? (
+              <CheckCircle className="w-4 h-4 lg:w-5 lg:h-5" />
+            ) : (
+              <AlertCircle className="w-4 h-4 lg:w-5 lg:h-5" />
+            )}
+            <span className="text-sm lg:text-base font-medium">{notification.message}</span>
+            <button
+              className="btn btn-ghost btn-xs btn-circle"
+              onClick={() => setNotification({ ...notification, show: false })}
+            >
+              <X className="w-3 h-3 lg:w-4 lg:h-4" />
             </button>
           </div>
         </div>
       )}
 
-      {/* En-tête */}
+      {/* En-tête avec gradient */}
       <div className="relative overflow-hidden bg-gradient-to-r from-primary/10 via-primary/5 to-transparent rounded-2xl p-5">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/factures')} className="btn btn-ghost btn-sm btn-circle">
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <h1 className="text-2xl font-black text-primary">{isEditMode ? 'Modifier la facture' : 'Nouvelle facture'}</h1>
+        <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full filter blur-3xl"></div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 relative z-10">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-primary/10 rounded-xl">
+                <Receipt className="w-7 h-7 text-primary" />
+              </div>
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-primary">
+                {isEditMode ? 'Modifier la facture' : 'Nouvelle facture'}
+              </h1>
+            </div>
+            <p className="text-sm text-base-content/60 ml-1">
+              {isEditMode
+                ? 'Modifiez les informations de la facture'
+                : 'Générez une facture à partir d\'une vente validée'}
+            </p>
           </div>
-          <button onClick={handleSubmit} disabled={submitting} className="btn btn-primary btn-sm gap-2">
-            {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            {isEditMode ? 'Modifier' : 'Créer'}
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => navigate('/factures')}
+              className="btn btn-outline btn-sm lg:btn-md gap-2"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Retour
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={submitting}
+              className="btn btn-primary btn-sm lg:btn-md gap-2 shadow-lg hover:shadow-xl transition-all"
+            >
+              {submitting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4" />
+              )}
+              {isEditMode ? 'Mettre à jour' : 'Créer la facture'}
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Formulaire */}
-      <div className="bg-white rounded-xl shadow-md p-6 max-w-3xl mx-auto">
-        {/* Type et Vente */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div className="form-control">
-            <label className="label">Type de facture</label>
-            <select className="select select-bordered" value={formData.type_facture} onChange={(e) => setFormData({ ...formData, type_facture: e.target.value })}>
-              <option value="proforma">Proforma</option>
-              <option value="finale">Finale</option>
-              <option value="avoir">Avoir</option>
-            </select>
-          </div>
-          <div className="form-control">
-            <label className="label">Vente associée *</label>
-            <select className="select select-bordered" value={selectedVente?.id || ''} onChange={(e) => handleVenteChange(e.target.value)}>
-              <option value="">Sélectionner une vente</option>
-              {ventes.map(v => (
-                <option key={v.id} value={v.id}>{v.reference} - {formatPrice(v.total)}</option>
-              ))}
-            </select>
-          </div>
-        </div>
+      {/* Formulaire principal */}
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-white rounded-xl shadow-xl border border-base-200 overflow-hidden">
+          <div className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Type de facture */}
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text font-medium flex items-center gap-2">
+                    <FileText className="w-4 h-4" />
+                    Type de facture
+                  </span>
+                </label>
+                <select
+                  className="select select-bordered w-full focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                  value={formData.type_facture}
+                  onChange={(e) => setFormData({ ...formData, type_facture: e.target.value })}
+                >
+                  <option value="proforma">Proforma</option>
+                  <option value="finale">Finale</option>
+                  <option value="avoir">Avoir</option>
+                </select>
+              </div>
 
-        {/* Client et Agence (lecture seule) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div className="form-control">
-            <label className="label">Client</label>
-            <input type="text" className="input input-bordered bg-gray-100" value={selectedClient?.nom || 'Aucun client'} readOnly disabled />
-          </div>
-          <div className="form-control">
-            <label className="label">Agence</label>
-            <input type="text" className="input input-bordered bg-gray-100" value={selectedAgence?.nom || 'Chargement...'} readOnly disabled />
-            {!selectedAgence && selectedVente && <p className="text-warning text-xs mt-1">⚠️ L'agence sera automatiquement récupérée depuis la vente</p>}
-          </div>
-        </div>
+              {/* Vente associée */}
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text font-medium flex items-center gap-2">
+                    <DollarSign className="w-4 h-4" />
+                    Vente associée *
+                  </span>
+                </label>
+                <select
+                  className={`select select-bordered w-full focus:border-primary focus:ring-1 focus:ring-primary transition-all ${
+                    formErrors.vente ? 'select-error' : ''
+                  }`}
+                  value={selectedVente?.id || ''}
+                  onChange={(e) => handleVenteChange(e.target.value)}
+                >
+                  <option value="">Sélectionner une vente</option>
+                  {ventes.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.reference} - {formatPrice(v.total)} - {v.client_nom || 'Anonyme'}
+                    </option>
+                  ))}
+                </select>
+                {formErrors.vente && (
+                  <label className="label">
+                    <span className="label-text-alt text-error">{formErrors.vente}</span>
+                  </label>
+                )}
+                {ventes.length === 0 && !loading && (
+                  <p className="text-xs text-warning mt-1">
+                    ⚠️ Aucune vente éligible. Seules les ventes approuvées ou complétées sans facture apparaissent.
+                  </p>
+                )}
+              </div>
 
-        {/* Date échéance */}
-        <div className="form-control mb-4">
-          <label className="label">Date d'échéance *</label>
-          <input type="date" className="input input-bordered" value={formData.date_echeance} onChange={(e) => setFormData({ ...formData, date_echeance: e.target.value })} />
-        </div>
+              {/* Client (auto rempli) */}
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text font-medium flex items-center gap-2">
+                    <User className="w-4 h-4" />
+                    Client
+                  </span>
+                </label>
+                <input
+                  type="text"
+                  className="input input-bordered bg-gray-100 cursor-not-allowed"
+                  value={selectedVente?.client_nom || 'Non renseigné'}
+                  readOnly
+                  disabled
+                />
+              </div>
 
-        {/* Conditions, notes, pied de page */}
-        <div className="form-control mb-4">
-          <label className="label">Conditions de paiement</label>
-          <textarea className="textarea textarea-bordered" rows="2" value={formData.conditions_paiement} onChange={(e) => setFormData({ ...formData, conditions_paiement: e.target.value })} />
-        </div>
-        <div className="form-control mb-4">
-          <label className="label">Notes</label>
-          <textarea className="textarea textarea-bordered" rows="2" value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} />
-        </div>
-        <div className="form-control mb-4">
-          <label className="label">Pied de page</label>
-          <textarea className="textarea textarea-bordered" rows="2" value={formData.pied_de_page} onChange={(e) => setFormData({ ...formData, pied_de_page: e.target.value })} />
-        </div>
+              {/* Agence (auto remplie) */}
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text font-medium flex items-center gap-2">
+                    <Building2 className="w-4 h-4" />
+                    Agence
+                  </span>
+                </label>
+                <input
+                  type="text"
+                  className="input input-bordered bg-gray-100 cursor-not-allowed"
+                  value={selectedVente?.agence_nom || 'Non renseignée'}
+                  readOnly
+                  disabled
+                />
+              </div>
 
-        {/* Résumé de la vente */}
-        {selectedVente && (
-          <div className="bg-gray-50 rounded-lg p-4 mt-4">
-            <h3 className="font-semibold mb-2">Récapitulatif de la vente</h3>
-            <div className="flex justify-between text-sm"><span>Sous-total HT</span><span>{formatPrice(selectedVente.sous_total)}</span></div>
-            <div className="flex justify-between text-sm"><span>TVA (18%)</span><span>{formatPrice(selectedVente.tva)}</span></div>
-            <div className="flex justify-between font-bold text-base mt-2 pt-2 border-t"><span>Total TTC</span><span className="text-primary">{formatPrice(selectedVente.total)}</span></div>
+              {/* Date d'échéance */}
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text font-medium flex items-center gap-2">
+                    <Calendar className="w-4 h-4" />
+                    Date d'échéance *
+                  </span>
+                </label>
+                <input
+                  type="date"
+                  className={`input input-bordered w-full focus:border-primary focus:ring-1 focus:ring-primary transition-all ${
+                    formErrors.date_echeance ? 'input-error' : ''
+                  }`}
+                  value={formData.date_echeance}
+                  onChange={(e) => {
+                    setFormData({ ...formData, date_echeance: e.target.value });
+                    setFormErrors((prev) => ({ ...prev, date_echeance: null }));
+                  }}
+                />
+                {formErrors.date_echeance && (
+                  <label className="label">
+                    <span className="label-text-alt text-error">{formErrors.date_echeance}</span>
+                  </label>
+                )}
+              </div>
+
+              {/* Conditions de paiement */}
+              <div className="form-control md:col-span-2">
+                <label className="label">
+                  <span className="label-text font-medium flex items-center gap-2">
+                    <CreditCard className="w-4 h-4" />
+                    Conditions de paiement
+                  </span>
+                </label>
+                <textarea
+                  className="textarea textarea-bordered w-full focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                  rows="2"
+                  value={formData.conditions_paiement}
+                  onChange={(e) =>
+                    setFormData({ ...formData, conditions_paiement: e.target.value })
+                  }
+                  placeholder="Ex: Paiement à 30 jours, escompte 2%..."
+                />
+              </div>
+
+              {/* Notes */}
+              <div className="form-control md:col-span-2">
+                <label className="label">
+                  <span className="label-text font-medium flex items-center gap-2">
+                    <Info className="w-4 h-4" />
+                    Notes
+                  </span>
+                </label>
+                <textarea
+                  className="textarea textarea-bordered w-full focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                  rows="2"
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  placeholder="Informations complémentaires..."
+                />
+              </div>
+
+              {/* Pied de page */}
+              <div className="form-control md:col-span-2">
+                <label className="label">
+                  <span className="label-text font-medium flex items-center gap-2">
+                    <FileText className="w-4 h-4" />
+                    Pied de page
+                  </span>
+                </label>
+                <textarea
+                  className="textarea textarea-bordered w-full focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                  rows="2"
+                  value={formData.pied_de_page}
+                  onChange={(e) => setFormData({ ...formData, pied_de_page: e.target.value })}
+                  placeholder="Mentions légales, coordonnées bancaires..."
+                />
+              </div>
+            </div>
+
+            {/* Résumé de la vente (si sélectionnée) */}
+            {selectedVente && (
+              <div className="mt-6 p-4 bg-primary/5 rounded-xl border border-primary/20">
+                <div className="flex items-center gap-2 mb-3">
+                  <DollarSign className="w-5 h-5 text-primary" />
+                  <h3 className="font-semibold text-lg">Récapitulatif de la vente</h3>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <span className="text-base-content/60">Sous-total HT :</span>{' '}
+                    <span className="font-medium">{formatPrice(selectedVente.sous_total)}</span>
+                  </div>
+                  <div>
+                    <span className="text-base-content/60">TVA (18%) :</span>{' '}
+                    <span className="font-medium">{formatPrice(selectedVente.tva)}</span>
+                  </div>
+                  <div>
+                    <span className="text-base-content/60 font-bold">Total TTC :</span>{' '}
+                    <span className="font-bold text-primary text-lg">
+                      {formatPrice(selectedVente.total)}
+                    </span>
+                  </div>
+                </div>
+                {selectedVente.montant_paye > 0 && (
+                  <div className="mt-2 pt-2 border-t border-primary/20 text-sm">
+                    <span className="text-base-content/60">Montant déjà payé :</span>{' '}
+                    <span className="font-medium text-green-600">
+                      {formatPrice(selectedVente.montant_paye)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-        )}
+
+          {/* Actions du formulaire */}
+          <div className="flex justify-end gap-3 p-6 bg-base-200/50 border-t border-base-200">
+            <button
+              type="button"
+              className="btn btn-ghost gap-2"
+              onClick={() => navigate('/factures')}
+            >
+              Annuler
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary gap-2"
+              onClick={handleSubmit}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4" />
+              )}
+              {isEditMode ? 'Mettre à jour' : 'Créer la facture'}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
