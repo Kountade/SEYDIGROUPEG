@@ -16,16 +16,8 @@ const FacturePDF = async (facture) => {
     const contentWidth = pageWidth - margins.left - margins.right
     let y = margins.top
 
-    // === COULEURS PROFESSIONNELLES ===
-    const colors = {
-      primary: '#1e40af',
-      success: '#16a34a',
-      danger: '#dc2626',
-      gray: '#6b7280',
-      lightGray: '#f3f4f6',
-      border: '#d1d5db',
-      text: '#111827'
-    }
+    // === TOUT EN NOIR ===
+    const black = '#000000'
 
     // === FONCTIONS ===
     const formatNumber = (n) => {
@@ -75,105 +67,105 @@ const FacturePDF = async (facture) => {
     if (logoData) {
       doc.addImage(logoData, 'PNG', margins.left, y, 40, 20)
     } else {
-      doc.setFontSize(13)
+      doc.setFontSize(16)
       doc.setFont('helvetica', 'bold')
-      doc.setTextColor(colors.primary)
+      doc.setTextColor(black)
       doc.text('SEYDI GROUP', margins.left, y + 8)
-      doc.setFontSize(8)
+      doc.setFontSize(10)
       doc.setFont('helvetica', 'normal')
-      doc.setTextColor(colors.gray)
+      doc.setTextColor(black)
       doc.text('SEYDI GROUP SARL', margins.left, y + 14)
       doc.text('Solutions Digitales', margins.left, y + 19)
     }
 
     const companyBox = { x: pageWidth - margins.right - 85, y: y, w: 85, h: 35 }
-    doc.setDrawColor(colors.border)
+    doc.setDrawColor(black)
     doc.setLineWidth(0.2)
     doc.rect(companyBox.x, companyBox.y, companyBox.w, companyBox.h, 'S')
     
-    doc.setFontSize(8)
+    doc.setFontSize(10)
     doc.setFont('helvetica', 'bold')
-    doc.setTextColor(colors.gray)
+    doc.setTextColor(black)
     doc.text('SOCIÉTÉ', companyBox.x + companyBox.w / 2, companyBox.y + 4, { align: 'center' })
     
     doc.setFont('helvetica', 'normal')
-    doc.setTextColor(colors.text)
+    doc.setTextColor(black)
     doc.text('SEYDI GROUP SARL', companyBox.x + 4, companyBox.y + 10)
     doc.text('Dakar, Sénégal', companyBox.x + 4, companyBox.y + 16)
     doc.text('+221 33 123 45 67', companyBox.x + 4, companyBox.y + 22)
-    doc.setFontSize(7)
+    doc.setFontSize(9)
     doc.text('contact@seydigroup.com', companyBox.x + 4, companyBox.y + 28)
 
     y = companyBox.y + companyBox.h + 8
 
-    doc.setDrawColor(colors.primary)
+    doc.setDrawColor(black)
     doc.setLineWidth(0.5)
     doc.line(margins.left, y, pageWidth - margins.right, y)
     y += 8
 
-    doc.setFontSize(10)
+    doc.setFontSize(12)
     doc.setFont('helvetica', 'normal')
-    doc.setTextColor(colors.gray)
+    doc.setTextColor(black)
     doc.text(`Réf: ${facture.reference || 'N° FACTURE'}`, pageWidth / 2, y, { align: 'center' })
     y += 12
 
     // ============================================================
     // INFORMATIONS
     // ============================================================
-    const infoBox = { x: margins.left, y: y, w: contentWidth, h: 38 }
-    doc.setDrawColor(colors.border)
+    const infoBox = { x: margins.left, y: y, w: contentWidth, h: 46 }
+    doc.setDrawColor(black)
     doc.setLineWidth(0.3)
     doc.rect(infoBox.x, infoBox.y, infoBox.w, infoBox.h, 'S')
     
     const midX = infoBox.x + infoBox.w / 2
     doc.line(midX, infoBox.y, midX, infoBox.y + infoBox.h)
 
-    let infoY = infoBox.y + 5
-    doc.setFontSize(9)
+    let infoY = infoBox.y + 6
+    doc.setFontSize(11)
     doc.setFont('helvetica', 'bold')
-    doc.setTextColor(colors.primary)
+    doc.setTextColor(black)
     doc.text('CLIENT', infoBox.x + 4, infoY)
-    infoY += 6
+    infoY += 7
     
     doc.setFont('helvetica', 'bold')
-    doc.setTextColor(colors.text)
-    doc.setFontSize(8)
+    doc.setTextColor(black)
+    doc.setFontSize(10)
     doc.text('Nom :', infoBox.x + 4, infoY)
     doc.setFont('helvetica', 'normal')
     const clientName = client.raison_sociale || client.nom || 
                       (client.prenom ? `${client.nom} ${client.prenom}` : client.nom) || '-'
     doc.text(clientName.substring(0, 28), infoBox.x + 22, infoY)
-    infoY += 5
+    infoY += 6
     
     doc.setFont('helvetica', 'bold')
     doc.text('Adresse :', infoBox.x + 4, infoY)
     doc.setFont('helvetica', 'normal')
     doc.text((client.adresse || '-').substring(0, 28), infoBox.x + 22, infoY)
-    infoY += 5
+    infoY += 6
     
     doc.setFont('helvetica', 'bold')
     doc.text('Tél :', infoBox.x + 4, infoY)
     doc.setFont('helvetica', 'normal')
     doc.text(client.telephone || '-', infoBox.x + 22, infoY)
 
-    infoY = infoBox.y + 5
+    infoY = infoBox.y + 6
     doc.setFont('helvetica', 'bold')
-    doc.setTextColor(colors.primary)
+    doc.setTextColor(black)
     doc.text('DÉTAILS', midX + 4, infoY)
-    infoY += 6
+    infoY += 7
     
     doc.setFont('helvetica', 'bold')
-    doc.setTextColor(colors.text)
+    doc.setTextColor(black)
     doc.text('Date :', midX + 4, infoY)
     doc.setFont('helvetica', 'normal')
     doc.text(formatDate(facture.date_facture), midX + 24, infoY)
-    infoY += 5
+    infoY += 6
     
     doc.setFont('helvetica', 'bold')
     doc.text('Échéance :', midX + 4, infoY)
     doc.setFont('helvetica', 'normal')
     doc.text(formatDate(facture.date_echeance), midX + 24, infoY)
-    infoY += 5
+    infoY += 6
     
     doc.setFont('helvetica', 'bold')
     doc.text('Type :', midX + 4, infoY)
@@ -184,14 +176,14 @@ const FacturePDF = async (facture) => {
     y = infoBox.y + infoBox.h + 10
 
     // ============================================================
-    // TABLEAU DES ARTICLES
+    // TABLEAU DES ARTICLES - Largeurs ajustées pour éviter débordement
     // ============================================================
     const cols = {
-      ref: { w: 25, align: 'center' },
-      designation: { w: 60, align: 'left' },
-      qte: { w: 18, align: 'center' },
-      pu: { w: 32, align: 'right' },
-      total: { w: 35, align: 'right' }
+      ref: { w: 23, align: 'center' },
+      designation: { w: 54, align: 'left' },
+      qte: { w: 17, align: 'center' },
+      pu: { w: 36, align: 'right' },
+      total: { w: 38, align: 'right' }
     }
     
     let currentX = margins.left
@@ -205,12 +197,12 @@ const FacturePDF = async (facture) => {
     currentX += cols.pu.w
     const posTotal = currentX
     
-    const rowH = 8
+    const rowH = 10
     const tableTop = y
 
-    doc.setFillColor(colors.lightGray)
+    doc.setFillColor('#ffffff')
     doc.rect(margins.left, tableTop, contentWidth, rowH, 'F')
-    doc.setDrawColor(colors.border)
+    doc.setDrawColor(black)
     doc.setLineWidth(0.2)
     doc.rect(margins.left, tableTop, contentWidth, rowH, 'S')
     doc.line(posDesignation, tableTop, posDesignation, tableTop + rowH)
@@ -218,10 +210,10 @@ const FacturePDF = async (facture) => {
     doc.line(posPu, tableTop, posPu, tableTop + rowH)
     doc.line(posTotal, tableTop, posTotal, tableTop + rowH)
 
-    doc.setFontSize(8)
+    doc.setFontSize(10)
     doc.setFont('helvetica', 'bold')
-    doc.setTextColor(colors.text)
-    const headerY = tableTop + rowH / 2 + 1
+    doc.setTextColor(black)
+    const headerY = tableTop + rowH / 2 + 1.5
     doc.text('RÉF', posRef + cols.ref.w / 2, headerY, { align: 'center' })
     doc.text('DÉSIGNATION', posDesignation + cols.designation.w / 2, headerY, { align: 'center' })
     doc.text('QTÉ', posQte + cols.qte.w / 2, headerY, { align: 'center' })
@@ -230,7 +222,7 @@ const FacturePDF = async (facture) => {
 
     y = tableTop + rowH
 
-    doc.setFontSize(8)
+    doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
 
     if (items.length) {
@@ -238,23 +230,23 @@ const FacturePDF = async (facture) => {
         if (y + rowH > 270) {
           doc.addPage()
           y = margins.top + 10
-          doc.setFillColor(colors.lightGray)
+          doc.setFillColor('#ffffff')
           doc.rect(margins.left, y, contentWidth, rowH, 'F')
           doc.rect(margins.left, y, contentWidth, rowH, 'S')
           doc.line(posDesignation, y, posDesignation, y + rowH)
           doc.line(posQte, y, posQte, y + rowH)
           doc.line(posPu, y, posPu, y + rowH)
           doc.line(posTotal, y, posTotal, y + rowH)
-          doc.text('RÉF', posRef + cols.ref.w / 2, y + rowH / 2 + 1, { align: 'center' })
-          doc.text('DÉSIGNATION', posDesignation + cols.designation.w / 2, y + rowH / 2 + 1, { align: 'center' })
-          doc.text('QTÉ', posQte + cols.qte.w / 2, y + rowH / 2 + 1, { align: 'center' })
-          doc.text('PRIX HT', posPu + cols.pu.w / 2, y + rowH / 2 + 1, { align: 'center' })
-          doc.text('TOTAL HT', posTotal + cols.total.w / 2, y + rowH / 2 + 1, { align: 'center' })
+          doc.text('RÉF', posRef + cols.ref.w / 2, y + rowH / 2 + 1.5, { align: 'center' })
+          doc.text('DÉSIGNATION', posDesignation + cols.designation.w / 2, y + rowH / 2 + 1.5, { align: 'center' })
+          doc.text('QTÉ', posQte + cols.qte.w / 2, y + rowH / 2 + 1.5, { align: 'center' })
+          doc.text('PRIX HT', posPu + cols.pu.w / 2, y + rowH / 2 + 1.5, { align: 'center' })
+          doc.text('TOTAL HT', posTotal + cols.total.w / 2, y + rowH / 2 + 1.5, { align: 'center' })
           y += rowH
         }
 
         const code = item.product_reference || item.reference || '-'
-        const name = (item.product_name || item.product?.name || '-').substring(0, 35)
+        const name = (item.product_name || item.product?.name || '-').substring(0, 32)
         const qty = parseFloat(item.quantity) || 0
         const price = parseFloat(item.prix_unitaire) || 0
         const total = parseFloat(item.total) || qty * price
@@ -265,31 +257,32 @@ const FacturePDF = async (facture) => {
         doc.line(posPu, y, posPu, y + rowH)
         doc.line(posTotal, y, posTotal, y + rowH)
 
-        const cellY = y + rowH / 2 + 1
+        const cellY = y + rowH / 2 + 1.5
         doc.text(code, posRef + cols.ref.w / 2, cellY, { align: 'center' })
         doc.text(name, posDesignation + 2, cellY)
         doc.text(formatNumber(qty), posQte + cols.qte.w / 2, cellY, { align: 'center' })
-        doc.text(formatNumber(price), posPu + cols.pu.w - 2, cellY, { align: 'right' })
+        // Alignement à droite avec une marge de sécurité
+        doc.text(formatNumber(price), posPu + cols.pu.w - 12, cellY, { align: 'right' })
         doc.setFont('helvetica', 'bold')
-        doc.text(formatNumber(total), posTotal + cols.total.w - 2, cellY, { align: 'right' })
+        doc.text(formatNumber(total), posTotal + cols.total.w - 12, cellY, { align: 'right' })
         doc.setFont('helvetica', 'normal')
 
         y += rowH
       })
     } else {
       doc.rect(margins.left, y, contentWidth, rowH, 'S')
-      doc.setTextColor(colors.gray)
-      doc.text('Aucun article', margins.left + contentWidth / 2, y + rowH / 2 + 1, { align: 'center' })
+      doc.setTextColor(black)
+      doc.text('Aucun article', margins.left + contentWidth / 2, y + rowH / 2 + 1.5, { align: 'center' })
       y += rowH
     }
 
     y += 5
-    doc.setDrawColor(colors.border)
+    doc.setDrawColor(black)
     doc.line(margins.left, y, pageWidth - margins.right, y)
     y += 8
 
     // ============================================================
-    // TOTAUX - CORRIGÉ : cadre plus large et texte réduit
+    // TOTAUX
     // ============================================================
     const sousTotal = parseFloat(facture.sous_total) || 0
     const tva = parseFloat(facture.tva) || 0
@@ -297,61 +290,51 @@ const FacturePDF = async (facture) => {
     const paye = parseFloat(facture.montant_paye) || 0
     const reste = parseFloat(facture.montant_restant) || 0
 
-    // Cadre des totaux plus large
-    const totalBox = { x: pageWidth - margins.right - 95, y: y, w: 95, h: 48 }
-    doc.setDrawColor(colors.border)
+    const totalBox = { x: pageWidth - margins.right - 95, y: y, w: 95, h: 60 }
+    doc.setDrawColor(black)
     doc.setLineWidth(0.3)
     doc.rect(totalBox.x, totalBox.y, totalBox.w, totalBox.h, 'S')
 
-    let ty = totalBox.y + 6
-    doc.setFontSize(8)
+    let ty = totalBox.y + 7
+    doc.setFontSize(10)
     
-    // SOUS-TOTAL HT
     doc.setFont('helvetica', 'bold')
     doc.text('SOUS-TOTAL HT', totalBox.x + 5, ty)
     doc.setFont('helvetica', 'normal')
     const sousTotalStr = formatCurrency(sousTotal)
     doc.text(sousTotalStr, totalBox.x + totalBox.w - 15, ty, { align: 'right' })
-    ty += 7
+    ty += 9
 
-    // TVA
     doc.setFont('helvetica', 'bold')
     doc.text('TVA (18%)', totalBox.x + 5, ty)
     doc.setFont('helvetica', 'normal')
     const tvaStr = formatCurrency(tva)
     doc.text(tvaStr, totalBox.x + totalBox.w - 15, ty, { align: 'right' })
-    ty += 7
+    ty += 9
 
-    // Ligne de séparation
-    doc.setDrawColor(colors.border)
+    doc.setDrawColor(black)
     doc.setLineWidth(0.2)
-    doc.line(totalBox.x + 5, ty - 2, totalBox.x + totalBox.w - 15, ty - 2)
+    doc.line(totalBox.x + 5, ty - 3, totalBox.x + totalBox.w - 15, ty - 3)
 
-    // TOTAL TTC
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(9)
+    doc.setFontSize(11)
     doc.text('TOTAL TTC', totalBox.x + 5, ty)
-    doc.setFontSize(10)
-    doc.setTextColor(colors.primary)
+    doc.setFontSize(12)
+    doc.setTextColor(black)
     const totalTTCStr = formatCurrency(totalTTC)
     doc.text(totalTTCStr, totalBox.x + totalBox.w - 15, ty, { align: 'right' })
-    ty += 8
+    ty += 10
 
-    // MONTANT PAYÉ
-    doc.setFontSize(8)
+    doc.setFontSize(10)
     doc.setFont('helvetica', 'bold')
-    doc.setTextColor(colors.text)
+    doc.setTextColor(black)
     doc.text('MONTANT PAYÉ', totalBox.x + 5, ty)
-    doc.setTextColor(colors.success)
     const payeStr = formatCurrency(paye)
     doc.text(payeStr, totalBox.x + totalBox.w - 15, ty, { align: 'right' })
-    ty += 7
+    ty += 9
 
-    // RESTE À PAYER
     doc.setFont('helvetica', 'bold')
-    doc.setTextColor(colors.text)
     doc.text('RESTE À PAYER', totalBox.x + 5, ty)
-    doc.setTextColor(colors.danger)
     const resteStr = formatCurrency(reste)
     doc.text(resteStr, totalBox.x + totalBox.w - 15, ty, { align: 'right' })
 
@@ -361,18 +344,18 @@ const FacturePDF = async (facture) => {
     // INFORMATIONS COMPLÉMENTAIRES
     // ============================================================
     if (facture.conditions_paiement && facture.conditions_paiement !== 'Paiement à 30 jours') {
-      doc.setDrawColor(colors.border)
+      doc.setDrawColor(black)
       doc.setLineWidth(0.2)
       const lines = doc.splitTextToSize(facture.conditions_paiement, contentWidth - 10)
-      const boxH = Math.max(12, lines.length * 4 + 8)
+      const boxH = Math.max(14, lines.length * 5 + 8)
       if (y + boxH < 270) {
         doc.rect(margins.left, y, contentWidth, boxH, 'S')
-        doc.setFontSize(7)
+        doc.setFontSize(8)
         doc.setFont('helvetica', 'bold')
-        doc.setTextColor(colors.gray)
+        doc.setTextColor(black)
         doc.text('CONDITIONS', margins.left + 4, y + 4)
         doc.setFont('helvetica', 'normal')
-        doc.setTextColor(colors.text)
+        doc.setTextColor(black)
         doc.text(lines, margins.left + 4, y + 9)
         y += boxH + 6
       }
@@ -380,15 +363,15 @@ const FacturePDF = async (facture) => {
 
     if (facture.notes) {
       const lines = doc.splitTextToSize(facture.notes, contentWidth - 10)
-      const boxH = Math.max(12, lines.length * 4 + 8)
+      const boxH = Math.max(14, lines.length * 5 + 8)
       if (y + boxH < 270) {
         doc.rect(margins.left, y, contentWidth, boxH, 'S')
-        doc.setFontSize(7)
+        doc.setFontSize(8)
         doc.setFont('helvetica', 'bold')
-        doc.setTextColor(colors.gray)
+        doc.setTextColor(black)
         doc.text('NOTES', margins.left + 4, y + 4)
         doc.setFont('helvetica', 'normal')
-        doc.setTextColor(colors.text)
+        doc.setTextColor(black)
         doc.text(lines, margins.left + 4, y + 9)
         y += boxH + 6
       }
@@ -398,12 +381,12 @@ const FacturePDF = async (facture) => {
     // PIED DE PAGE
     // ============================================================
     const footerY = 280
-    doc.setDrawColor(colors.border)
+    doc.setDrawColor(black)
     doc.setLineWidth(0.2)
     doc.line(margins.left, footerY - 10, pageWidth - margins.right, footerY - 10)
     
-    doc.setFontSize(7)
-    doc.setTextColor(colors.gray)
+    doc.setFontSize(9)
+    doc.setTextColor(black)
     doc.setFont('helvetica', 'normal')
     doc.text('SEYDI GROUP SARL - Dakar, Sénégal - Tél: +221 33 123 45 67', pageWidth / 2, footerY - 5, { align: 'center' })
     doc.text(`Facture électronique du ${formatDate(new Date())}`, pageWidth / 2, footerY - 1, { align: 'center' })
@@ -411,8 +394,8 @@ const FacturePDF = async (facture) => {
     const pageCount = doc.internal.getNumberOfPages()
     for (let i = 1; i <= pageCount; i++) {
       doc.setPage(i)
-      doc.setFontSize(7)
-      doc.setTextColor(colors.gray)
+      doc.setFontSize(9)
+      doc.setTextColor(black)
       doc.text(`Page ${i}/${pageCount}`, pageWidth - margins.right, footerY, { align: 'right' })
     }
 
