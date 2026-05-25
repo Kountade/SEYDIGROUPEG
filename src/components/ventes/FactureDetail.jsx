@@ -2,11 +2,12 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
+import FacturePDF from './FacturePDF';
 import { 
   ArrowLeft, Receipt, User, Calendar, CreditCard, 
   CheckCircle, XCircle, Clock, Printer, AlertCircle, 
   RefreshCw, Building2, Package, FileText, 
-  DollarSign, Plus, X, Info
+  DollarSign, Plus, X, Info, Download
 } from 'lucide-react';
 
 const FactureDetail = () => {
@@ -28,6 +29,8 @@ const FactureDetail = () => {
     setLoading(true);
     try {
       const response = await AxiosInstance.get(`/factures/${id}/`);
+      console.log('Facture chargée:', response.data);
+      console.log('Items:', response.data.items);
       setFacture(response.data);
     } catch (error) {
       console.error('Erreur:', error);
@@ -42,15 +45,43 @@ const FactureDetail = () => {
     fetchFacture();
   }, [id]);
 
+  // Génération du PDF avec le composant React
   const handleGeneratePDF = async () => {
     if (!facture) return;
     setGeneratingPDF(true);
     try {
-      window.open(`/factures/${id}/pdf/`, '_blank');
+      await FacturePDF(facture);
       showNotification('PDF généré avec succès', 'success');
     } catch (error) {
       console.error('Erreur:', error);
       showNotification('Erreur lors de la génération du PDF', 'error');
+    } finally {
+      setGeneratingPDF(false);
+    }
+  };
+
+  // Alternative: télécharger via l'API backend
+  const handleDownloadPDFFromAPI = async () => {
+    if (!facture) return;
+    setGeneratingPDF(true);
+    try {
+      const response = await AxiosInstance.get(`/factures/${id}/pdf/`, {
+        responseType: 'blob'
+      });
+      
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Facture_${facture.reference}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      showNotification('PDF téléchargé avec succès', 'success');
+    } catch (error) {
+      console.error('Erreur:', error);
+      showNotification('Erreur lors du téléchargement du PDF', 'error');
     } finally {
       setGeneratingPDF(false);
     }
@@ -116,7 +147,7 @@ const FactureDetail = () => {
   const status = statusConfig[facture.status] || statusConfig.draft;
   const StatusIcon = status.icon;
   const canAddPayment = facture.status !== 'paid' && facture.status !== 'cancelled' && facture.montant_restant > 0;
-  const items = facture.items || []; // items récupérés depuis la vente
+  const items = facture.items || [];
 
   return (
     <div className="space-y-4 lg:space-y-6 p-3 lg:p-6 bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
@@ -184,16 +215,18 @@ const FactureDetail = () => {
             </div>
           </div>
           <div className="flex gap-2">
-            <button onClick={fetchFacture} className="btn btn-outline btn-sm gap-2"><RefreshCw className="w-4 h-4" /> Actualiser</button>
+            <button onClick={fetchFacture} className="btn btn-outline btn-sm gap-2">
+              <RefreshCw className="w-4 h-4" /> Actualiser
+            </button>
             <button onClick={handleGeneratePDF} disabled={generatingPDF} className="btn btn-outline btn-primary btn-sm gap-2">
-              {generatingPDF ? <div className="loading loading-spinner loading-xs"></div> : <Printer className="w-4 h-4" />}
+              {generatingPDF ? <div className="loading loading-spinner loading-xs"></div> : <Download className="w-4 h-4" />}
               PDF
             </button>
           </div>
         </div>
       </div>
 
-      {/* Actions - Enregistrer paiement */}
+      {/* Actions */}
       {canAddPayment && (
         <div className="bg-white rounded-xl shadow-md p-4">
           <button onClick={() => setShowPaymentModal(true)} className="btn btn-primary gap-2 w-full sm:w-auto">
@@ -203,32 +236,51 @@ const FactureDetail = () => {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Colonne gauche - Articles (depuis la vente) */}
+        {/* Colonne gauche - Articles */}
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-white rounded-xl shadow-md p-6">
-            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2"><Package className="w-5 h-5 text-primary" /> Articles</h2>
+            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Package className="w-5 h-5 text-primary" /> Articles
+            </h2>
             {items.length === 0 ? (
-              <div className="text-center py-8 text-gray-400"><Package className="w-12 h-12 mx-auto mb-2" /><p>Aucun article</p></div>
+              <div className="text-center py-8 text-gray-400">
+                <Package className="w-12 h-12 mx-auto mb-2" />
+                <p>Aucun article</p>
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="table w-full">
                   <thead className="bg-gray-50">
-                    <tr><th>Produit</th><th className="text-center">Qté</th><th className="text-right">Prix unitaire</th><th className="text-right">Total</th></tr>
+                    <tr>
+                      <th>Produit</th>
+                      <th className="text-center">Qté</th>
+                      <th className="text-right">Prix unitaire</th>
+                      <th className="text-right">Total</th>
+                    </tr>
                   </thead>
                   <tbody>
                     {items.map((item, idx) => (
                       <tr key={idx}>
-                        <td>{item.product_name}</td>
-                        <td className="text-center">{item.quantity}</td>
-                        <td className="text-right">{formatPrice(item.prix_unitaire)}</td>
-                        <td className="text-right font-semibold">{formatPrice(item.total)}</td>
+                        <td>{item.product_name || item.product?.name || '-'}</td>
+                        <td className="text-center">{item.quantity || item.quantite || 0}</td>
+                        <td className="text-right">{formatPrice(item.prix_unitaire || item.prix_unitaire_ht || 0)}</td>
+                        <td className="text-right font-semibold">{formatPrice(item.total || item.montant_ht || 0)}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot className="bg-gray-50">
-                    <tr><td colSpan="3" className="text-right font-semibold">Sous-total HT</td><td className="text-right">{formatPrice(facture.sous_total)}</td></tr>
-                    <tr><td colSpan="3" className="text-right">TVA (18%)</td><td className="text-right">{formatPrice(facture.tva)}</td></tr>
-                    <tr className="border-t"><td colSpan="3" className="text-right font-bold text-lg">Total TTC</td><td className="text-right font-bold text-primary text-lg">{formatPrice(facture.total_ttc)}</td></tr>
+                    <tr>
+                      <td colSpan="3" className="text-right font-semibold">Sous-total HT</td>
+                      <td className="text-right">{formatPrice(facture.sous_total)}</td>
+                    </tr>
+                    <tr>
+                      <td colSpan="3" className="text-right">TVA (18%)</td>
+                      <td className="text-right">{formatPrice(facture.tva)}</td>
+                    </tr>
+                    <tr className="border-t">
+                      <td colSpan="3" className="text-right font-bold text-lg">Total TTC</td>
+                      <td className="text-right font-bold text-primary text-lg">{formatPrice(facture.total_ttc)}</td>
+                    </tr>
                   </tfoot>
                 </table>
               </div>
@@ -239,27 +291,56 @@ const FactureDetail = () => {
         {/* Colonne droite - Informations */}
         <div className="space-y-6">
           <div className="bg-white rounded-xl shadow-md p-6">
-            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2"><Info className="w-5 h-5 text-info" /> Informations</h2>
+            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Info className="w-5 h-5 text-info" /> Informations
+            </h2>
             <div className="space-y-4">
               <div className="flex items-start gap-3">
-                <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center"><Receipt className="w-4 h-4 text-primary" /></div>
-                <div><p className="text-xs text-gray-500">Statut</p><p className={`flex items-center gap-1 ${status.color}`}><StatusIcon className="w-4 h-4" /> {status.label}</p></div>
+                <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">
+                  <Receipt className="w-4 h-4 text-primary" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Statut</p>
+                  <p className={`flex items-center gap-1 ${status.color}`}>
+                    <StatusIcon className="w-4 h-4" /> {status.label}
+                  </p>
+                </div>
               </div>
               <div className="flex items-start gap-3">
-                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center"><User className="w-4 h-4 text-blue-500" /></div>
-                <div><p className="text-xs text-gray-500">Client</p><p>{facture.client?.nom || 'Anonyme'}</p></div>
+                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                  <User className="w-4 h-4 text-blue-500" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Client</p>
+                  <p>{facture.client?.nom || facture.client?.raison_sociale || 'Anonyme'}</p>
+                </div>
               </div>
               <div className="flex items-start gap-3">
-                <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center"><Calendar className="w-4 h-4 text-green-500" /></div>
-                <div><p className="text-xs text-gray-500">Échéance</p><p>{formatDate(facture.date_echeance)}</p></div>
+                <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                  <Calendar className="w-4 h-4 text-green-500" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Échéance</p>
+                  <p>{formatDate(facture.date_echeance)}</p>
+                </div>
               </div>
               <div className="flex items-start gap-3">
-                <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center"><Building2 className="w-4 h-4 text-purple-500" /></div>
-                <div><p className="text-xs text-gray-500">Agence</p><p>{facture.agence?.nom}</p></div>
+                <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
+                  <Building2 className="w-4 h-4 text-purple-500" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Agence</p>
+                  <p>{facture.agence?.nom || '-'}</p>
+                </div>
               </div>
               <div className="flex items-start gap-3">
-                <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center"><DollarSign className="w-4 h-4 text-orange-500" /></div>
-                <div><p className="text-xs text-gray-500">Type</p><p>{facture.type_facture}</p></div>
+                <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
+                  <DollarSign className="w-4 h-4 text-orange-500" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Type</p>
+                  <p>{facture.type_facture === 'proforma' ? 'Proforma' : facture.type_facture === 'finale' ? 'Finale' : 'Avoir'}</p>
+                </div>
               </div>
             </div>
           </div>
@@ -270,12 +351,14 @@ const FactureDetail = () => {
               <p className="text-gray-600 text-sm">{facture.conditions_paiement}</p>
             </div>
           )}
+          
           {facture.notes && (
             <div className="bg-white rounded-xl shadow-md p-6">
               <h2 className="text-lg font-semibold mb-2">Notes</h2>
               <p className="text-gray-600 text-sm">{facture.notes}</p>
             </div>
           )}
+          
           {facture.pied_de_page && (
             <div className="bg-white rounded-xl shadow-md p-6">
               <h2 className="text-lg font-semibold mb-2">Pied de page</h2>
