@@ -3,9 +3,10 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Plus, Eye, CheckCircle, XCircle, Send, Truck, Ban, AlertCircle,
-  Package, ArrowLeftRight, Clock, Filter, Search, RefreshCw
+  Package, ArrowLeftRight, Clock, Filter, Search, RefreshCw, FileText
 } from 'lucide-react';
 import AxiosInstance from '../AxiosInstance';
+import TransfertPdf from './TransfertPdf';
 
 const STATUS_CONFIG = {
   draft: { label: 'Brouillon', color: 'secondary', icon: Clock },
@@ -22,6 +23,7 @@ const Transferts = () => {
   const navigate = useNavigate();
   const [transfers, setTransfers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [downloadingId, setDownloadingId] = useState(null);
   const [filters, setFilters] = useState({
     status: '',
     search: ''
@@ -46,7 +48,6 @@ const Transferts = () => {
       } else if (user?.role_global === 'drh') {
         role = 'drh';
       } else if (user?.roles_agence) {
-        // Pour les chefs d'agence, on récupère leurs agences
         agencesAccessibles = user.roles_agence
           .filter(r => r.est_actif)
           .map(r => r.agence_id);
@@ -62,6 +63,22 @@ const Transferts = () => {
       return { user, role, agencesAccessibles, agenceCourante };
     } catch {
       return { user: null, role: 'autre', agencesAccessibles: [], agenceCourante: {} };
+    }
+  };
+
+  // Fonction de téléchargement PDF
+  const downloadPDF = async (transfer) => {
+    setDownloadingId(transfer.id);
+    try {
+      // Récupérer les détails complets du transfert avec les items
+      const response = await AxiosInstance.get(`/transfers/${transfer.id}/`);
+      const fullTransfer = response.data;
+      await TransfertPdf(fullTransfer);
+    } catch (error) {
+      console.error('Erreur lors de la génération du PDF:', error);
+      alert('Erreur lors de la génération du PDF');
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -83,7 +100,9 @@ const Transferts = () => {
         to_agence_nom: transfer.to_agence?.nom || transfer.to_warehouse?.agence?.nom || 'N/A',
         to_agence_id: transfer.to_agence?.id || transfer.to_warehouse?.agence?.id,
         from_warehouse_nom: transfer.from_warehouse?.name || 'N/A',
-        to_warehouse_nom: transfer.to_warehouse?.name || 'N/A'
+        to_warehouse_nom: transfer.to_warehouse?.name || 'N/A',
+        // Récupérer le nombre d'articles depuis l'API si disponible, sinon compter
+        items_count: transfer.items_count || transfer.items?.length || 0
       }));
       
       setTransfers(transfersWithInfo);
@@ -93,6 +112,43 @@ const Transferts = () => {
       setLoading(false);
     }
   };
+
+  // Fonction pour récupérer le nombre d'articles pour un transfert spécifique
+  const fetchItemsCount = async (transferId) => {
+    try {
+      const response = await AxiosInstance.get(`/transfers/${transferId}/status/`);
+      return response.data.total_items || 0;
+    } catch (error) {
+      console.error('Erreur chargement nombre articles:', error);
+      return 0;
+    }
+  };
+
+  // Charger les comptes d'articles pour chaque transfert si non fournis par l'API
+  useEffect(() => {
+    const loadItemsCounts = async () => {
+      const updatedTransfers = [...transfers];
+      let hasUpdates = false;
+      
+      for (let i = 0; i < updatedTransfers.length; i++) {
+        if (updatedTransfers[i].items_count === 0 && !updatedTransfers[i].items) {
+          const count = await fetchItemsCount(updatedTransfers[i].id);
+          if (count > 0) {
+            updatedTransfers[i].items_count = count;
+            hasUpdates = true;
+          }
+        }
+      }
+      
+      if (hasUpdates) {
+        setTransfers(updatedTransfers);
+      }
+    };
+    
+    if (transfers.length > 0 && !loading) {
+      loadItemsCounts();
+    }
+  }, [transfers, loading]);
 
   const fetchAgences = async () => {
     try {
@@ -135,14 +191,11 @@ const Transferts = () => {
   const canSubmit = (transfer) => {
     const { agenceCourante, role } = getUserInfo();
     
-    // Seul le chef d'agence de DESTINATION peut soumettre
     if (transfer.status !== 'draft') return false;
     
-    // Vérifier si l'utilisateur est le chef de l'agence de destination
     const isDestinationChef = transfer.to_agence_id === agenceCourante?.id && 
                               (role === 'chef_agence');
     
-    // Le PDG et DRH ne soumettent pas (ils approuvent directement)
     if (role === 'pdg' || role === 'drh') return false;
     
     return isDestinationChef;
@@ -154,10 +207,8 @@ const Transferts = () => {
     
     if (transfer.status !== 'pending_approval') return false;
     
-    // PDG peut tout approuver
     if (role === 'pdg') return true;
     
-    // Chef d'agence SOURCE peut approuver
     const isSourceChef = transfer.from_agence_id === agenceCourante?.id && 
                          (role === 'chef_agence');
     
@@ -175,10 +226,8 @@ const Transferts = () => {
     
     if (transfer.status !== 'draft' && transfer.status !== 'pending_approval') return false;
     
-    // PDG peut tout annuler
     if (role === 'pdg') return true;
     
-    // Chef d'agence SOURCE ou DESTINATION peut annuler
     const isSourceOrDestination = (transfer.from_agence_id === agenceCourante?.id || 
                                    transfer.to_agence_id === agenceCourante?.id) && 
                                   (role === 'chef_agence');
@@ -356,7 +405,9 @@ const Transferts = () => {
                     </div>
                   </td>
                   <td className="text-center">
-                    <span className="badge badge-neutral">{transfer.items?.length || 0}</span>
+                    <span className="badge badge-neutral">
+                      {transfer.items_count || transfer.items?.length || 0}
+                    </span>
                   </td>
                   <td className="text-sm">{new Date(transfer.created_at).toLocaleDateString('fr-FR')}</td>
                   <td>
@@ -364,6 +415,20 @@ const Transferts = () => {
                       <Link to={`/transferts/${transfer.id}`} className="btn btn-xs btn-ghost" title="Voir détails">
                         <Eye className="w-3 h-3" />
                       </Link>
+                      
+                      {/* Bouton PDF */}
+                      <button 
+                        onClick={() => downloadPDF(transfer)} 
+                        className="btn btn-xs btn-ghost text-info" 
+                        title="Télécharger PDF"
+                        disabled={downloadingId === transfer.id}
+                      >
+                        {downloadingId === transfer.id ? (
+                          <span className="loading loading-spinner loading-xs"></span>
+                        ) : (
+                          <FileText className="w-3 h-3" />
+                        )}
+                      </button>
                       
                       {/* Bouton SOUMETTRE (Chef agence DESTINATION) */}
                       {showSubmit && (
@@ -420,6 +485,7 @@ const Transferts = () => {
       {/* Légende des actions */}
       <div className="mt-4 p-3 bg-base-200 rounded-lg text-xs text-base-content/60">
         <div className="flex flex-wrap gap-4">
+          <span className="flex items-center gap-1"><FileText className="w-3 h-3 text-info" /> PDF : Télécharger le document</span>
           <span className="flex items-center gap-1"><Send className="w-3 h-3 text-warning" /> Soumettre : Chef agence destination</span>
           <span className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-success" /> Approuver : Chef agence source ou PDG</span>
           <span className="flex items-center gap-1"><XCircle className="w-3 h-3 text-error" /> Rejeter : Chef agence source ou PDG</span>

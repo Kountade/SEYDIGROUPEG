@@ -81,6 +81,8 @@ import VenteDetail from './components/ventes/VenteDetail'
 import FacturesList from './components/ventes/FacturesList'
 import FactureForm from './components/ventes/FactureForm'
 import FactureDetail from './components/ventes/FactureDetail' 
+import TransfertPdf from './components/inventaire/TransfertPdf'
+
 
 
 
@@ -150,9 +152,10 @@ function App() {
 
   {/* Gestion des transfert */}
 
-                        <Route path="/transferts" element={<Transferts />} />
-<Route path="/transferts/nouveau" element={<TransfertForm />} />
-<Route path="/transferts/:id" element={<TransfertDetail />} />
+        <Route path="/transferts" element={<Transferts />} />
+        <Route path="/transferts/nouveau" element={<TransfertForm />} />
+        <Route path="/transferts/:id" element={<TransfertDetail />} />
+        <Route path="/transferts/:id/pdf" element={<TransfertPdf />} />
 
  {/* Gestion des entrepot */}
 <Route path="/entrepots" element={<Entrepots />} />
