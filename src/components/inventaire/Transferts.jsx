@@ -33,7 +33,6 @@ const Transferts = () => {
   const [userRole, setUserRole] = useState(null);
   const [userAgencesIds, setUserAgencesIds] = useState([]);
 
-  // Récupérer l'utilisateur et ses permissions
   const getUserInfo = () => {
     try {
       const userData = localStorage.getItem('User');
@@ -66,11 +65,9 @@ const Transferts = () => {
     }
   };
 
-  // Fonction de téléchargement PDF
   const downloadPDF = async (transfer) => {
     setDownloadingId(transfer.id);
     try {
-      // Récupérer les détails complets du transfert avec les items
       const response = await AxiosInstance.get(`/transfers/${transfer.id}/`);
       const fullTransfer = response.data;
       await TransfertPdf(fullTransfer);
@@ -92,63 +89,13 @@ const Transferts = () => {
       if (params.toString()) url += `?${params.toString()}`;
       const res = await AxiosInstance.get(url);
       
-      // Ajouter les informations d'agence formatées
-      const transfersWithInfo = res.data.map(transfer => ({
-        ...transfer,
-        from_agence_nom: transfer.from_agence?.nom || transfer.from_warehouse?.agence?.nom || 'N/A',
-        from_agence_id: transfer.from_agence?.id || transfer.from_warehouse?.agence?.id,
-        to_agence_nom: transfer.to_agence?.nom || transfer.to_warehouse?.agence?.nom || 'N/A',
-        to_agence_id: transfer.to_agence?.id || transfer.to_warehouse?.agence?.id,
-        from_warehouse_nom: transfer.from_warehouse?.name || 'N/A',
-        to_warehouse_nom: transfer.to_warehouse?.name || 'N/A',
-        // Récupérer le nombre d'articles depuis l'API si disponible, sinon compter
-        items_count: transfer.items_count || transfer.items?.length || 0
-      }));
-      
-      setTransfers(transfersWithInfo);
+      setTransfers(res.data);
     } catch (error) {
       console.error('Erreur chargement transferts:', error);
     } finally {
       setLoading(false);
     }
   };
-
-  // Fonction pour récupérer le nombre d'articles pour un transfert spécifique
-  const fetchItemsCount = async (transferId) => {
-    try {
-      const response = await AxiosInstance.get(`/transfers/${transferId}/status/`);
-      return response.data.total_items || 0;
-    } catch (error) {
-      console.error('Erreur chargement nombre articles:', error);
-      return 0;
-    }
-  };
-
-  // Charger les comptes d'articles pour chaque transfert si non fournis par l'API
-  useEffect(() => {
-    const loadItemsCounts = async () => {
-      const updatedTransfers = [...transfers];
-      let hasUpdates = false;
-      
-      for (let i = 0; i < updatedTransfers.length; i++) {
-        if (updatedTransfers[i].items_count === 0 && !updatedTransfers[i].items) {
-          const count = await fetchItemsCount(updatedTransfers[i].id);
-          if (count > 0) {
-            updatedTransfers[i].items_count = count;
-            hasUpdates = true;
-          }
-        }
-      }
-      
-      if (hasUpdates) {
-        setTransfers(updatedTransfers);
-      }
-    };
-    
-    if (transfers.length > 0 && !loading) {
-      loadItemsCounts();
-    }
-  }, [transfers, loading]);
 
   const fetchAgences = async () => {
     try {
@@ -187,51 +134,29 @@ const Transferts = () => {
     );
   };
 
-  // Vérifier si l'utilisateur peut soumettre une demande (chef agence DESTINATION)
   const canSubmit = (transfer) => {
     const { agenceCourante, role } = getUserInfo();
-    
     if (transfer.status !== 'draft') return false;
-    
-    const isDestinationChef = transfer.to_agence_id === agenceCourante?.id && 
-                              (role === 'chef_agence');
-    
+    const isDestinationChef = transfer.to_agence?.id === agenceCourante?.id && (role === 'chef_agence');
     if (role === 'pdg' || role === 'drh') return false;
-    
     return isDestinationChef;
   };
 
-  // Vérifier si l'utilisateur peut approuver (chef agence SOURCE ou PDG)
   const canApprove = (transfer) => {
     const { agenceCourante, role } = getUserInfo();
-    
     if (transfer.status !== 'pending_approval') return false;
-    
     if (role === 'pdg') return true;
-    
-    const isSourceChef = transfer.from_agence_id === agenceCourante?.id && 
-                         (role === 'chef_agence');
-    
+    const isSourceChef = transfer.from_agence?.id === agenceCourante?.id && (role === 'chef_agence');
     return isSourceChef;
   };
 
-  // Vérifier si l'utilisateur peut rejeter (même que approver)
-  const canReject = (transfer) => {
-    return canApprove(transfer);
-  };
+  const canReject = (transfer) => canApprove(transfer);
 
-  // Vérifier si l'utilisateur peut annuler
   const canCancel = (transfer) => {
     const { agenceCourante, role } = getUserInfo();
-    
     if (transfer.status !== 'draft' && transfer.status !== 'pending_approval') return false;
-    
     if (role === 'pdg') return true;
-    
-    const isSourceOrDestination = (transfer.from_agence_id === agenceCourante?.id || 
-                                   transfer.to_agence_id === agenceCourante?.id) && 
-                                  (role === 'chef_agence');
-    
+    const isSourceOrDestination = (transfer.from_agence?.id === agenceCourante?.id || transfer.to_agence?.id === agenceCourante?.id) && (role === 'chef_agence');
     return isSourceOrDestination;
   };
 
@@ -266,8 +191,19 @@ const Transferts = () => {
     }
   };
 
-  // Récupérer les infos utilisateur pour l'affichage
   const { agenceCourante } = getUserInfo();
+
+  // Fonction pour obtenir le type d'agence avec icône
+  const getAgenceTypeLabel = (agence) => {
+    if (!agence) return { text: 'N/A', icon: '❓' };
+    if (agence.type_agence === 'principale') {
+      return { text: 'Principale', icon: '🏛️' };
+    }
+    if (agence.type_agence === 'secondaire') {
+      return { text: 'Secondaire', icon: '🏪' };
+    }
+    return { text: agence.type_agence || 'N/A', icon: '📌' };
+  };
 
   return (
     <div className="p-4">
@@ -295,17 +231,13 @@ const Transferts = () => {
         </Link>
       </div>
 
-      {/* Filtres */}
       <div className="card bg-base-100 shadow-md mb-6">
         <div className="card-body p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Filter className="w-5 h-5 text-base-content/60" />
               <span className="font-medium">Filtres</span>
-              <button
-                onClick={() => setShowFilters(!showFilters)}
-                className="btn btn-sm btn-ghost"
-              >
+              <button onClick={() => setShowFilters(!showFilters)} className="btn btn-sm btn-ghost">
                 {showFilters ? 'Masquer' : 'Afficher'}
               </button>
             </div>
@@ -328,12 +260,7 @@ const Transferts = () => {
                 <label className="label">
                   <span className="label-text">Statut</span>
                 </label>
-                <select
-                  name="status"
-                  className="select select-bordered"
-                  value={filters.status}
-                  onChange={handleFilterChange}
-                >
+                <select name="status" className="select select-bordered" value={filters.status} onChange={handleFilterChange}>
                   <option value="">Tous</option>
                   {Object.entries(STATUS_CONFIG).map(([key, config]) => (
                     <option key={key} value={key}>{config.label}</option>
@@ -361,15 +288,14 @@ const Transferts = () => {
         </div>
       </div>
 
-      {/* Tableau */}
       <div className="overflow-x-auto bg-base-100 rounded-xl shadow-md">
         <table className="table table-zebra">
           <thead>
             <tr className="bg-base-200">
               <th>Référence</th>
               <th>Statut</th>
-              <th>Origine</th>
-              <th>Destination</th>
+              <th>AGENCE SOURCE</th>
+              <th>AGENCE DESTINATION</th>
               <th>Nb articles</th>
               <th>Date création</th>
               <th className="text-center">Actions</th>
@@ -377,10 +303,15 @@ const Transferts = () => {
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan="7" className="text-center py-8">Chargement...</td></tr>
+              <tr><td colSpan="7" className="text-center py-8">
+                <span className="loading loading-spinner loading-md"></span>
+                Chargement...
+               </td></tr>
             )}
             {!loading && transfers.length === 0 && (
-              <tr><td colSpan="7" className="text-center py-8">Aucun transfert trouvé</td></tr>
+              <tr><td colSpan="7" className="text-center py-8 text-base-content/50">
+                Aucun transfert trouvé
+               </td></tr>
             )}
             {!loading && transfers.map((transfer) => {
               const showSubmit = canSubmit(transfer);
@@ -388,35 +319,46 @@ const Transferts = () => {
               const showReject = canReject(transfer);
               const showCancel = canCancel(transfer);
               
+              const sourceType = getAgenceTypeLabel(transfer.from_agence);
+              const destType = getAgenceTypeLabel(transfer.to_agence);
+              
               return (
                 <tr key={transfer.id} className="hover">
                   <td className="font-mono text-sm font-medium">{transfer.reference}</td>
                   <td>{getStatusBadge(transfer.status)}</td>
+                  
+                  {/* AGENCE SOURCE */}
                   <td>
                     <div className="flex flex-col">
-                      <span className="text-sm font-medium">{transfer.from_warehouse_nom}</span>
-                      <span className="text-xs text-base-content/50">{transfer.from_agence_nom}</span>
+                      <span className="text-sm font-semibold text-primary">{transfer.from_agence_nom}</span>
+                      <span className="text-xs text-base-content/50">
+                        {sourceType.icon} {sourceType.text}
+                      </span>
                     </div>
                   </td>
+                  
+                  {/* AGENCE DESTINATION */}
                   <td>
                     <div className="flex flex-col">
-                      <span className="text-sm font-medium">{transfer.to_warehouse_nom}</span>
-                      <span className="text-xs text-base-content/50">{transfer.to_agence_nom}</span>
+                      <span className="text-sm font-semibold text-accent">{transfer.to_agence_nom}</span>
+                      <span className="text-xs text-base-content/50">
+                        {destType.icon} {destType.text}
+                      </span>
                     </div>
                   </td>
+                  
                   <td className="text-center">
-                    <span className="badge badge-neutral">
-                      {transfer.items_count || transfer.items?.length || 0}
-                    </span>
+                    <span className="badge badge-neutral">{transfer.items_count || 0}</span>
                   </td>
+                  
                   <td className="text-sm">{new Date(transfer.created_at).toLocaleDateString('fr-FR')}</td>
+                  
                   <td>
                     <div className="flex flex-wrap gap-1 justify-center">
                       <Link to={`/transferts/${transfer.id}`} className="btn btn-xs btn-ghost" title="Voir détails">
                         <Eye className="w-3 h-3" />
                       </Link>
                       
-                      {/* Bouton PDF */}
                       <button 
                         onClick={() => downloadPDF(transfer)} 
                         className="btn btn-xs btn-ghost text-info" 
@@ -430,7 +372,6 @@ const Transferts = () => {
                         )}
                       </button>
                       
-                      {/* Bouton SOUMETTRE (Chef agence DESTINATION) */}
                       {showSubmit && (
                         <button 
                           onClick={() => handleAction(transfer.id, 'submit')} 
@@ -441,7 +382,6 @@ const Transferts = () => {
                         </button>
                       )}
                       
-                      {/* Bouton APPROUVER (Chef agence SOURCE ou PDG) */}
                       {showApprove && (
                         <button 
                           onClick={() => handleAction(transfer.id, 'approve')} 
@@ -452,7 +392,6 @@ const Transferts = () => {
                         </button>
                       )}
                       
-                      {/* Bouton REJETER (Chef agence SOURCE ou PDG) */}
                       {showReject && (
                         <button 
                           onClick={() => handleAction(transfer.id, 'reject')} 
@@ -463,7 +402,6 @@ const Transferts = () => {
                         </button>
                       )}
                       
-                      {/* Bouton ANNULER (Chef SOURCE/DESTINATION ou PDG) */}
                       {showCancel && (
                         <button 
                           onClick={() => handleAction(transfer.id, 'cancel')} 
@@ -482,7 +420,6 @@ const Transferts = () => {
         </table>
       </div>
       
-      {/* Légende des actions */}
       <div className="mt-4 p-3 bg-base-200 rounded-lg text-xs text-base-content/60">
         <div className="flex flex-wrap gap-4">
           <span className="flex items-center gap-1"><FileText className="w-3 h-3 text-info" /> PDF : Télécharger le document</span>
