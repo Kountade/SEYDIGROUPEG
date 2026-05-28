@@ -82,6 +82,10 @@ import FacturesList from './components/ventes/FacturesList'
 import FactureForm from './components/ventes/FactureForm'
 import FactureDetail from './components/ventes/FactureDetail' 
 import TransfertPdf from './components/inventaire/TransfertPdf'
+import Paiements from './components/ventes/Paiements'
+import PaiementForm from './components/ventes/PaiementForm'
+import PaiementDetail from './components/ventes/PaiementDetail'
+import PaiementPdf from './components/ventes/PaiementPdf'
 
 
 
@@ -272,6 +276,12 @@ function App() {
           <Route path="/factures/nouveau" element={<FactureForm />} />
           <Route path="/factures/:id" element={<FactureDetail />} />
           <Route path="/factures/:id/modifier" element={<FactureForm />} />
+
+<Route path="/paiements" element={<Paiements />} />
+<Route path="/paiements/nouveau" element={<PaiementForm />} />
+<Route path="/paiements/:id" element={<PaiementDetail />} />
+<Route path="/paiements/:id/edit" element={<PaiementForm />} />
+<Route path="/paiements/:id/pdf" element={<PaiementPdf />} />
 
  <Route path="/audit" element={<AuditLog />} />
             </Route>

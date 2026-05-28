@@ -288,8 +288,8 @@ const FacturesList = () => {
         </div>
       </div>
 
-      {/* Tableau */}
-      <div className="bg-white rounded-xl shadow-xl border overflow-hidden">
+      {/* Tableau - Bordure noire supprimée */}
+      <div className="bg-white rounded-xl shadow-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="table table-zebra w-full">
             <thead>
@@ -301,7 +301,7 @@ const FacturesList = () => {
                 <th><button className="flex items-center gap-1" onClick={() => handleSort('total_ttc')}>Montant<SortIcon field="total_ttc" /></button></th>
                 <th>Statut</th>
                 <th className="text-right">Actions</th>
-              </tr>
+               </tr>
             </thead>
             <tbody>
               {paginatedFactures.length === 0 ? (

@@ -23,14 +23,7 @@ import {
   Mail,
   Phone,
   MapPin,
-  Star,
-  Globe,
-  Truck,
-  Package,
   Clock,
-  DollarSign,
-  Award,
-  TrendingUp,
   XCircle
 } from 'lucide-react'
 
@@ -41,9 +34,7 @@ const Fournisseurs = () => {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
-  const [filterType, setFilterType] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
-  const [filterPreferred, setFilterPreferred] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(12)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
@@ -56,22 +47,11 @@ const Fournisseurs = () => {
   const [sortDirection, setSortDirection] = useState('asc')
   const [showFilters, setShowFilters] = useState(false)
 
-  // Types de fournisseurs
-  const supplierTypes = {
-    manufacturer: 'Fabricant',
-    distributor: 'Distributeur',
-    wholesaler: 'Grossiste',
-    importer: 'Importateur',
-    service: 'Prestataire de services'
-  }
-
-  // Statistiques
+  // Statistiques (basées sur les champs existants)
   const [stats, setStats] = useState({
     total: 0,
     active: 0,
-    inactive: 0,
-    preferred: 0,
-    highRated: 0
+    inactive: 0
   })
 
   const showNotification = (message, type = 'success') => {
@@ -108,10 +88,8 @@ const Fournisseurs = () => {
       const total = suppliers.length
       const active = suppliers.filter(s => s.is_active).length
       const inactive = total - active
-      const preferred = suppliers.filter(s => s.is_preferred).length
-      const highRated = suppliers.filter(s => (s.rating || 0) >= 4).length
       
-      setStats({ total, active, inactive, preferred, highRated })
+      setStats({ total, active, inactive })
       
     } catch (error) {
       console.error('Erreur chargement fournisseurs:', error)
@@ -163,20 +141,6 @@ const Fournisseurs = () => {
     }
   }
 
-  const getStars = (rating) => {
-    if (!rating) return null
-    return (
-      <div className="flex items-center gap-0.5">
-        {[...Array(5)].map((_, i) => (
-          <Star
-            key={i}
-            className={`w-3 h-3 ${i < rating ? 'text-warning fill-warning' : 'text-base-content/20'}`}
-          />
-        ))}
-      </div>
-    )
-  }
-
   const getStatusBadge = (isActive) => {
     return isActive ? (
       <div className="badge badge-success gap-1 text-xs">
@@ -196,17 +160,16 @@ const Fournisseurs = () => {
     let filtered = fournisseurs.filter(supplier => {
       const search = searchTerm.toLowerCase()
       const companyName = (supplier.company_name || '').toLowerCase()
-      const contactName = (supplier.contact_name || '').toLowerCase()
       const email = (supplier.email || '').toLowerCase()
       const city = (supplier.city || '').toLowerCase()
+      const phone = (supplier.phone || '').toLowerCase()
+      const code = (supplier.code || '').toLowerCase()
       
-      const matchesSearch = companyName.includes(search) || contactName.includes(search) || 
-                           email.includes(search) || city.includes(search)
-      const matchesType = filterType === '' || supplier.supplier_type === filterType
+      const matchesSearch = companyName.includes(search) || email.includes(search) || 
+                           city.includes(search) || phone.includes(search) || code.includes(search)
       const matchesStatus = filterStatus === '' || supplier.is_active === (filterStatus === 'true')
-      const matchesPreferred = filterPreferred === '' || supplier.is_preferred === (filterPreferred === 'true')
       
-      return matchesSearch && matchesType && matchesStatus && matchesPreferred
+      return matchesSearch && matchesStatus
     })
 
     filtered.sort((a, b) => {
@@ -224,7 +187,7 @@ const Fournisseurs = () => {
     })
 
     return filtered
-  }, [fournisseurs, searchTerm, filterType, filterStatus, filterPreferred, sortField, sortDirection])
+  }, [fournisseurs, searchTerm, filterStatus, sortField, sortDirection])
 
   // Pagination
   const totalPages = Math.ceil(filteredAndSortedSuppliers.length / itemsPerPage)
@@ -330,8 +293,8 @@ const Fournisseurs = () => {
         </div>
       </div>
 
-      {/* Cartes statistiques */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-3 lg:gap-4">
+      {/* Cartes statistiques simplifiées */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 lg:gap-4">
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
           <div className="stat-figure text-primary">
             <Building2 className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
@@ -346,22 +309,6 @@ const Fournisseurs = () => {
           </div>
           <div className="stat-title text-xs sm:text-sm font-semibold">Actifs</div>
           <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{stats.active}</div>
-        </div>
-        
-        <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
-          <div className="stat-figure text-warning">
-            <Star className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
-          </div>
-          <div className="stat-title text-xs sm:text-sm font-semibold">Préférés</div>
-          <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{stats.preferred}</div>
-        </div>
-        
-        <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
-          <div className="stat-figure text-info">
-            <Award className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
-          </div>
-          <div className="stat-title text-xs sm:text-sm font-semibold">Bien notés</div>
-          <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{stats.highRated}</div>
         </div>
         
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
@@ -381,7 +328,7 @@ const Fournisseurs = () => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/40" />
               <input
                 type="text"
-                placeholder="Rechercher par nom, contact, email, ville..."
+                placeholder="Rechercher par nom, code, email, téléphone, ville..."
                 className="input input-bordered w-full pl-9 text-sm"
                 value={searchTerm}
                 onChange={(e) => {
@@ -403,20 +350,6 @@ const Fournisseurs = () => {
           
           <div className={`${showFilters ? 'flex' : 'hidden'} sm:flex flex-col sm:flex-row gap-3`}>
             <select 
-              className="select select-bordered w-full sm:w-40 text-sm"
-              value={filterType}
-              onChange={(e) => {
-                setFilterType(e.target.value)
-                setCurrentPage(1)
-              }}
-            >
-              <option value="">Type</option>
-              {Object.entries(supplierTypes).map(([key, label]) => (
-                <option key={key} value={key}>{label}</option>
-              ))}
-            </select>
-            
-            <select 
               className="select select-bordered w-full sm:w-32 text-sm"
               value={filterStatus}
               onChange={(e) => {
@@ -429,25 +362,10 @@ const Fournisseurs = () => {
               <option value="false">Inactif</option>
             </select>
             
-            <select 
-              className="select select-bordered w-full sm:w-32 text-sm"
-              value={filterPreferred}
-              onChange={(e) => {
-                setFilterPreferred(e.target.value)
-                setCurrentPage(1)
-              }}
-            >
-              <option value="">Préféré</option>
-              <option value="true">Préféré</option>
-              <option value="false">Standard</option>
-            </select>
-            
             <button 
               className="btn btn-outline gap-2"
               onClick={() => {
-                setFilterType('')
                 setFilterStatus('')
-                setFilterPreferred('')
                 setSearchTerm('')
                 setCurrentPage(1)
               }}
@@ -496,130 +414,111 @@ const Fournisseurs = () => {
         ) : viewMode === 'grid' ? (
           <div className="p-3 sm:p-4 lg:p-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-6">
-              {paginatedSuppliers.map((supplier) => {
-                const supplierTypeLabel = supplierTypes[supplier.supplier_type] || 'Distributeur'
-                
-                return (
-                  <div 
-                    key={supplier.id} 
-                    className="bg-base-200 rounded-xl p-4 sm:p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 border border-base-300 group"
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        <div className="avatar placeholder">
-                          <div className="bg-primary/10 rounded-xl w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center">
-                            <Building2 className="w-6 h-6 sm:w-7 sm:h-7 text-primary" />
-                          </div>
+              {paginatedSuppliers.map((supplier) => (
+                <div 
+                  key={supplier.id} 
+                  className="bg-base-200 rounded-xl p-4 sm:p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 border border-base-300 group"
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="avatar placeholder">
+                        <div className="bg-primary/10 rounded-xl w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center">
+                          <Building2 className="w-6 h-6 sm:w-7 sm:h-7 text-primary" />
                         </div>
-                        <div>
-                          <h3 className="font-bold text-base sm:text-lg text-base-content line-clamp-1">
-                            {supplier.company_name}
-                          </h3>
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            <div className="badge badge-sm badge-primary/10 text-primary">
-                              {supplierTypeLabel}
-                            </div>
-                            {supplier.is_preferred && (
-                              <div className="badge badge-sm badge-warning gap-1">
-                                <Star className="w-3 h-3" />
-                                Préféré
-                              </div>
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-base sm:text-lg text-base-content line-clamp-1">
+                          {supplier.company_name}
+                        </h3>
+                        {supplier.code && (
+                          <div className="text-xs text-base-content/50 mt-0.5">
+                            {supplier.code}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="dropdown dropdown-end">
+                      <button className="btn btn-ghost btn-xs btn-circle">
+                        <MoreVertical className="w-4 h-4" />
+                      </button>
+                      <ul className="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-44">
+                        <li>
+                          <button 
+                            onClick={() => navigate(`/fournisseurs/${supplier.id}`)}
+                            className="text-sm"
+                          >
+                            <Eye className="w-4 h-4" />
+                            Détails
+                          </button>
+                        </li>
+                        <li>
+                          <button 
+                            onClick={() => navigate(`/fournisseurs/${supplier.id}/edit`)}
+                            className="text-sm"
+                          >
+                            <Edit className="w-4 h-4" />
+                            Modifier
+                          </button>
+                        </li>
+                        <li>
+                          <button 
+                            className="text-sm"
+                            onClick={() => {
+                              setFournisseurToToggle(supplier)
+                              setShowStatusModal(true)
+                            }}
+                          >
+                            {supplier.is_active ? (
+                              <><XCircle className="w-4 h-4" /> Désactiver</>
+                            ) : (
+                              <><CheckCircle className="w-4 h-4" /> Activer</>
                             )}
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="dropdown dropdown-end">
-                        <button className="btn btn-ghost btn-xs btn-circle">
-                          <MoreVertical className="w-4 h-4" />
-                        </button>
-                        <ul className="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-44">
-                          <li>
-                            <button 
-                              onClick={() => navigate(`/fournisseurs/${supplier.id}`)}
-                              className="text-sm"
-                            >
-                              <Eye className="w-4 h-4" />
-                              Détails
-                            </button>
-                          </li>
-                          <li>
-                            <button 
-                              onClick={() => navigate(`/fournisseurs/${supplier.id}/edit`)}
-                              className="text-sm"
-                            >
-                              <Edit className="w-4 h-4" />
-                              Modifier
-                            </button>
-                          </li>
-                          <li>
-                            <button 
-                              className="text-sm"
-                              onClick={() => {
-                                setFournisseurToToggle(supplier)
-                                setShowStatusModal(true)
-                              }}
-                            >
-                              {supplier.is_active ? (
-                                <><XCircle className="w-4 h-4" /> Désactiver</>
-                              ) : (
-                                <><CheckCircle className="w-4 h-4" /> Activer</>
-                              )}
-                            </button>
-                          </li>
-                          <li>
-                            <button 
-                              className="text-error text-sm"
-                              onClick={() => {
-                                setFournisseurToDelete(supplier)
-                                setShowDeleteModal(true)
-                              }}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                              Supprimer
-                            </button>
-                          </li>
-                        </ul>
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-2 mb-3">
-                      <div className="flex items-center gap-2 text-xs sm:text-sm text-base-content/70">
-                        <Mail className="w-3 h-3 sm:w-4 sm:h-4 text-primary flex-shrink-0" />
-                        <span className="truncate">{supplier.email}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs sm:text-sm text-base-content/70">
-                        <Phone className="w-3 h-3 sm:w-4 sm:h-4 text-primary flex-shrink-0" />
-                        <span>{supplier.phone}</span>
-                      </div>
-                      {supplier.city && (
-                        <div className="flex items-center gap-2 text-xs sm:text-sm text-base-content/70">
-                          <MapPin className="w-3 h-3 sm:w-4 sm:h-4 text-primary flex-shrink-0" />
-                          <span className="truncate">{supplier.city}, {supplier.country}</span>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="pt-3 border-t border-base-300">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          {getStars(supplier.rating)}
-                          {supplier.rating && (
-                            <span className="text-xs text-base-content/50">{supplier.rating}/5</span>
-                          )}
-                        </div>
-                        {getStatusBadge(supplier.is_active)}
-                      </div>
-                      {supplier.contact_name && (
-                        <div className="mt-2 text-xs text-base-content/50">
-                          Contact: {supplier.contact_name}
-                          {supplier.contact_title && ` (${supplier.contact_title})`}
-                        </div>
-                      )}
+                          </button>
+                        </li>
+                        <li>
+                          <button 
+                            className="text-error text-sm"
+                            onClick={() => {
+                              setFournisseurToDelete(supplier)
+                              setShowDeleteModal(true)
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            Supprimer
+                          </button>
+                        </li>
+                      </ul>
                     </div>
                   </div>
-                )
-              })}
+                  
+                  <div className="space-y-2 mb-3">
+                    <div className="flex items-center gap-2 text-xs sm:text-sm text-base-content/70">
+                      <Mail className="w-3 h-3 sm:w-4 sm:h-4 text-primary flex-shrink-0" />
+                      <span className="truncate">{supplier.email}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs sm:text-sm text-base-content/70">
+                      <Phone className="w-3 h-3 sm:w-4 sm:h-4 text-primary flex-shrink-0" />
+                      <span>{supplier.phone}</span>
+                    </div>
+                    {supplier.city && (
+                      <div className="flex items-center gap-2 text-xs sm:text-sm text-base-content/70">
+                        <MapPin className="w-3 h-3 sm:w-4 sm:h-4 text-primary flex-shrink-0" />
+                        <span className="truncate">{supplier.city}, {supplier.country}</span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="pt-3 border-t border-base-300 flex items-center justify-between">
+                    {getStatusBadge(supplier.is_active)}
+                    {supplier.notes && (
+                      <div className="text-xs text-base-content/40 truncate max-w-[60%]">
+                        📝 {supplier.notes.substring(0, 30)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         ) : (
@@ -627,110 +526,101 @@ const Fournisseurs = () => {
             <table className="table table-xs sm:table-sm lg:table-md w-full">
               <thead>
                 <tr className="text-xs sm:text-sm">
-                  <th>Fournisseur</th>
-                  <th>Contact</th>
+                  <th>
+                    <button 
+                      className="flex items-center gap-1 hover:text-primary"
+                      onClick={() => handleSort('company_name')}
+                    >
+                      Fournisseur
+                      <ArrowUpDown className="w-3 h-3" />
+                    </button>
+                  </th>
                   <th>Email / Téléphone</th>
                   <th className="hidden md:table-cell">Localisation</th>
-                  <th>Note</th>
-                  <th>Statut</th>
+                  <th>
+                    <button 
+                      className="flex items-center gap-1 hover:text-primary"
+                      onClick={() => handleSort('is_active')}
+                    >
+                      Statut
+                      <ArrowUpDown className="w-3 h-3" />
+                    </button>
+                  </th>
                   <th className="text-right">Actions</th>
-                 </tr>
+                </tr>
               </thead>
               <tbody>
-                {paginatedSuppliers.map((supplier) => {
-                  const supplierTypeLabel = supplierTypes[supplier.supplier_type] || 'Distributeur'
-                  
-                  return (
-                    <tr key={supplier.id} className="hover">
-                      <td>
-                        <div>
-                          <div className="font-semibold text-sm sm:text-base">{supplier.company_name}</div>
-                          <div className="flex gap-1 mt-1">
-                            <span className="badge badge-xs badge-primary/10 text-primary">
-                              {supplierTypeLabel}
-                            </span>
-                            {supplier.is_preferred && (
-                              <span className="badge badge-xs badge-warning">Préféré</span>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <div>{supplier.contact_name || '-'}</div>
-                        {supplier.contact_title && (
-                          <div className="text-xs text-base-content/50">{supplier.contact_title}</div>
+                {paginatedSuppliers.map((supplier) => (
+                  <tr key={supplier.id} className="hover">
+                    <td>
+                      <div>
+                        <div className="font-semibold text-sm sm:text-base">{supplier.company_name}</div>
+                        {supplier.code && (
+                          <div className="text-xs text-base-content/50">{supplier.code}</div>
                         )}
-                      </td>
-                      <td>
-                        <div className="flex flex-col gap-0.5">
-                          <div className="flex items-center gap-1 text-xs">
-                            <Mail className="w-3 h-3 text-primary" />
-                            <span className="truncate max-w-[120px]">{supplier.email}</span>
-                          </div>
-                          <div className="flex items-center gap-1 text-xs">
-                            <Phone className="w-3 h-3 text-primary" />
-                            <span>{supplier.phone}</span>
-                          </div>
+                      </div>
+                    </td>
+                    <td>
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-1 text-xs">
+                          <Mail className="w-3 h-3 text-primary" />
+                          <span className="truncate max-w-[150px]">{supplier.email}</span>
                         </div>
-                      </td>
-                      <td className="hidden md:table-cell">
-                        {supplier.city && (
-                          <div className="flex items-center gap-1">
-                            <MapPin className="w-3 h-3 text-primary" />
-                            <span className="text-sm">{supplier.city}</span>
-                          </div>
-                        )}
-                      </td>
-                      <td>
+                        <div className="flex items-center gap-1 text-xs">
+                          <Phone className="w-3 h-3 text-primary" />
+                          <span>{supplier.phone}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="hidden md:table-cell">
+                      {supplier.city && (
                         <div className="flex items-center gap-1">
-                          {getStars(supplier.rating)}
-                          {supplier.rating && (
-                            <span className="text-xs text-base-content/50">{supplier.rating}</span>
-                          )}
+                          <MapPin className="w-3 h-3 text-primary" />
+                          <span className="text-sm">{supplier.city}</span>
                         </div>
-                      </td>
-                      <td>{getStatusBadge(supplier.is_active)}</td>
-                      <td className="text-right">
-                        <div className="flex justify-end gap-1 sm:gap-2">
-                          <button 
-                            onClick={() => navigate(`/fournisseurs/${supplier.id}`)}
-                            className="btn btn-ghost btn-xs sm:btn-sm"
-                            title="Détails"
-                          >
-                            <Eye className="w-3 h-3 sm:w-4 sm:h-4" />
-                          </button>
-                          <button 
-                            onClick={() => navigate(`/fournisseurs/${supplier.id}/edit`)}
-                            className="btn btn-ghost btn-xs sm:btn-sm text-primary"
-                            title="Modifier"
-                          >
-                            <Edit className="w-3 h-3 sm:w-4 sm:h-4" />
-                          </button>
-                          <button 
-                            className="btn btn-ghost btn-xs sm:btn-sm"
-                            onClick={() => {
-                              setFournisseurToToggle(supplier)
-                              setShowStatusModal(true)
-                            }}
-                            title={supplier.is_active ? 'Désactiver' : 'Activer'}
-                          >
-                            {supplier.is_active ? <XCircle className="w-3 h-3 sm:w-4 sm:h-4" /> : <CheckCircle className="w-3 h-3 sm:w-4 sm:h-4" />}
-                          </button>
-                          <button 
-                            className="btn btn-ghost btn-xs sm:btn-sm text-error"
-                            onClick={() => {
-                              setFournisseurToDelete(supplier)
-                              setShowDeleteModal(true)
-                            }}
-                            title="Supprimer"
-                          >
-                            <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
+                      )}
+                    </td>
+                    <td>{getStatusBadge(supplier.is_active)}</td>
+                    <td className="text-right">
+                      <div className="flex justify-end gap-1 sm:gap-2">
+                        <button 
+                          onClick={() => navigate(`/fournisseurs/${supplier.id}`)}
+                          className="btn btn-ghost btn-xs sm:btn-sm"
+                          title="Détails"
+                        >
+                          <Eye className="w-3 h-3 sm:w-4 sm:h-4" />
+                        </button>
+                        <button 
+                          onClick={() => navigate(`/fournisseurs/${supplier.id}/edit`)}
+                          className="btn btn-ghost btn-xs sm:btn-sm text-primary"
+                          title="Modifier"
+                        >
+                          <Edit className="w-3 h-3 sm:w-4 sm:h-4" />
+                        </button>
+                        <button 
+                          className="btn btn-ghost btn-xs sm:btn-sm"
+                          onClick={() => {
+                            setFournisseurToToggle(supplier)
+                            setShowStatusModal(true)
+                          }}
+                          title={supplier.is_active ? 'Désactiver' : 'Activer'}
+                        >
+                          {supplier.is_active ? <XCircle className="w-3 h-3 sm:w-4 sm:h-4" /> : <CheckCircle className="w-3 h-3 sm:w-4 sm:h-4" />}
+                        </button>
+                        <button 
+                          className="btn btn-ghost btn-xs sm:btn-sm text-error"
+                          onClick={() => {
+                            setFournisseurToDelete(supplier)
+                            setShowDeleteModal(true)
+                          }}
+                          title="Supprimer"
+                        >
+                          <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
