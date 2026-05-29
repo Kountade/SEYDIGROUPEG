@@ -23,10 +23,7 @@ const Paiements = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [paiementToDelete, setPaiementToDelete] = useState(null)
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' })
-  
-  // ✅ MODIFICATION ICI : viewMode par défaut = 'table'
   const [viewMode, setViewMode] = useState('table')
-  
   const [sortField, setSortField] = useState('date_paiement')
   const [sortDirection, setSortDirection] = useState('desc')
   const [showFilters, setShowFilters] = useState(false)
@@ -109,13 +106,27 @@ const Paiements = () => {
     )
   }
 
+  // ✅ Utilisation des champs enrichis du sérialiseur
+  const getFactureRef = (paiement) => {
+    return paiement.facture_ref || paiement.facture?.reference || '-'
+  }
+
+  const getClientName = (paiement) => {
+    // Priorité au client de la facture
+    if (paiement.facture_client_nom && paiement.facture_client_nom !== 'Anonyme')
+      return paiement.facture_client_nom
+    if (paiement.client_nom && paiement.client_nom !== 'Anonyme')
+      return paiement.client_nom
+    return 'Anonyme'
+  }
+
   const filteredAndSorted = React.useMemo(() => {
     let filtered = paiements.filter(p => {
       const search = searchTerm.toLowerCase()
       const matchSearch =
         (p.reference || '').toLowerCase().includes(search) ||
-        (p.client?.nom || '').toLowerCase().includes(search) ||
-        (p.facture?.reference || '').toLowerCase().includes(search) ||
+        getClientName(p).toLowerCase().includes(search) ||
+        getFactureRef(p).toLowerCase().includes(search) ||
         (p.reference_externe || '').toLowerCase().includes(search)
       const matchMethode = filterMethode === '' || p.methode === filterMethode
       const matchStatut = filterStatut === '' || p.statut === filterStatut
@@ -125,7 +136,16 @@ const Paiements = () => {
       let aVal = a[sortField] || '', bVal = b[sortField] || ''
       if (sortField === 'date_paiement') {
         aVal = new Date(aVal).getTime(); bVal = new Date(bVal).getTime()
-      } else if (typeof aVal === 'string') { aVal = aVal.toLowerCase(); bVal = bVal.toLowerCase() }
+      } else if (sortField === 'client') {
+        aVal = getClientName(a).toLowerCase()
+        bVal = getClientName(b).toLowerCase()
+      } else if (sortField === 'facture') {
+        aVal = getFactureRef(a).toLowerCase()
+        bVal = getFactureRef(b).toLowerCase()
+      } else if (typeof aVal === 'string') {
+        aVal = aVal.toLowerCase()
+        bVal = bVal.toLowerCase()
+      }
       if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1
       if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1
       return 0
@@ -279,7 +299,7 @@ const Paiements = () => {
         </div>
       </div>
 
-      {/* Contenu : tableau par défaut */}
+      {/* Contenu principal */}
       {filteredAndSorted.length === 0 ? (
         <div className="py-16 text-center">
           <CreditCard className="w-20 h-20 mx-auto mb-4 text-base-content/20" />
@@ -287,7 +307,6 @@ const Paiements = () => {
           <button onClick={() => navigate('/paiements/nouveau')} className="btn btn-primary mt-6">Nouveau paiement</button>
         </div>
       ) : viewMode === 'grid' ? (
-        /* Mode grille (cartes) */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
           {paginated.map(p => (
             <div key={p.id} className="bg-base-200 rounded-2xl p-5 hover:shadow-md transition-all">
@@ -317,8 +336,12 @@ const Paiements = () => {
                   <DollarSign className="w-5 h-5" /> {p.montant.toLocaleString()} FCFA
                 </div>
                 <div className="flex items-center gap-2 text-sm"><CreditCard className="w-4 h-4" /> {methodesPaiement[p.methode] || p.methode}</div>
-                <div className="flex items-center gap-2 text-sm truncate"><FileText className="w-4 h-4" /> Facture: {p.facture?.reference || '-'}</div>
-                {p.client && <div className="flex items-center gap-2 text-sm truncate"><Phone className="w-4 h-4" /> {p.client.nom}</div>}
+                <div className="flex items-center gap-2 text-sm truncate">
+                  <FileText className="w-4 h-4 text-base-content/50" /> Facture: {getFactureRef(p)}
+                </div>
+                <div className="flex items-center gap-2 text-sm truncate">
+                  <Phone className="w-4 h-4 text-base-content/50" /> {getClientName(p)}
+                </div>
               </div>
               <div className="mt-4 pt-3 flex justify-between items-center border-t border-base-300/50">
                 {getStatutBadge(p.statut)}
@@ -328,15 +351,14 @@ const Paiements = () => {
           ))}
         </div>
       ) : (
-        /* Mode tableau (par défaut) */
         <div className="overflow-x-auto">
           <table className="table table-zebra w-full">
             <thead className="bg-base-200/50">
               <tr>
                 <th><button onClick={() => handleSort('reference')}>Référence <ArrowUpDown className="w-3 h-3 inline" /></button></th>
                 <th><button onClick={() => handleSort('date_paiement')}>Date <ArrowUpDown className="w-3 h-3 inline" /></button></th>
-                <th>Client</th>
-                <th>Facture</th>
+                <th><button onClick={() => handleSort('client')}>Client <ArrowUpDown className="w-3 h-3 inline" /></button></th>
+                <th><button onClick={() => handleSort('facture')}>Facture <ArrowUpDown className="w-3 h-3 inline" /></button></th>
                 <th><button onClick={() => handleSort('montant')}>Montant <ArrowUpDown className="w-3 h-3 inline" /></button></th>
                 <th>Méthode</th>
                 <th>Statut</th>
@@ -348,8 +370,8 @@ const Paiements = () => {
                 <tr key={p.id}>
                   <td className="font-mono">{p.reference}</td>
                   <td>{new Date(p.date_paiement).toLocaleDateString()}</td>
-                  <td>{p.client?.nom || '-'}</td>
-                  <td>{p.facture?.reference || '-'}</td>
+                  <td>{getClientName(p)}</td>
+                  <td className="font-mono">{getFactureRef(p)}</td>
                   <td className="font-mono font-semibold">{p.montant.toLocaleString()} FCFA</td>
                   <td>{methodesPaiement[p.methode]}</td>
                   <td>{getStatutBadge(p.statut)}</td>

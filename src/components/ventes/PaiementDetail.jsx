@@ -70,6 +70,27 @@ const PaiementDetail = () => {
     }
   }
 
+  // ✅ Fonction pour récupérer le nom du client (priorité à la facture)
+  const getClientName = () => {
+    if (!paiement) return 'Anonyme'
+    if (paiement.facture?.client?.nom) return paiement.facture.client.nom
+    if (paiement.client?.nom) return paiement.client.nom
+    return 'Anonyme'
+  }
+
+  // ✅ Fonction pour récupérer la référence de la facture
+  const getFactureRef = () => {
+    if (!paiement) return '-'
+    return paiement.facture?.reference || paiement.facture_ref || '-'
+  }
+
+  // ✅ Fonction pour récupérer l'objet client complet (priorité à la facture)
+  const getClientObject = () => {
+    if (paiement?.facture?.client) return paiement.facture.client
+    if (paiement?.client) return paiement.client
+    return null
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-screen">
@@ -95,6 +116,8 @@ const PaiementDetail = () => {
 
   const statutInfo = statuts[paiement.statut] || statuts.completed
   const StatutIcon = statutInfo.icon
+  const clientObj = getClientObject()
+  const hasClient = !!clientObj
 
   return (
     <div className="min-h-screen bg-base-200">
@@ -190,7 +213,7 @@ const PaiementDetail = () => {
                     <FileText className="w-5 h-5 text-primary" /> Facture associée
                   </h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div><span className="font-semibold">Référence :</span> {paiement.facture.reference || '-'}</div>
+                    <div><span className="font-semibold">Référence :</span> {getFactureRef()}</div>
                     <div><span className="font-semibold">Date :</span> {paiement.facture.date_facture ? new Date(paiement.facture.date_facture).toLocaleDateString() : '-'}</div>
                     <div><span className="font-semibold">Total TTC :</span> {(paiement.facture.total_ttc || 0).toLocaleString()} FCFA</div>
                     <div><span className="font-semibold">Reste à payer :</span> {(paiement.facture.montant_restant || 0).toLocaleString()} FCFA</div>
@@ -218,27 +241,30 @@ const PaiementDetail = () => {
             )}
           </div>
 
-          {/* Colonne latérale - Client */}
+          {/* Colonne latérale - Client (priorité à la facture) */}
           <div className="space-y-6">
-            {paiement.client ? (
+            {hasClient ? (
               <div className="card bg-base-100 shadow-md">
                 <div className="card-body">
                   <h2 className="card-title text-lg flex items-center gap-2">
                     <User className="w-5 h-5 text-primary" /> Client
                   </h2>
                   <div className="space-y-2">
-                    <div><span className="font-semibold">Nom :</span> {paiement.client.nom} {paiement.client.prenom || ''}</div>
-                    {paiement.client.raison_sociale && (
-                      <div><span className="font-semibold">Raison sociale :</span> {paiement.client.raison_sociale}</div>
+                    <div>
+                      <span className="font-semibold">Nom :</span> {clientObj.nom} {clientObj.prenom || ''}
+                      {paiement.facture?.client && <span className="ml-2 badge badge-sm badge-info">(client de la facture)</span>}
+                    </div>
+                    {clientObj.raison_sociale && (
+                      <div><span className="font-semibold">Raison sociale :</span> {clientObj.raison_sociale}</div>
                     )}
-                    {paiement.client.email && (
-                      <div className="flex items-center gap-1"><Mail className="w-3 h-3" /> {paiement.client.email}</div>
+                    {clientObj.email && (
+                      <div className="flex items-center gap-1"><Mail className="w-3 h-3" /> {clientObj.email}</div>
                     )}
-                    {paiement.client.telephone && (
-                      <div className="flex items-center gap-1"><Phone className="w-3 h-3" /> {paiement.client.telephone}</div>
+                    {clientObj.telephone && (
+                      <div className="flex items-center gap-1"><Phone className="w-3 h-3" /> {clientObj.telephone}</div>
                     )}
-                    {paiement.client.adresse && (
-                      <div className="flex items-start gap-1"><MapPin className="w-3 h-3 mt-1" /> {paiement.client.adresse}</div>
+                    {clientObj.adresse && (
+                      <div className="flex items-start gap-1"><MapPin className="w-3 h-3 mt-1" /> {clientObj.adresse}</div>
                     )}
                   </div>
                 </div>
