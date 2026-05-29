@@ -1,373 +1,340 @@
-import jsPDF from 'jspdf'
-import logoSvg from '../../assets/logo.svg'
+// src/components/paiements/PaiementPdf.jsx
+import jsPDF from 'jspdf';
+import logoSvg from '../../assets/logo.svg';
 
 /**
- * Génère un PDF pour un paiement
- * @param {Object} paiement - L'objet paiement retourné par l'API
+ * Génère un reçu de paiement professionnel (1 page, économique en encre)
+ * @param {Object} paiement - L'objet paiement (champs enrichis)
  * @returns {Promise<boolean>}
  */
 const PaiementPdf = async (paiement) => {
   if (!paiement || typeof paiement !== 'object') {
-    throw new Error('Données du paiement invalides')
+    throw new Error('Données du paiement invalides');
   }
 
   try {
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    
+    const pageWidth = 210;
+    const pageHeight = 297;
+    const margins = { left: 18, right: 18, top: 12, bottom: 15 };
+    const contentWidth = pageWidth - margins.left - margins.right;
+    let y = margins.top;
 
-    // === CONFIGURATION ===
-    const pageWidth = 210
-    const margins = { left: 15, right: 15, top: 18, bottom: 18 }
-    const contentWidth = pageWidth - margins.left - margins.right
-    let y = margins.top
+    // === SOCIÉTÉ ===
+    const company = {
+      name: 'SEYDI GROUP SARL',
+      address: 'Dakar, Sénégal',
+      phone: '+221 33 123 45 67',
+      email: 'contact@seydigroup.com',
+      rccm: 'SN DKR 2023 B 123',
+      capital: '10 000 000 FCFA'
+    };
 
-    const black = '#000000'
+    // === FORMATAGE ===
+    const formatNumber = (n) => new Intl.NumberFormat('fr-FR').format(parseFloat(n) || 0);
+    const formatCurrency = (amt) => `${formatNumber(amt)} FCFA`;
+    const formatDate = (d) => d ? new Date(d).toLocaleDateString('fr-FR') : '-';
 
-    // === FONCTIONS UTILES ===
-    const formatNumber = (n) => {
-      const num = parseFloat(n) || 0
-      return new Intl.NumberFormat('fr-FR').format(num)
-    }
+    // === DONNÉES (priorité facture) ===
+    const clientNom = paiement.facture_client_nom && paiement.facture_client_nom !== 'Anonyme'
+      ? paiement.facture_client_nom
+      : paiement.client_nom || paiement.client?.nom || 'Client inconnu';
+    const clientPrenom = paiement.facture_client_prenom || paiement.client_prenom || '';
+    const clientRaison = paiement.facture_client_raison_sociale || paiement.client_raison_sociale || '';
+    const clientEmail = paiement.facture_client_email || paiement.client_email || '';
+    const clientTel = paiement.facture_client_telephone || paiement.client_telephone || '';
+    const clientAdr = paiement.facture_client_adresse || paiement.client_adresse || '';
 
-    const formatCurrency = (amount) => {
-      const num = parseFloat(amount) || 0
-      return `${formatNumber(num)} FCFA`
-    }
+    const factureRef = paiement.facture_ref || paiement.facture?.reference || '-';
+    const factureDate = paiement.facture_date || paiement.facture?.date_facture;
+    const factureTotal = paiement.facture_total ?? paiement.facture?.total_ttc ?? 0;
+    const factureRestant = paiement.facture_restant ?? paiement.facture?.montant_restant ?? 0;
 
-    const formatDate = (dateString) => {
-      if (!dateString) return '-'
-      try {
-        const date = new Date(dateString)
-        if (isNaN(date.getTime())) return '-'
-        return date.toLocaleDateString('fr-FR', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-        })
-      } catch {
-        return '-'
+    const methodeMap = {
+      especes: 'Espèces', carte: 'Carte bancaire', cheque: 'Chèque',
+      virement: 'Virement', mobile_money: 'Mobile Money', autre: 'Autre'
+    };
+    const methode = methodeMap[paiement.methode] || paiement.methode || '-';
+    const statutMap = {
+      pending: 'En attente', completed: 'Complété', failed: 'Échoué', refunded: 'Remboursé'
+    };
+    const statut = statutMap[paiement.statut] || paiement.statut || 'Complété';
+
+    // === LOGO ===
+    const loadLogo = (src) => new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'Anonymous';
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        canvas.getContext('2d').drawImage(img, 0, 0);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+    let logoData = null;
+    try { logoData = await loadLogo(logoSvg); } catch { /* ignore */ }
+
+    // ============================================================
+    // 1. EN-TÊTE COMPACT
+    // ============================================================
+    const logoW = 30, logoH = 13;
+    if (logoData) doc.addImage(logoData, 'PNG', margins.left, y, logoW, logoH);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(50, 50, 50);
+    doc.text(company.name, margins.left + logoW + 4, y + 4);
+    doc.setFontSize(6.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(80, 80, 80);
+    doc.text(company.address, margins.left + logoW + 4, y + 9);
+    doc.setFontSize(6);
+    doc.text(`RCCM: ${company.rccm} | Capital: ${company.capital}`, margins.left + logoW + 4, y + 13);
+    y += 20;
+    doc.setDrawColor(180, 180, 180);
+    doc.line(margins.left, y, pageWidth - margins.right, y);
+    y += 5;
+
+    // 2. TITRE
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(40, 40, 40);
+    doc.text('REÇU DE PAIEMENT', pageWidth / 2, y, { align: 'center' });
+    y += 5.5;
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text(`N° ${paiement.reference || 'Sans référence'}`, pageWidth / 2, y, { align: 'center' });
+    y += 8;
+
+    // ============================================================
+    // 3. DÉTAILS PAIEMENT (encadré réduit)
+    // ============================================================
+    const boxH = 30;
+    doc.setFillColor(248, 248, 248);
+    doc.rect(margins.left, y, contentWidth, boxH, 'F');
+    doc.setDrawColor(160, 160, 160);
+    doc.rect(margins.left, y, contentWidth, boxH, 'S');
+    doc.setFillColor(220, 220, 220);
+    doc.rect(margins.left, y, contentWidth, 6, 'F');
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(60, 60, 60);
+    doc.text('DÉTAILS DU PAIEMENT', margins.left + 5, y + 4.5);
+
+    const col1 = margins.left + 10;
+    const col2 = margins.left + 105;
+    let iy = y + 11;
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(70, 70, 70);
+    doc.text('Date :', col1, iy);
+    doc.setFont('helvetica', 'normal');
+    doc.text(formatDate(paiement.date_paiement), col1 + 14, iy);
+    iy += 6;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Méthode :', col1, iy);
+    doc.setFont('helvetica', 'normal');
+    doc.text(methode, col1 + 19, iy);
+    iy += 6;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Statut :', col1, iy);
+    doc.setTextColor(paiement.statut === 'completed' ? '#2e7d32' : '#e65100');
+    doc.setFont('helvetica', 'bold');
+    doc.text(statut, col1 + 15, iy);
+    doc.setTextColor(70, 70, 70);
+    // colonne droite
+    iy = y + 11;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Réf. externe :', col2, iy);
+    doc.setFont('helvetica', 'normal');
+    doc.text(paiement.reference_externe || '-', col2 + 23, iy);
+    iy += 6;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Encaissé par :', col2, iy);
+    doc.setFont('helvetica', 'normal');
+    doc.text(paiement.encaisse_par?.email || paiement.encaisse_par_nom || '-', col2 + 25, iy);
+    y += boxH + 6;
+
+    // ============================================================
+    // 4. MONTANT (cadre blanc, épuré)
+    // ============================================================
+    doc.setDrawColor(160, 160, 160);
+    doc.rect(margins.left, y, contentWidth, 20, 'S');
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(70, 70, 70);
+    doc.text('MONTANT ENCAISSÉ', pageWidth / 2, y + 6.5, { align: 'center' });
+    doc.setFontSize(15);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 0, 0);
+    doc.text(formatCurrency(paiement.montant || 0), pageWidth / 2, y + 16, { align: 'center' });
+    y += 20 + 6;
+
+    // ============================================================
+    // 5. CLIENT (encadré réduit)
+    // ============================================================
+    const clientFull = clientRaison || (clientPrenom ? `${clientNom} ${clientPrenom}` : clientNom);
+    if (clientNom !== 'Client inconnu') {
+      const ch = 28;
+      doc.setFillColor(248, 248, 248);
+      doc.rect(margins.left, y, contentWidth, ch, 'F');
+      doc.setDrawColor(160, 160, 160);
+      doc.rect(margins.left, y, contentWidth, ch, 'S');
+      doc.setFillColor(220, 220, 220);
+      doc.rect(margins.left, y, contentWidth, 6, 'F');
+      doc.setFontSize(7.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(60, 60, 60);
+      doc.text('INFORMATIONS CLIENT', margins.left + 5, y + 4.5);
+      let cy = y + 10;
+      doc.setFontSize(7.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(70, 70, 70);
+      doc.text('Nom :', col1, cy);
+      doc.setFont('helvetica', 'normal');
+      doc.text(clientFull.substring(0, 30), col1 + 14, cy);
+      cy += 5.5;
+      if (clientEmail) {
+        doc.setFont('helvetica', 'bold');
+        doc.text('Email :', col1, cy);
+        doc.setFont('helvetica', 'normal');
+        doc.text(clientEmail.substring(0, 30), col1 + 17, cy);
+        cy += 5.5;
       }
-    }
-
-    // === DONNÉES ===
-    const client = paiement.client || {}
-    const facture = paiement.facture || {}
-    const vente = paiement.vente || {}
-
-    // === CHARGEMENT DU LOGO ===
-    const loadLogo = (src) =>
-      new Promise((resolve) => {
-        const img = new Image()
-        img.crossOrigin = 'Anonymous'
-        img.onload = () => {
-          const canvas = document.createElement('canvas')
-          canvas.width = img.width
-          canvas.height = img.height
-          canvas.getContext('2d').drawImage(img, 0, 0)
-          resolve(canvas.toDataURL('image/png'))
-        }
-        img.onerror = () => resolve(null)
-        img.src = src
-      })
-
-    const logoData = await loadLogo(logoSvg)
-
-    // ============================================================
-    // EN-TÊTE
-    // ============================================================
-    if (logoData) {
-      doc.addImage(logoData, 'PNG', margins.left, y, 40, 20)
-    } else {
-      doc.setFontSize(16)
-      doc.setFont('helvetica', 'bold')
-      doc.setTextColor(black)
-      doc.text('SEYDI GROUP', margins.left, y + 8)
-      doc.setFontSize(10)
-      doc.setFont('helvetica', 'normal')
-      doc.text('SEYDI GROUP SARL', margins.left, y + 14)
-      doc.text('Solutions Digitales', margins.left, y + 19)
-    }
-
-    const companyBox = {
-      x: pageWidth - margins.right - 85,
-      y: y,
-      w: 85,
-      h: 35,
-    }
-    doc.setDrawColor(black)
-    doc.setLineWidth(0.2)
-    doc.rect(companyBox.x, companyBox.y, companyBox.w, companyBox.h, 'S')
-
-    doc.setFontSize(10)
-    doc.setFont('helvetica', 'bold')
-    doc.text('SOCIÉTÉ', companyBox.x + companyBox.w / 2, companyBox.y + 4, {
-      align: 'center',
-    })
-    doc.setFont('helvetica', 'normal')
-    doc.text('SEYDI GROUP SARL', companyBox.x + 4, companyBox.y + 10)
-    doc.text('Dakar, Sénégal', companyBox.x + 4, companyBox.y + 16)
-    doc.text('+221 33 123 45 67', companyBox.x + 4, companyBox.y + 22)
-    doc.setFontSize(9)
-    doc.text('contact@seydigroup.com', companyBox.x + 4, companyBox.y + 28)
-
-    y = companyBox.y + companyBox.h + 8
-
-    doc.setDrawColor(black)
-    doc.setLineWidth(0.5)
-    doc.line(margins.left, y, pageWidth - margins.right, y)
-    y += 8
-
-    doc.setFontSize(12)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(black)
-    doc.text('REÇU DE PAIEMENT', pageWidth / 2, y, { align: 'center' })
-    y += 8
-    doc.setFontSize(10)
-    doc.setFont('helvetica', 'normal')
-    doc.text(`N° ${paiement.reference || 'Sans référence'}`, pageWidth / 2, y, {
-      align: 'center',
-    })
-    y += 12
-
-    // ============================================================
-    // INFORMATIONS PAIEMENT (encadré)
-    // ============================================================
-    const infoBox = { x: margins.left, y: y, w: contentWidth, h: 46 }
-    doc.setDrawColor(black)
-    doc.setLineWidth(0.3)
-    doc.rect(infoBox.x, infoBox.y, infoBox.w, infoBox.h, 'S')
-
-    const midX = infoBox.x + infoBox.w / 2
-    doc.line(midX, infoBox.y, midX, infoBox.y + infoBox.h)
-
-    let infoY = infoBox.y + 6
-    doc.setFontSize(11)
-    doc.setFont('helvetica', 'bold')
-    doc.text('DÉTAILS PAIEMENT', infoBox.x + 4, infoY)
-    infoY += 7
-
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(10)
-    doc.text('Date :', infoBox.x + 4, infoY)
-    doc.setFont('helvetica', 'normal')
-    doc.text(formatDate(paiement.date_paiement), infoBox.x + 24, infoY)
-    infoY += 6
-
-    doc.setFont('helvetica', 'bold')
-    doc.text('Méthode :', infoBox.x + 4, infoY)
-    doc.setFont('helvetica', 'normal')
-    const methodes = {
-      especes: 'Espèces',
-      carte: 'Carte bancaire',
-      cheque: 'Chèque',
-      virement: 'Virement',
-      mobile_money: 'Mobile Money',
-      autre: 'Autre',
-    }
-    const methodeLabel = methodes[paiement.methode] || paiement.methode || '-'
-    doc.text(methodeLabel, infoBox.x + 24, infoY)
-    infoY += 6
-
-    doc.setFont('helvetica', 'bold')
-    doc.text('Statut :', infoBox.x + 4, infoY)
-    doc.setFont('helvetica', 'normal')
-    const statut = paiement.statut || 'completed'
-    const statutLabel = {
-      pending: 'En attente',
-      completed: 'Complété',
-      failed: 'Échoué',
-      refunded: 'Remboursé',
-    }[statut]
-    doc.text(statutLabel || statut, infoBox.x + 24, infoY)
-
-    // Colonne droite de l'encadré
-    infoY = infoBox.y + 6
-    doc.setFont('helvetica', 'bold')
-    doc.text('RÉFÉRENCES', midX + 4, infoY)
-    infoY += 7
-
-    doc.setFont('helvetica', 'bold')
-    doc.text('Réf. ext. :', midX + 4, infoY)
-    doc.setFont('helvetica', 'normal')
-    doc.text(paiement.reference_externe || '-', midX + 24, infoY)
-    infoY += 6
-
-    if (facture.reference) {
-      doc.setFont('helvetica', 'bold')
-      doc.text('Facture :', midX + 4, infoY)
-      doc.setFont('helvetica', 'normal')
-      doc.text(facture.reference, midX + 24, infoY)
-      infoY += 6
-    }
-
-    if (vente.reference) {
-      doc.setFont('helvetica', 'bold')
-      doc.text('Vente :', midX + 4, infoY)
-      doc.setFont('helvetica', 'normal')
-      doc.text(vente.reference, midX + 24, infoY)
-    }
-
-    y = infoBox.y + infoBox.h + 10
-
-    // ============================================================
-    // MONTANT (encadré)
-    // ============================================================
-    const amountBox = { x: margins.left, y: y, w: contentWidth, h: 35 }
-    doc.setDrawColor(black)
-    doc.setLineWidth(0.3)
-    doc.rect(amountBox.x, amountBox.y, amountBox.w, amountBox.h, 'S')
-
-    doc.setFontSize(12)
-    doc.setFont('helvetica', 'bold')
-    doc.text('MONTANT ENCAISSÉ', amountBox.x + amountBox.w / 2, amountBox.y + 10, {
-      align: 'center',
-    })
-    doc.setFontSize(22)
-    doc.setTextColor(black)
-    const montant = paiement.montant || 0
-    doc.text(`${formatCurrency(montant)}`, amountBox.x + amountBox.w / 2, amountBox.y + 28, {
-      align: 'center',
-    })
-
-    y = amountBox.y + amountBox.h + 10
-
-    // ============================================================
-    // CLIENT
-    // ============================================================
-    if (client && Object.keys(client).length) {
-      const clientBox = { x: margins.left, y: y, w: contentWidth, h: 40 }
-      doc.setDrawColor(black)
-      doc.setLineWidth(0.3)
-      doc.rect(clientBox.x, clientBox.y, clientBox.w, clientBox.h, 'S')
-
-      doc.setFontSize(11)
-      doc.setFont('helvetica', 'bold')
-      doc.text('CLIENT', clientBox.x + 4, clientBox.y + 6)
-
-      doc.setFontSize(10)
-      let clientY = clientBox.y + 13
-      const nomComplet =
-        client.raison_sociale ||
-        (client.prenom ? `${client.nom} ${client.prenom}` : client.nom) ||
-        '-'
-      doc.setFont('helvetica', 'bold')
-      doc.text('Nom :', clientBox.x + 4, clientY)
-      doc.setFont('helvetica', 'normal')
-      doc.text(nomComplet.substring(0, 35), clientBox.x + 24, clientY)
-      clientY += 7
-
-      if (client.email) {
-        doc.setFont('helvetica', 'bold')
-        doc.text('Email :', clientBox.x + 4, clientY)
-        doc.setFont('helvetica', 'normal')
-        doc.text(client.email.substring(0, 35), clientBox.x + 24, clientY)
-        clientY += 7
+      if (clientTel) {
+        doc.setFont('helvetica', 'bold');
+        doc.text('Tél :', col1, cy);
+        doc.setFont('helvetica', 'normal');
+        doc.text(clientTel, col1 + 13, cy);
+        cy += 5.5;
       }
-
-      if (client.telephone) {
-        doc.setFont('helvetica', 'bold')
-        doc.text('Tél :', clientBox.x + 4, clientY)
-        doc.setFont('helvetica', 'normal')
-        doc.text(client.telephone, clientBox.x + 24, clientY)
+      if (clientAdr) {
+        doc.setFont('helvetica', 'bold');
+        doc.text('Adresse :', col1, cy);
+        doc.setFont('helvetica', 'normal');
+        doc.text(clientAdr.substring(0, 30), col1 + 18, cy);
       }
-
-      y = clientBox.y + clientBox.h + 8
+      y += ch + 5;
     }
 
     // ============================================================
-    // DÉTAILS FACTURE (si facture associée)
+    // 6. FACTURE ASSOCIÉE (encadré réduit)
     // ============================================================
-    if (facture.reference) {
-      const factureBox = { x: margins.left, y: y, w: contentWidth, h: 36 }
-      doc.setDrawColor(black)
-      doc.setLineWidth(0.3)
-      doc.rect(factureBox.x, factureBox.y, factureBox.w, factureBox.h, 'S')
-
-      doc.setFontSize(11)
-      doc.setFont('helvetica', 'bold')
-      doc.text('FACTURE ASSOCIÉE', factureBox.x + 4, factureBox.y + 6)
-
-      let fY = factureBox.y + 13
-      doc.setFontSize(10)
-      doc.setFont('helvetica', 'bold')
-      doc.text('Référence :', factureBox.x + 4, fY)
-      doc.setFont('helvetica', 'normal')
-      doc.text(facture.reference, factureBox.x + 35, fY)
-      fY += 7
-
-      doc.setFont('helvetica', 'bold')
-      doc.text('Date :', factureBox.x + 4, fY)
-      doc.setFont('helvetica', 'normal')
-      doc.text(formatDate(facture.date_facture), factureBox.x + 35, fY)
-      fY += 7
-
-      doc.setFont('helvetica', 'bold')
-      doc.text('Total TTC :', factureBox.x + 4, fY)
-      doc.setFont('helvetica', 'normal')
-      doc.text(formatCurrency(facture.total_ttc), factureBox.x + 35, fY)
-
-      y = factureBox.y + factureBox.h + 10
+    if (factureRef !== '-') {
+      const fh = 28;
+      doc.setFillColor(248, 248, 248);
+      doc.rect(margins.left, y, contentWidth, fh, 'F');
+      doc.setDrawColor(160, 160, 160);
+      doc.rect(margins.left, y, contentWidth, fh, 'S');
+      doc.setFillColor(220, 220, 220);
+      doc.rect(margins.left, y, contentWidth, 6, 'F');
+      doc.setFontSize(7.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(60, 60, 60);
+      doc.text('FACTURE ASSOCIÉE', margins.left + 5, y + 4.5);
+      let fy = y + 10;
+      doc.setFontSize(7.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(70, 70, 70);
+      doc.text('Référence :', col1, fy);
+      doc.setFont('helvetica', 'normal');
+      doc.text(factureRef, col1 + 23, fy);
+      fy += 5.5;
+      if (factureDate) {
+        doc.setFont('helvetica', 'bold');
+        doc.text('Date :', col1, fy);
+        doc.setFont('helvetica', 'normal');
+        doc.text(formatDate(factureDate), col1 + 14, fy);
+        fy += 5.5;
+      }
+      doc.setFont('helvetica', 'bold');
+      doc.text('Total TTC :', col1, fy);
+      doc.setFont('helvetica', 'normal');
+      doc.text(formatCurrency(factureTotal), col1 + 23, fy);
+      fy += 5.5;
+      doc.setFont('helvetica', 'bold');
+      doc.text('Reste à payer :', col1, fy);
+      doc.setTextColor(factureRestant > 0 ? '#c62828' : '#2e7d32');
+      doc.setFont('helvetica', 'bold');
+      doc.text(formatCurrency(factureRestant), col1 + 27, fy);
+      y += fh + 5;
     }
 
     // ============================================================
-    // NOTES
+    // 7. NOTES (optionnel, compact)
     // ============================================================
     if (paiement.notes) {
-      const lines = doc.splitTextToSize(paiement.notes, contentWidth - 10)
-      const boxH = Math.max(14, lines.length * 5 + 8)
-      if (y + boxH < 270) {
-        doc.setDrawColor(black)
-        doc.setLineWidth(0.2)
-        doc.rect(margins.left, y, contentWidth, boxH, 'S')
-        doc.setFontSize(8)
-        doc.setFont('helvetica', 'bold')
-        doc.text('NOTES', margins.left + 4, y + 4)
-        doc.setFont('helvetica', 'normal')
-        doc.setTextColor(black)
-        doc.text(lines, margins.left + 4, y + 9)
-        y += boxH + 6
-      }
+      const noteLines = doc.splitTextToSize(paiement.notes, contentWidth - 10);
+      const nh = Math.max(10, noteLines.length * 4 + 6);
+      doc.setDrawColor(160, 160, 160);
+      doc.rect(margins.left, y, contentWidth, nh, 'S');
+      doc.setFillColor(248, 248, 248);
+      doc.rect(margins.left, y, contentWidth, 5, 'F');
+      doc.setFontSize(6.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(70, 70, 70);
+      doc.text('NOTES', margins.left + 5, y + 3.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(80, 80, 80);
+      doc.text(noteLines, margins.left + 5, y + 8);
+      y += nh + 5;
     }
 
     // ============================================================
-    // PIED DE PAGE
+    // 8. SIGNATURES (sur la même page)
     // ============================================================
-    const footerY = 280
-    doc.setDrawColor(black)
-    doc.setLineWidth(0.2)
-    doc.line(margins.left, footerY - 10, pageWidth - margins.right, footerY - 10)
+    const signY = y + 4;
+    doc.setDrawColor(160, 160, 160);
+    doc.line(margins.left, signY, pageWidth - margins.right, signY);
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(70, 70, 70);
+    doc.text('VALIDATION', pageWidth / 2, signY + 4, { align: 'center' });
 
-    doc.setFontSize(9)
-    doc.setTextColor(black)
-    doc.setFont('helvetica', 'normal')
-    doc.text(
-      'SEYDI GROUP SARL - Dakar, Sénégal - Tél: +221 33 123 45 67',
-      pageWidth / 2,
-      footerY - 5,
-      { align: 'center' }
-    )
-    doc.text(
-      `Reçu généré le ${formatDate(new Date())}`,
-      pageWidth / 2,
-      footerY - 1,
-      { align: 'center' }
-    )
+    const sigW = (contentWidth - 12) / 2;
+    const sigH = 22;
+    const sigTop = signY + 7;
+    // Signature client
+    doc.rect(margins.left, sigTop, sigW, sigH, 'S');
+    doc.setFontSize(6);
+    doc.setFont('helvetica', 'bold');
+    doc.text('LE CLIENT', margins.left + sigW / 2, sigTop + 4, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.text('Nom et signature', margins.left + 4, sigTop + 11);
+    doc.text('Date: _______________', margins.left + 4, sigTop + 17);
+    // Signature entreprise
+    const sigRight = margins.left + sigW + 12;
+    doc.rect(sigRight, sigTop, sigW, sigH, 'S');
+    doc.setFont('helvetica', 'bold');
+    doc.text('L\'ENTREPRISE', sigRight + sigW / 2, sigTop + 4, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.text(company.name, sigRight + 4, sigTop + 11);
+    doc.text('Signature et cachet', sigRight + 4, sigTop + 17);
 
-    const pageCount = doc.internal.getNumberOfPages()
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i)
-      doc.setFontSize(9)
-      doc.setTextColor(black)
-      doc.text(`Page ${i}/${pageCount}`, pageWidth - margins.right, footerY, {
-        align: 'right',
-      })
-    }
+    // ============================================================
+    // 9. PIED DE PAGE (réduit)
+    // ============================================================
+    const footY = pageHeight - margins.bottom - 6;
+    doc.setDrawColor(200, 200, 200);
+    doc.line(margins.left, footY - 3, pageWidth - margins.right, footY - 3);
+    doc.setFontSize(5.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text(`${company.name} - ${company.address} - Tél: ${company.phone}`, pageWidth / 2, footY, { align: 'center' });
+    doc.text(`RCCM: ${company.rccm} | Capital: ${company.capital}`, pageWidth / 2, footY + 3.5, { align: 'center' });
+    doc.text(`Généré le ${formatDate(new Date().toISOString())}`, pageWidth / 2, footY + 7, { align: 'center' });
 
-    doc.save(`Reçu_paiement_${paiement.reference || 'paiement'}.pdf`)
-    return true
+    doc.save(`Reçu_paiement_${paiement.reference || 'paiement'}.pdf`);
+    return true;
+
   } catch (error) {
-    console.error('Erreur PaiementPdf:', error)
-    throw error
+    console.error('Erreur PaiementPdf:', error);
+    throw error;
   }
-}
+};
 
-export default PaiementPdf
+export default PaiementPdf;
