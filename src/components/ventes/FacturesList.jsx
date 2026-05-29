@@ -5,9 +5,9 @@ import AxiosInstance from '../AxiosInstance';
 import FacturePDF from './FacturePDF';
 import {
   FileText, Eye, CheckCircle, XCircle, Clock, Search,
-  RefreshCw, Filter, Calendar, AlertCircle,
-  ChevronLeft, ChevronRight, Plus, DollarSign, AlertTriangle,
-  ArrowUpDown, ChevronUp, ChevronDown, Trash2, Receipt, Printer
+  RefreshCw, Filter, Calendar, AlertCircle, DollarSign,
+  ChevronLeft, ChevronRight, Plus, AlertTriangle,
+  ArrowUpDown, ChevronUp, ChevronDown, Trash2, Receipt, Printer, TrendingUp, TrendingDown
 } from 'lucide-react';
 
 const FacturesList = () => {
@@ -32,16 +32,18 @@ const FacturesList = () => {
     payee: 0,
     partiellement_payee: 0,
     en_retard: 0,
-    totalMontant: 0
+    totalMontant: 0,
+    totalPaye: 0,
+    totalRestant: 0
   });
 
   const statutConfig = {
-    brouillon: { label: 'Brouillon', icon: Clock, color: 'text-gray-500', bgColor: 'bg-gray-100' },
-    envoyee: { label: 'Envoyée', icon: FileText, color: 'text-blue-500', bgColor: 'bg-blue-100' },
-    payee: { label: 'Payée', icon: CheckCircle, color: 'text-green-500', bgColor: 'bg-green-100' },
-    partiellement_payee: { label: 'Partiellement payée', icon: AlertCircle, color: 'text-orange-500', bgColor: 'bg-orange-100' },
-    en_retard: { label: 'En retard', icon: AlertCircle, color: 'text-red-500', bgColor: 'bg-red-100' },
-    annulee: { label: 'Annulée', icon: XCircle, color: 'text-gray-500', bgColor: 'bg-gray-100' }
+    draft: { label: 'Brouillon', icon: Clock, color: 'text-gray-500', bgColor: 'bg-gray-100' },
+    sent: { label: 'Envoyée', icon: FileText, color: 'text-blue-500', bgColor: 'bg-blue-100' },
+    paid: { label: 'Payée', icon: CheckCircle, color: 'text-green-500', bgColor: 'bg-green-100' },
+    partially_paid: { label: 'Partiellement payée', icon: AlertCircle, color: 'text-orange-500', bgColor: 'bg-orange-100' },
+    overdue: { label: 'En retard', icon: AlertCircle, color: 'text-red-500', bgColor: 'bg-red-100' },
+    cancelled: { label: 'Annulée', icon: XCircle, color: 'text-gray-500', bgColor: 'bg-gray-100' }
   };
 
   const fetchFactures = async () => {
@@ -52,16 +54,20 @@ const FacturesList = () => {
       setFactures(data);
       
       const totalMontant = data.reduce((sum, f) => sum + (f.total_ttc || 0), 0);
-      const payee = data.filter(f => f.statut === 'payee').length;
-      const partiellement_payee = data.filter(f => f.statut === 'partiellement_payee').length;
-      const en_retard = data.filter(f => f.statut === 'en_retard').length;
+      const totalPaye = data.reduce((sum, f) => sum + (f.montant_paye || 0), 0);
+      const totalRestant = data.reduce((sum, f) => sum + (f.montant_restant || 0), 0);
+      const payee = data.filter(f => f.status === 'paid').length;
+      const partiellement_payee = data.filter(f => f.status === 'partially_paid').length;
+      const en_retard = data.filter(f => f.status === 'overdue').length;
       
       setStats({
         total: data.length,
         payee,
         partiellement_payee,
         en_retard,
-        totalMontant
+        totalMontant,
+        totalPaye,
+        totalRestant
       });
     } catch (error) {
       console.error(error);
@@ -121,13 +127,20 @@ const FacturesList = () => {
     return sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />;
   };
 
+  const getPaymentProgress = (facture) => {
+    const total = facture.total_ttc || 0;
+    const paye = facture.montant_paye || 0;
+    if (total === 0) return 0;
+    return (paye / total) * 100;
+  };
+
   const filteredAndSortedFactures = useMemo(() => {
     let filtered = factures.filter(facture => {
       const search = searchTerm.toLowerCase();
       const reference = (facture.reference || '').toLowerCase();
       const clientNom = (facture.client_nom || '').toLowerCase();
       const matchesSearch = reference.includes(search) || clientNom.includes(search);
-      const matchesStatut = !filterStatut || facture.statut === filterStatut;
+      const matchesStatut = !filterStatut || facture.status === filterStatut;
       const matchesType = !filterType || facture.type_facture === filterType;
       const matchesDateStart = !dateRange.start || new Date(facture.date_facture) >= new Date(dateRange.start);
       const matchesDateEnd = !dateRange.end || new Date(facture.date_facture) <= new Date(dateRange.end);
@@ -141,9 +154,16 @@ const FacturesList = () => {
       if (sortField === 'total_ttc') {
         aVal = parseFloat(aVal) || 0;
         bVal = parseFloat(bVal) || 0;
-      }
-      
-      if (sortField === 'date_facture' || sortField === 'date_echeance') {
+      } else if (sortField === 'montant_paye') {
+        aVal = parseFloat(a.montant_paye) || 0;
+        bVal = parseFloat(b.montant_paye) || 0;
+      } else if (sortField === 'montant_restant') {
+        aVal = parseFloat(a.montant_restant) || 0;
+        bVal = parseFloat(b.montant_restant) || 0;
+      } else if (sortField === 'payment_percent') {
+        aVal = getPaymentProgress(a);
+        bVal = getPaymentProgress(b);
+      } else if (sortField === 'date_facture' || sortField === 'date_echeance') {
         aVal = new Date(aVal);
         bVal = new Date(bVal);
       }
@@ -170,12 +190,37 @@ const FacturesList = () => {
   };
 
   const getStatusBadge = (statut) => {
-    const config = statutConfig[statut] || statutConfig.brouillon;
+    const config = statutConfig[statut] || statutConfig.draft;
     const Icon = config.icon;
     return (
       <span className={`badge ${config.bgColor} ${config.color} gap-1 px-3 py-2`}>
         <Icon className="w-3 h-3" /> {config.label}
       </span>
+    );
+  };
+
+  const PaymentProgressBar = ({ facture }) => {
+    const total = facture.total_ttc || 0;
+    const paye = facture.montant_paye || 0;
+    const percent = total === 0 ? 0 : (paye / total) * 100;
+    const reste = total - paye;
+    if (total === 0) return null;
+    return (
+      <div className="w-full">
+        <div className="flex justify-between text-xs mb-1">
+          <span className="text-success">Payé: {formatPrice(paye)}</span>
+          <span className="text-error">Reste: {formatPrice(reste)}</span>
+        </div>
+        <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+          <div 
+            className="bg-success h-2 rounded-full transition-all duration-300"
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+        <div className="text-right text-xs font-semibold mt-1">
+          {percent.toFixed(0)}%
+        </div>
+      </div>
     );
   };
 
@@ -250,12 +295,14 @@ const FacturesList = () => {
         </div>
       </div>
 
-      {/* Cartes statistiques */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="card bg-white shadow-md rounded-xl p-4"><p className="text-xs text-gray-500">Total factures</p><p className="text-2xl font-bold text-primary">{stats.total}</p></div>
-        <div className="card bg-white shadow-md rounded-xl p-4"><p className="text-xs text-gray-500">Payées</p><p className="text-2xl font-bold text-green-500">{stats.payee}</p></div>
-        <div className="card bg-white shadow-md rounded-xl p-4"><p className="text-xs text-gray-500">Partiellement payées</p><p className="text-2xl font-bold text-orange-500">{stats.partiellement_payee}</p></div>
-        <div className="card bg-white shadow-md rounded-xl p-4"><p className="text-xs text-gray-500">Montant total</p><p className="text-lg font-bold text-primary">{formatPrice(stats.totalMontant)}</p></div>
+      {/* Cartes statistiques améliorées */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+        <div className="card bg-white shadow-md rounded-xl p-3 text-center"><p className="text-xs text-gray-500">Total factures</p><p className="text-xl font-bold text-primary">{stats.total}</p></div>
+        <div className="card bg-white shadow-md rounded-xl p-3 text-center"><p className="text-xs text-gray-500">Payées</p><p className="text-xl font-bold text-green-500">{stats.payee}</p></div>
+        <div className="card bg-white shadow-md rounded-xl p-3 text-center"><p className="text-xs text-gray-500">Part. payées</p><p className="text-xl font-bold text-orange-500">{stats.partiellement_payee}</p></div>
+        <div className="card bg-white shadow-md rounded-xl p-3 text-center"><p className="text-xs text-gray-500">Montant total</p><p className="text-lg font-bold text-primary">{formatPrice(stats.totalMontant)}</p></div>
+        <div className="card bg-white shadow-md rounded-xl p-3 text-center"><p className="text-xs text-gray-500">Total payé</p><p className="text-lg font-bold text-success">{formatPrice(stats.totalPaye)}</p></div>
+        <div className="card bg-white shadow-md rounded-xl p-3 text-center"><p className="text-xs text-gray-500">Reste à payer</p><p className="text-lg font-bold text-error">{formatPrice(stats.totalRestant)}</p></div>
       </div>
 
       {/* Filtres */}
@@ -270,12 +317,12 @@ const FacturesList = () => {
         <div className={`${showMobileFilters ? 'grid' : 'hidden'} sm:grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3`}>
           <select className="select select-bordered" value={filterStatut} onChange={(e) => { setFilterStatut(e.target.value); setCurrentPage(1); }}>
             <option value="">Tous les statuts</option>
-            <option value="brouillon">Brouillon</option>
-            <option value="envoyee">Envoyée</option>
-            <option value="payee">Payée</option>
-            <option value="partiellement_payee">Partiellement payée</option>
-            <option value="en_retard">En retard</option>
-            <option value="annulee">Annulée</option>
+            <option value="draft">Brouillon</option>
+            <option value="sent">Envoyée</option>
+            <option value="paid">Payée</option>
+            <option value="partially_paid">Partiellement payée</option>
+            <option value="overdue">En retard</option>
+            <option value="cancelled">Annulée</option>
           </select>
           <select className="select select-bordered" value={filterType} onChange={(e) => { setFilterType(e.target.value); setCurrentPage(1); }}>
             <option value="">Tous les types</option>
@@ -288,7 +335,7 @@ const FacturesList = () => {
         </div>
       </div>
 
-      {/* Tableau - Bordure noire supprimée */}
+      {/* Tableau avec progression */}
       <div className="bg-white rounded-xl shadow-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="table table-zebra w-full">
@@ -299,13 +346,14 @@ const FacturesList = () => {
                 <th><button className="flex items-center gap-1" onClick={() => handleSort('date_facture')}>Date<SortIcon field="date_facture" /></button></th>
                 <th><button className="flex items-center gap-1" onClick={() => handleSort('date_echeance')}>Échéance<SortIcon field="date_echeance" /></button></th>
                 <th><button className="flex items-center gap-1" onClick={() => handleSort('total_ttc')}>Montant<SortIcon field="total_ttc" /></button></th>
+                <th><button className="flex items-center gap-1" onClick={() => handleSort('montant_paye')}>Payé / Reste<SortIcon field="montant_paye" /></button></th>
                 <th>Statut</th>
                 <th className="text-right">Actions</th>
-               </tr>
+              </tr>
             </thead>
             <tbody>
               {paginatedFactures.length === 0 ? (
-                <tr><td colSpan="7" className="text-center py-16"><Receipt className="w-12 h-12 mx-auto text-gray-300 mb-2" /><p>Aucune facture trouvée</p><button onClick={() => navigate('/factures/nouveau')} className="btn btn-primary btn-sm mt-4"><Plus className="w-4 h-4" /> Créer une facture</button></td></tr>
+                <tr><td colSpan="8" className="text-center py-16"><Receipt className="w-12 h-12 mx-auto text-gray-300 mb-2" /><p>Aucune facture trouvée</p><button onClick={() => navigate('/factures/nouveau')} className="btn btn-primary btn-sm mt-4"><Plus className="w-4 h-4" /> Créer une facture</button></td></tr>
               ) : (
                 paginatedFactures.map((facture) => (
                   <tr key={facture.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => navigate(`/factures/${facture.id}`)}>
@@ -314,7 +362,10 @@ const FacturesList = () => {
                     <td className="text-sm">{formatDate(facture.date_facture)}</td>
                     <td className="text-sm">{formatDate(facture.date_echeance)}</td>
                     <td className="font-semibold text-primary">{formatPrice(facture.total_ttc)}</td>
-                    <td>{getStatusBadge(facture.statut)}</td>
+                    <td className="min-w-[200px]">
+                      <PaymentProgressBar facture={facture} />
+                    </td>
+                    <td>{getStatusBadge(facture.status)}</td>
                     <td className="text-right">
                       <div className="flex justify-end gap-1">
                         <button 
