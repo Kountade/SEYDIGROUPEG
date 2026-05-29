@@ -4,8 +4,8 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
 import PaiementPdf from './PaiementPdf'
 import {
-  CreditCard, ArrowLeft, Edit, Printer, Trash2, AlertCircle,
-  DollarSign, Calendar, Hash, FileText, User, Phone, Mail,
+  CreditCard, ArrowLeft, Edit, Trash2, AlertCircle,
+  DollarSign, Calendar, FileText, User, Phone, Mail,
   MapPin, CheckCircle, XCircle, Clock, RefreshCw, Download
 } from 'lucide-react'
 
@@ -70,24 +70,32 @@ const PaiementDetail = () => {
     }
   }
 
-  // ✅ Fonction pour récupérer le nom du client (priorité à la facture)
-  const getClientName = () => {
-    if (!paiement) return 'Anonyme'
-    if (paiement.facture?.client?.nom) return paiement.facture.client.nom
-    if (paiement.client?.nom) return paiement.client.nom
-    return 'Anonyme'
-  }
-
-  // ✅ Fonction pour récupérer la référence de la facture
-  const getFactureRef = () => {
-    if (!paiement) return '-'
-    return paiement.facture?.reference || paiement.facture_ref || '-'
-  }
-
-  // ✅ Fonction pour récupérer l'objet client complet (priorité à la facture)
-  const getClientObject = () => {
-    if (paiement?.facture?.client) return paiement.facture.client
-    if (paiement?.client) return paiement.client
+  const getClientInfo = () => {
+    if (!paiement) return null
+    // Priorité au client de la facture
+    if (paiement.facture_client_nom && paiement.facture_client_nom !== 'Anonyme') {
+      return {
+        nom: paiement.facture_client_nom,
+        prenom: paiement.facture_client_prenom,
+        email: paiement.facture_client_email,
+        telephone: paiement.facture_client_telephone,
+        adresse: paiement.facture_client_adresse,
+        raison_sociale: paiement.facture_client_raison_sociale,
+        source: 'facture'
+      }
+    }
+    // Sinon client direct
+    if (paiement.client_nom && paiement.client_nom !== 'Anonyme') {
+      return {
+        nom: paiement.client_nom,
+        prenom: paiement.client_prenom,
+        email: paiement.client_email,
+        telephone: paiement.client_telephone,
+        adresse: paiement.client_adresse,
+        raison_sociale: paiement.client_raison_sociale,
+        source: 'direct'
+      }
+    }
     return null
   }
 
@@ -116,47 +124,30 @@ const PaiementDetail = () => {
 
   const statutInfo = statuts[paiement.statut] || statuts.completed
   const StatutIcon = statutInfo.icon
-  const clientObj = getClientObject()
-  const hasClient = !!clientObj
+  const clientInfo = getClientInfo()
 
   return (
     <div className="min-h-screen bg-base-200">
-      {/* Header */}
       <div className="bg-base-100 border-b sticky top-0 z-10 shadow-sm">
         <div className="px-6 py-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-4">
             <Link to="/paiements" className="btn btn-ghost btn-sm gap-2">
               <ArrowLeft className="w-4 h-4" /> Retour
             </Link>
-            <div className="divider divider-horizontal h-6 hidden sm:block"></div>
             <CreditCard className="w-6 h-6 text-primary" />
             <h1 className="text-xl font-semibold">
               Paiement {paiement.reference || 'Sans référence'}
             </h1>
           </div>
           <div className="flex gap-2">
-            <button
-              onClick={handleDownloadPDF}
-              disabled={pdfLoading}
-              className="btn btn-sm btn-outline gap-1"
-            >
-              {pdfLoading ? (
-                <span className="loading loading-spinner loading-xs"></span>
-              ) : (
-                <Download className="w-4 h-4" />
-              )}
+            <button onClick={handleDownloadPDF} disabled={pdfLoading} className="btn btn-sm btn-outline gap-1">
+              {pdfLoading ? <span className="loading loading-spinner loading-xs"></span> : <Download className="w-4 h-4" />}
               PDF
             </button>
-            <button
-              onClick={() => navigate(`/paiements/${id}/edit`)}
-              className="btn btn-sm btn-outline gap-1"
-            >
+            <button onClick={() => navigate(`/paiements/${id}/edit`)} className="btn btn-sm btn-outline gap-1">
               <Edit className="w-4 h-4" /> Modifier
             </button>
-            <button
-              onClick={handleDelete}
-              className="btn btn-sm btn-error gap-1"
-            >
+            <button onClick={handleDelete} className="btn btn-sm btn-error gap-1">
               <Trash2 className="w-4 h-4" /> Supprimer
             </button>
           </div>
@@ -179,9 +170,7 @@ const PaiementDetail = () => {
                 <div className="flex flex-wrap gap-4 mt-2">
                   <div className="badge badge-lg gap-1">
                     <Calendar className="w-3 h-3" />{' '}
-                    {paiement.date_paiement
-                      ? new Date(paiement.date_paiement).toLocaleDateString()
-                      : 'Date inconnue'}
+                    {paiement.date_paiement ? new Date(paiement.date_paiement).toLocaleDateString() : 'Date inconnue'}
                   </div>
                   <div className={`badge badge-lg gap-1 badge-${statutInfo.color}`}>
                     <StatutIcon className="w-3 h-3" /> {statutInfo.label}
@@ -194,7 +183,6 @@ const PaiementDetail = () => {
             <div className="card bg-base-100 shadow-md">
               <div className="card-body">
                 <h2 className="card-title text-lg">Informations paiement</h2>
-                <div className="divider my-1"></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div><span className="font-semibold">Référence :</span> {paiement.reference || '-'}</div>
                   <div><span className="font-semibold">Méthode :</span> {methodes[paiement.methode] || paiement.methode || '-'}</div>
@@ -206,66 +194,46 @@ const PaiementDetail = () => {
             </div>
 
             {/* Facture associée */}
-            {paiement.facture && (
+            {paiement.facture_ref && paiement.facture_ref !== '-' && (
               <div className="card bg-base-100 shadow-md">
                 <div className="card-body">
                   <h2 className="card-title text-lg flex items-center gap-2">
                     <FileText className="w-5 h-5 text-primary" /> Facture associée
                   </h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div><span className="font-semibold">Référence :</span> {getFactureRef()}</div>
-                    <div><span className="font-semibold">Date :</span> {paiement.facture.date_facture ? new Date(paiement.facture.date_facture).toLocaleDateString() : '-'}</div>
-                    <div><span className="font-semibold">Total TTC :</span> {(paiement.facture.total_ttc || 0).toLocaleString()} FCFA</div>
-                    <div><span className="font-semibold">Reste à payer :</span> {(paiement.facture.montant_restant || 0).toLocaleString()} FCFA</div>
+                    <div><span className="font-semibold">Référence :</span> {paiement.facture_ref}</div>
+                    <div><span className="font-semibold">Date :</span> {paiement.facture_date ? new Date(paiement.facture_date).toLocaleDateString() : '-'}</div>
+                    <div><span className="font-semibold">Total TTC :</span> {(paiement.facture_total || 0).toLocaleString()} FCFA</div>
+                    <div><span className="font-semibold">Reste à payer :</span> {(paiement.facture_restant || 0).toLocaleString()} FCFA</div>
                   </div>
                   <div className="mt-3">
-                    <Link to={`/factures/${paiement.facture.id}`} className="btn btn-sm btn-outline">
+                    <Link to={`/factures/${paiement.facture}`} className="btn btn-sm btn-outline">
                       Voir la facture
                     </Link>
                   </div>
                 </div>
               </div>
             )}
-
-            {/* Vente associée */}
-            {paiement.vente && (
-              <div className="card bg-base-100 shadow-md">
-                <div className="card-body">
-                  <h2 className="card-title text-lg">Vente associée</h2>
-                  <div><span className="font-semibold">Référence vente :</span> {paiement.vente.reference || '-'}</div>
-                  <Link to={`/ventes/${paiement.vente.id}`} className="btn btn-sm btn-outline w-fit">
-                    Détails vente
-                  </Link>
-                </div>
-              </div>
-            )}
           </div>
 
-          {/* Colonne latérale - Client (priorité à la facture) */}
+          {/* Colonne latérale – Client */}
           <div className="space-y-6">
-            {hasClient ? (
+            {clientInfo ? (
               <div className="card bg-base-100 shadow-md">
                 <div className="card-body">
-                  <h2 className="card-title text-lg flex items-center gap-2">
-                    <User className="w-5 h-5 text-primary" /> Client
-                  </h2>
+                  <div className="flex items-center gap-2 text-primary mb-2">
+                    <User className="w-5 h-5" />
+                    <h2 className="card-title text-lg">Client</h2>
+                    {clientInfo.source === 'facture' && (
+                      <span className="badge badge-sm badge-info">Client de la facture</span>
+                    )}
+                  </div>
                   <div className="space-y-2">
-                    <div>
-                      <span className="font-semibold">Nom :</span> {clientObj.nom} {clientObj.prenom || ''}
-                      {paiement.facture?.client && <span className="ml-2 badge badge-sm badge-info">(client de la facture)</span>}
-                    </div>
-                    {clientObj.raison_sociale && (
-                      <div><span className="font-semibold">Raison sociale :</span> {clientObj.raison_sociale}</div>
-                    )}
-                    {clientObj.email && (
-                      <div className="flex items-center gap-1"><Mail className="w-3 h-3" /> {clientObj.email}</div>
-                    )}
-                    {clientObj.telephone && (
-                      <div className="flex items-center gap-1"><Phone className="w-3 h-3" /> {clientObj.telephone}</div>
-                    )}
-                    {clientObj.adresse && (
-                      <div className="flex items-start gap-1"><MapPin className="w-3 h-3 mt-1" /> {clientObj.adresse}</div>
-                    )}
+                    <div><span className="font-semibold">Nom :</span> {clientInfo.nom} {clientInfo.prenom || ''}</div>
+                    {clientInfo.raison_sociale && <div><span className="font-semibold">Raison sociale :</span> {clientInfo.raison_sociale}</div>}
+                    {clientInfo.email && <div className="flex items-center gap-1"><Mail className="w-3 h-3" /> {clientInfo.email}</div>}
+                    {clientInfo.telephone && <div className="flex items-center gap-1"><Phone className="w-3 h-3" /> {clientInfo.telephone}</div>}
+                    {clientInfo.adresse && <div className="flex items-start gap-1"><MapPin className="w-3 h-3 mt-1" /> {clientInfo.adresse}</div>}
                   </div>
                 </div>
               </div>
@@ -279,7 +247,6 @@ const PaiementDetail = () => {
                 </div>
               </div>
             )}
-
             {/* Métadonnées */}
             <div className="card bg-base-100 shadow-md">
               <div className="card-body">
