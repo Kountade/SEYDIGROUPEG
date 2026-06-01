@@ -32,7 +32,8 @@ import {
   Filter,
   Download,
   Upload,
-  Printer
+  Printer,
+  Package
 } from 'lucide-react'
 
 const ProductPricingManager = () => {
@@ -294,13 +295,19 @@ const ProductPricingManager = () => {
     return new Intl.NumberFormat('fr-FR').format(num)
   }
 
-  // Formater les prix
-  const formatPrice = (price) => {
-    if (!price && price !== 0) return '0 FCFA'
-    return new Intl.NumberFormat('fr-FR', { 
+  // Formater les prix avec le symbole de la devise (uniquement XOF et GNF)
+  const formatPrice = (price, currency = 'XOF') => {
+    if (!price && price !== 0) return '0'
+    const symbols = {
+      XOF: 'FCFA',
+      GNF: 'GNF'
+    }
+    const symbol = symbols[currency] || currency
+    const formattedNumber = new Intl.NumberFormat('fr-FR', { 
       minimumFractionDigits: 0, 
       maximumFractionDigits: 0 
-    }).format(price) + ' FCFA'
+    }).format(price)
+    return `${formattedNumber} ${symbol}`
   }
 
   // Calculer la marge
@@ -369,7 +376,7 @@ const ProductPricingManager = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 w-full">
       {/* Notification Toast */}
       {notification.show && (
         <div className={`fixed top-20 right-6 z-50 animate-slideDown max-w-md w-full shadow-2xl rounded-xl overflow-hidden ${
@@ -399,8 +406,8 @@ const ProductPricingManager = () => {
       )}
 
       {/* En-tête */}
-      <div className="bg-white shadow-sm border-b sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <div className="bg-white shadow-sm border-b sticky top-0 z-40 w-full">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <div className="flex items-center gap-4">
               <button 
@@ -456,7 +463,7 @@ const ProductPricingManager = () => {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-8">
         {/* Formulaire d'ajout/modification */}
         {showForm && (
           <div className="card bg-white shadow-xl rounded-xl mb-8 overflow-hidden animate-fadeIn">
@@ -497,7 +504,7 @@ const ProductPricingManager = () => {
                   )}
                 </div>
 
-                {/* Devise */}
+                {/* Devise - uniquement XOF et GNF */}
                 <div className="form-control">
                   <label className="label">
                     <span className="label-text font-medium">Devise</span>
@@ -507,16 +514,15 @@ const ProductPricingManager = () => {
                     value={formData.currency}
                     onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
                   >
-                    <option value="XOF">FCFA (XOF)</option>
-                    <option value="EUR">Euro (EUR)</option>
-                    <option value="USD">Dollar (USD)</option>
+                    <option value="XOF">Franc CFA (XOF)</option>
+                    <option value="GNF">Franc guinéen (GNF)</option>
                   </select>
                 </div>
 
                 {/* Prix d'achat */}
                 <div className="form-control">
                   <label className="label">
-                    <span className="label-text font-medium">Prix d'achat (FCFA) *</span>
+                    <span className="label-text font-medium">Prix d'achat ({formData.currency === 'XOF' ? 'FCFA' : 'GNF'}) *</span>
                   </label>
                   <input
                     type="number"
@@ -540,7 +546,7 @@ const ProductPricingManager = () => {
                 {/* Prix de vente */}
                 <div className="form-control">
                   <label className="label">
-                    <span className="label-text font-medium">Prix de vente (FCFA) *</span>
+                    <span className="label-text font-medium">Prix de vente ({formData.currency === 'XOF' ? 'FCFA' : 'GNF'}) *</span>
                   </label>
                   <input
                     type="number"
@@ -564,7 +570,7 @@ const ProductPricingManager = () => {
                 {/* Prix de gros */}
                 <div className="form-control">
                   <label className="label">
-                    <span className="label-text font-medium">Prix de gros (FCFA)</span>
+                    <span className="label-text font-medium">Prix de gros ({formData.currency === 'XOF' ? 'FCFA' : 'GNF'})</span>
                   </label>
                   <input
                     type="number"
@@ -617,7 +623,7 @@ const ProductPricingManager = () => {
                     <div className="flex items-center justify-between p-2 bg-white rounded">
                       <span className="text-gray-600">Marge brute:</span>
                       <span className="font-bold text-green-600">
-                        {formatNumber(parseFloat(formData.sale_price) - parseFloat(formData.purchase_price))} FCFA
+                        {formatPrice(parseFloat(formData.sale_price) - parseFloat(formData.purchase_price), formData.currency)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between p-2 bg-white rounded">
@@ -678,7 +684,7 @@ const ProductPricingManager = () => {
                 </div>
                 <div className="stat-title">Prix moyen (vente)</div>
                 <div className="stat-value text-secondary">{formatNumber(Math.round(stats.avgSale))}</div>
-                <div className="stat-desc">FCFA</div>
+                <div className="stat-desc">(moyenne toutes devises)</div>
               </div>
             </div>
 
@@ -689,7 +695,7 @@ const ProductPricingManager = () => {
                 </div>
                 <div className="stat-title">Marge moyenne</div>
                 <div className="stat-value text-green-600">{formatNumber(Math.round(stats.avgMargin))}</div>
-                <div className="stat-desc">FCFA</div>
+                <div className="stat-desc">(moyenne toutes devises)</div>
               </div>
             </div>
 
@@ -815,14 +821,14 @@ const ProductPricingManager = () => {
                       <div className="bg-gray-50 rounded-lg p-3 text-center">
                         <p className="text-xs text-gray-500 mb-1">Prix d'achat</p>
                         <p className="font-bold text-gray-800">
-                          {formatPrice(price.purchase_price)}
+                          {formatPrice(price.purchase_price, price.currency)}
                         </p>
                       </div>
                       
                       <div className="bg-primary/5 rounded-lg p-3 text-center border border-primary/20">
                         <p className="text-xs text-gray-500 mb-1">Prix de vente</p>
                         <p className="font-bold text-primary text-lg">
-                          {formatPrice(price.sale_price)}
+                          {formatPrice(price.sale_price, price.currency)}
                         </p>
                       </div>
                       
@@ -830,7 +836,7 @@ const ProductPricingManager = () => {
                         <div className="bg-gray-50 rounded-lg p-3 text-center">
                           <p className="text-xs text-gray-500 mb-1">Prix de gros</p>
                           <p className="font-bold text-gray-800">
-                            {formatPrice(price.wholesale_price)}
+                            {formatPrice(price.wholesale_price, price.currency)}
                           </p>
                         </div>
                       )}
@@ -853,7 +859,7 @@ const ProductPricingManager = () => {
                           )}
                           <span className="text-sm text-gray-600">Marge:</span>
                           <span className={`font-semibold ${margin >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {formatPrice(margin)}
+                            {formatPrice(margin, price.currency)}
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
