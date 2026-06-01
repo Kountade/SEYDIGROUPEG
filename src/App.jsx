@@ -86,6 +86,10 @@ import Paiements from './components/ventes/Paiements'
 import PaiementForm from './components/ventes/PaiementForm'
 import PaiementDetail from './components/ventes/PaiementDetail'
 import PaiementPdf from './components/ventes/PaiementPdf'
+import DevisList from './components/ventes/DevisList'
+import DevisForm from './components/ventes/DevisForm'
+import DevisDetail from './components/ventes/DevisDetail'
+import DevisPDF from './components/ventes/DevisPDF'
 
 
 
@@ -282,6 +286,12 @@ function App() {
 <Route path="/paiements/:id" element={<PaiementDetail />} />
 <Route path="/paiements/:id/edit" element={<PaiementForm />} />
 <Route path="/paiements/:id/pdf" element={<PaiementPdf />} />
+
+
+<Route path="/devis" element={<DevisList />} />
+<Route path="/devis/nouveau" element={<DevisForm />} />
+<Route path="/devis/:id" element={<DevisDetail />} />
+<Route path="/devis/:id/edit" element={<DevisForm />} />
 
  <Route path="/audit" element={<AuditLog />} />
             </Route>
