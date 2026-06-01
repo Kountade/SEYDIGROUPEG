@@ -338,3 +338,4 @@ const PaiementPdf = async (paiement) => {
 };
 
 export default PaiementPdf;
+
