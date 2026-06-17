@@ -2,19 +2,21 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
+import BonLivraisonPdf from './BonLivraisonPdf';
 import {
   ShoppingCart, Eye, CheckCircle, XCircle, Clock, Search,
   RefreshCw, Filter, Calendar, TrendingUp, AlertCircle,
   ChevronLeft, ChevronRight, Users, FileText, CreditCard,
   X, Download, Printer, Plus, DollarSign, AlertTriangle,
   ArrowUpDown, ChevronUp, ChevronDown, MoreHorizontal, Trash2,
-  UserCheck, UserX
+  UserCheck, UserX, Truck, Loader2
 } from 'lucide-react';
 
 const VentesList = () => {
   const navigate = useNavigate();
   const [ventes, setVentes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [generatingBl, setGeneratingBl] = useState(null); // Pour suivre quelle vente est en cours de génération
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterType, setFilterType] = useState('');
@@ -118,6 +120,37 @@ const VentesList = () => {
     setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 4000);
   };
 
+  // Générer le bon de livraison PDF
+  const handleGenerateBonLivraison = async (vente) => {
+    if (!vente || (vente.status !== 'approved' && vente.status !== 'completed')) {
+      showNotification('Seules les ventes approuvées ou complétées peuvent générer un bon de livraison', 'error');
+      return;
+    }
+    
+    setGeneratingBl(vente.id);
+    try {
+      // Récupérer les détails complets de la vente
+      const response = await AxiosInstance.get(`/ventes/${vente.id}/`);
+      const venteData = response.data;
+      
+      // Options pour le bon de livraison
+      const options = {
+        date_livraison: new Date().toISOString().split('T')[0],
+        adresse_livraison: venteData.client?.adresse || '',
+        contact_livraison: venteData.client?.telephone || '',
+        instructions: ''
+      };
+      
+      await BonLivraisonPdf(venteData, options);
+      showNotification(`Bon de livraison généré pour ${vente.reference}`, 'success');
+    } catch (error) {
+      console.error('Erreur génération bon de livraison:', error);
+      showNotification('Erreur lors de la génération du bon de livraison', 'error');
+    } finally {
+      setGeneratingBl(null);
+    }
+  };
+
   // Approuver une vente
   const handleApprove = async () => {
     if (!venteToApprove) return;
@@ -167,6 +200,11 @@ const VentesList = () => {
   // Vérifier si l'utilisateur peut approuver (chef d'agence ou PDG)
   const canApprove = () => {
     return userRoles.est_pdg || userRoles.est_chef_agence;
+  };
+
+  // Vérifier si une vente peut générer un bon de livraison
+  const canGenerateBonLivraison = (vente) => {
+    return vente.status === 'approved' || vente.status === 'completed';
   };
 
   const handleSort = (field) => {
@@ -581,6 +619,21 @@ const VentesList = () => {
                   </td>
                   <td>
                     <div className="flex justify-end gap-1">
+                      {/* Bouton Bon de Livraison */}
+                      {canGenerateBonLivraison(vente) && (
+                        <button 
+                          className="btn btn-ghost btn-xs text-info"
+                          onClick={() => handleGenerateBonLivraison(vente)}
+                          disabled={generatingBl === vente.id}
+                          title="Bon de livraison"
+                        >
+                          {generatingBl === vente.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Truck className="w-3 h-3" />
+                          )}
+                        </button>
+                      )}
                       {/* Boutons Approuver/Rejeter - visible uniquement pour les ventes en attente et pour les chefs d'agence/PDG */}
                       {vente.status === 'pending_approval' && canApprove() && (
                         <>
@@ -615,7 +668,7 @@ const VentesList = () => {
                       </button>
                     </div>
                   </td>
-                 </tr>
+                </tr>
               ))}
             </tbody>
           </table>
@@ -660,6 +713,21 @@ const VentesList = () => {
                     </div>
                   </div>
                   <div className="flex gap-1">
+                    {/* Bouton Bon de Livraison - Mobile */}
+                    {canGenerateBonLivraison(vente) && (
+                      <button 
+                        className="btn btn-ghost btn-xs btn-square text-info"
+                        onClick={() => handleGenerateBonLivraison(vente)}
+                        disabled={generatingBl === vente.id}
+                        title="Bon de livraison"
+                      >
+                        {generatingBl === vente.id ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Truck className="w-3 h-3" />
+                        )}
+                      </button>
+                    )}
                     {/* Boutons Approuver/Rejeter - Mobile */}
                     {vente.status === 'pending_approval' && canApprove() && (
                       <>
@@ -699,7 +767,7 @@ const VentesList = () => {
         </div>
       )}
 
-      {/* Modal de détails */}
+      {/* Modal de détails avec bouton bon de livraison */}
       {showDetailsModal && selectedVente && (
         <div className="modal modal-open">
           <div className="modal-box w-11/12 max-w-lg">
@@ -728,8 +796,27 @@ const VentesList = () => {
                 <div><p className="text-xs text-base-content/60">Reste à payer</p><p className="text-error font-semibold">{formatPrice(selectedVente.montant_du)}</p></div>
               </div>
             </div>
-            <div className="modal-action">
-              <button className="btn btn-primary btn-sm" onClick={() => { setShowDetailsModal(false); navigate(`/ventes/${selectedVente.id}`); }}><Eye className="w-3 h-3" /> Voir détails complets</button>
+            <div className="modal-action flex-wrap gap-2">
+              {canGenerateBonLivraison(selectedVente) && (
+                <button 
+                  className="btn btn-info btn-sm gap-2"
+                  onClick={() => {
+                    setShowDetailsModal(false);
+                    handleGenerateBonLivraison(selectedVente);
+                  }}
+                  disabled={generatingBl === selectedVente.id}
+                >
+                  {generatingBl === selectedVente.id ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Truck className="w-3 h-3" />
+                  )}
+                  Bon de livraison
+                </button>
+              )}
+              <button className="btn btn-primary btn-sm" onClick={() => { setShowDetailsModal(false); navigate(`/ventes/${selectedVente.id}`); }}>
+                <Eye className="w-3 h-3" /> Voir détails complets
+              </button>
               <button className="btn btn-ghost btn-sm" onClick={() => setShowDetailsModal(false)}>Fermer</button>
             </div>
           </div>

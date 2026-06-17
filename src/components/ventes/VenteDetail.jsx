@@ -2,11 +2,12 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
+import BonLivraisonPdf from './BonLivraisonPdf';
 import { 
   ArrowLeft, ShoppingCart, User, Calendar, CreditCard, 
   CheckCircle, XCircle, Clock, Printer, AlertCircle, 
   RefreshCw, Building2, Package, Truck, FileText, Eye, Info,
-  Send, ThumbsUp, ThumbsDown, CheckSquare, X
+  Send, ThumbsUp, ThumbsDown, CheckSquare, X, Loader2
 } from 'lucide-react';
 
 const VenteDetail = () => {
@@ -14,6 +15,7 @@ const VenteDetail = () => {
   const { id } = useParams();
   const [vente, setVente] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [generatingBl, setGeneratingBl] = useState(false);
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
   const [currentUser, setCurrentUser] = useState(null);
   const [userRoles, setUserRoles] = useState({ est_pdg: false, est_chef_agence: false, est_commercial: false });
@@ -74,6 +76,36 @@ const VenteDetail = () => {
     }
   };
 
+  // Générer le bon de livraison PDF
+  const handleGenerateBonLivraison = async () => {
+    if (!vente || (vente.status !== 'approved' && vente.status !== 'completed')) {
+      showNotification('Seules les ventes approuvées ou complétées peuvent générer un bon de livraison', 'error');
+      return;
+    }
+    
+    setGeneratingBl(true);
+    try {
+      // Récupérer les détails complets de la vente (si nécessaire)
+      const venteData = vente;
+      
+      // Options pour le bon de livraison
+      const options = {
+        date_livraison: new Date().toISOString().split('T')[0],
+        adresse_livraison: venteData.client?.adresse || '',
+        contact_livraison: venteData.client?.telephone || '',
+        instructions: ''
+      };
+      
+      await BonLivraisonPdf(venteData, options);
+      showNotification(`Bon de livraison généré pour ${vente.reference}`, 'success');
+    } catch (error) {
+      console.error('Erreur génération bon de livraison:', error);
+      showNotification('Erreur lors de la génération du bon de livraison', 'error');
+    } finally {
+      setGeneratingBl(false);
+    }
+  };
+
   useEffect(() => {
     fetchCurrentUser();
     fetchVente();
@@ -86,6 +118,7 @@ const VenteDetail = () => {
   const canAddPayment = () => vente?.status === 'approved' && vente?.montant_paye < vente?.total;
   const canEdit = () => vente?.status === 'draft' && (userRoles.est_commercial || userRoles.est_pdg || userRoles.est_chef_agence);
   const canCancel = () => vente?.status !== 'completed' && vente?.status !== 'cancelled';
+  const canGenerateBonLivraison = () => vente && (vente.status === 'approved' || vente.status === 'completed');
 
   // Actions
   const handleSubmit = async () => {
@@ -392,6 +425,21 @@ const VenteDetail = () => {
           </div>
           <div className="flex gap-2">
             <button onClick={fetchVente} className="btn btn-outline btn-sm gap-2"><RefreshCw className="w-4 h-4" /> Actualiser</button>
+            {/* Bouton Bon de livraison */}
+            {canGenerateBonLivraison() && (
+              <button 
+                onClick={handleGenerateBonLivraison} 
+                className="btn btn-outline btn-sm gap-2 text-info border-info hover:bg-info/10"
+                disabled={generatingBl}
+              >
+                {generatingBl ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Truck className="w-4 h-4" />
+                )}
+                Bon de livraison
+              </button>
+            )}
             <button className="btn btn-outline btn-sm gap-2"><Printer className="w-4 h-4" /> Imprimer</button>
           </div>
         </div>
@@ -459,7 +507,12 @@ const VenteDetail = () => {
               <div className="overflow-x-auto">
                 <table className="table w-full">
                   <thead className="bg-gray-50">
-                    <tr><th>Produit</th><th className="text-center">Qté</th><th className="text-right">Prix unitaire</th><th className="text-right">Total</th></tr>
+                    <tr>
+                      <th>Produit</th>
+                      <th className="text-center">Qté</th>
+                      <th className="text-right">Prix unitaire</th>
+                      <th className="text-right">Total</th>
+                    </tr>
                   </thead>
                   <tbody>
                     {items.map((item, idx) => (
@@ -472,9 +525,18 @@ const VenteDetail = () => {
                     ))}
                   </tbody>
                   <tfoot className="bg-gray-50">
-                    <tr><td colSpan="3" className="text-right font-semibold">Sous-total</td><td className="text-right font-semibold">{formatPrice(vente.sous_total)}</td></tr>
-                    <tr><td colSpan="3" className="text-right">TVA (18%)</td><td className="text-right">{formatPrice(vente.tva)}</td></tr>
-                    <tr className="border-t"><td colSpan="3" className="text-right font-bold text-lg">Total</td><td className="text-right font-bold text-primary text-lg">{formatPrice(vente.total)}</td></tr>
+                    <tr>
+                      <td colSpan="3" className="text-right font-semibold">Sous-total</td>
+                      <td className="text-right font-semibold">{formatPrice(vente.sous_total)}</td>
+                    </tr>
+                    <tr>
+                      <td colSpan="3" className="text-right">TVA (18%)</td>
+                      <td className="text-right">{formatPrice(vente.tva)}</td>
+                    </tr>
+                    <tr className="border-t">
+                      <td colSpan="3" className="text-right font-bold text-lg">Total</td>
+                      <td className="text-right font-bold text-primary text-lg">{formatPrice(vente.total)}</td>
+                    </tr>
                   </tfoot>
                 </table>
               </div>
@@ -510,24 +572,67 @@ const VenteDetail = () => {
           <div className="bg-white rounded-xl shadow-md p-6">
             <h2 className="text-lg font-semibold mb-4 flex items-center gap-2"><Info className="w-5 h-5 text-info" /> Informations</h2>
             <div className="space-y-4">
-              <div className="flex items-center gap-3"><div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center"><ShoppingCart className="w-4 h-4 text-primary" /></div><div><p className="text-xs text-gray-500">Statut</p><p className={`flex items-center gap-1 ${status.color}`}><StatusIcon className="w-4 h-4" /> {status.label}</p></div></div>
-              <div className="flex items-center gap-3"><div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center"><User className="w-4 h-4 text-blue-500" /></div><div><p className="text-xs text-gray-500">Client</p><p className="font-medium">{vente.client?.nom || 'Anonyme'} {vente.client?.prenom || ''}</p></div></div>
-              <div className="flex items-center gap-3"><div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center"><Calendar className="w-4 h-4 text-green-500" /></div><div><p className="text-xs text-gray-500">Date</p><p>{formatDate(vente.date_vente)}</p></div></div>
-              <div className="flex items-center gap-3"><div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center"><Building2 className="w-4 h-4 text-purple-500" /></div><div><p className="text-xs text-gray-500">Agence</p><p>{vente.agence?.nom}</p></div></div>
-              <div className="flex items-center gap-3"><div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center"><Truck className="w-4 h-4 text-orange-500" /></div><div><p className="text-xs text-gray-500">Type</p><p>{vente.type_vente}</p></div></div>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center"><ShoppingCart className="w-4 h-4 text-primary" /></div>
+                <div><p className="text-xs text-gray-500">Statut</p><p className={`flex items-center gap-1 ${status.color}`}><StatusIcon className="w-4 h-4" /> {status.label}</p></div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center"><User className="w-4 h-4 text-blue-500" /></div>
+                <div><p className="text-xs text-gray-500">Client</p><p className="font-medium">{vente.client?.nom || 'Anonyme'} {vente.client?.prenom || ''}</p></div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center"><Calendar className="w-4 h-4 text-green-500" /></div>
+                <div><p className="text-xs text-gray-500">Date</p><p>{formatDate(vente.date_vente)}</p></div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center"><Building2 className="w-4 h-4 text-purple-500" /></div>
+                <div><p className="text-xs text-gray-500">Agence</p><p>{vente.agence?.nom}</p></div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center"><Truck className="w-4 h-4 text-orange-500" /></div>
+                <div><p className="text-xs text-gray-500">Type</p><p>{vente.type_vente}</p></div>
+              </div>
             </div>
           </div>
 
           {vente.notes && (
-            <div className="bg-white rounded-xl shadow-md p-6"><h2 className="text-lg font-semibold mb-2">Notes</h2><p className="text-gray-600 text-sm">{vente.notes}</p></div>
+            <div className="bg-white rounded-xl shadow-md p-6">
+              <h2 className="text-lg font-semibold mb-2">Notes</h2>
+              <p className="text-gray-600 text-sm">{vente.notes}</p>
+            </div>
           )}
 
           {vente.motif_rejet && (
-            <div className="bg-red-50 rounded-xl shadow-md p-6 border border-red-200"><h2 className="text-lg font-semibold text-red-700 mb-2">Motif du rejet</h2><p className="text-red-600 text-sm">{vente.motif_rejet}</p></div>
+            <div className="bg-red-50 rounded-xl shadow-md p-6 border border-red-200">
+              <h2 className="text-lg font-semibold text-red-700 mb-2">Motif du rejet</h2>
+              <p className="text-red-600 text-sm">{vente.motif_rejet}</p>
+            </div>
           )}
 
           {vente.approved_by && (
-            <div className="bg-blue-50 rounded-xl shadow-md p-6 border border-blue-200"><h2 className="text-lg font-semibold text-blue-700 mb-2">Approbation</h2><p className="text-blue-600 text-sm">Approuvée par: {vente.approved_by?.email || 'N/A'}</p><p className="text-blue-600 text-sm">Date: {formatDate(vente.date_approbation)}</p></div>
+            <div className="bg-blue-50 rounded-xl shadow-md p-6 border border-blue-200">
+              <h2 className="text-lg font-semibold text-blue-700 mb-2">Approbation</h2>
+              <p className="text-blue-600 text-sm">Approuvée par: {vente.approved_by?.email || 'N/A'}</p>
+              <p className="text-blue-600 text-sm">Date: {formatDate(vente.date_approbation)}</p>
+            </div>
+          )}
+
+          {/* Bouton Bon de livraison dans la sidebar pour mobile */}
+          {canGenerateBonLivraison() && (
+            <div className="lg:hidden">
+              <button 
+                onClick={handleGenerateBonLivraison} 
+                className="btn btn-info w-full gap-2"
+                disabled={generatingBl}
+              >
+                {generatingBl ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Truck className="w-4 h-4" />
+                )}
+                Générer le bon de livraison
+              </button>
+            </div>
           )}
         </div>
       </div>
