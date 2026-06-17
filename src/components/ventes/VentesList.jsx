@@ -1,8 +1,8 @@
-// src/components/sales/VentesList.jsx
+// src/components/ventes/VentesList.jsx
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
-import BonLivraisonPdf from './BonLivraisonPdf';
+import Livraison from './Livraison'; // ✅ MODIFICATION 1 : import du nouveau nom
 import {
   ShoppingCart, Eye, CheckCircle, XCircle, Clock, Search,
   RefreshCw, Filter, Calendar, TrendingUp, AlertCircle,
@@ -16,7 +16,7 @@ const VentesList = () => {
   const navigate = useNavigate();
   const [ventes, setVentes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [generatingBl, setGeneratingBl] = useState(null); // Pour suivre quelle vente est en cours de génération
+  const [generatingBl, setGeneratingBl] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterType, setFilterType] = useState('');
@@ -55,27 +55,15 @@ const VentesList = () => {
     cancelled: { label: 'Annulée', icon: XCircle, color: 'text-gray-500', bgColor: 'bg-gray-100' }
   };
 
-  // Récupérer l'utilisateur connecté
   const fetchCurrentUser = async () => {
     try {
       const response = await AxiosInstance.get('/users/me/');
       const userData = response.data;
       setCurrentUser(userData);
-      
       const isPDG = userData.role_global === 'pdg' || userData.is_superuser === true;
       const isChefAgence = userData.roles_agence?.some(r => r.role === 'chef_agence') || false;
-      
-      setUserRoles({
-        est_pdg: isPDG,
-        est_chef_agence: isChefAgence
-      });
-      
+      setUserRoles({ est_pdg: isPDG, est_chef_agence: isChefAgence });
       console.log('👤 Utilisateur connecté:', userData.email);
-      console.log('📋 Rôle global:', userData.role_global);
-      console.log('🎯 Est PDG:', isPDG);
-      console.log('🎯 Est Chef agence:', isChefAgence);
-      console.log('📋 Rôles agence:', userData.roles_agence);
-      
     } catch (error) {
       console.error('Erreur chargement utilisateur:', error);
     }
@@ -87,21 +75,12 @@ const VentesList = () => {
       const response = await AxiosInstance.get('/ventes/');
       const data = response.data;
       setVentes(data);
-      
       const totalCA = data.reduce((sum, v) => sum + (v.total || 0), 0);
       const pending = data.filter(v => v.status === 'pending_approval').length;
       const approved = data.filter(v => v.status === 'approved').length;
       const completed = data.filter(v => v.status === 'completed').length;
       const rejected = data.filter(v => v.status === 'rejected').length;
-      
-      setStats({
-        total: data.length,
-        pending,
-        approved,
-        completed,
-        rejected,
-        totalCA
-      });
+      setStats({ total: data.length, pending, approved, completed, rejected, totalCA });
     } catch (error) {
       console.error(error);
       showNotification('Erreur de chargement des ventes', 'error');
@@ -120,28 +99,23 @@ const VentesList = () => {
     setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 4000);
   };
 
-  // Générer le bon de livraison PDF
+  // ✅ MODIFICATION 2 : appel avec Livraison
   const handleGenerateBonLivraison = async (vente) => {
     if (!vente || (vente.status !== 'approved' && vente.status !== 'completed')) {
       showNotification('Seules les ventes approuvées ou complétées peuvent générer un bon de livraison', 'error');
       return;
     }
-    
     setGeneratingBl(vente.id);
     try {
-      // Récupérer les détails complets de la vente
       const response = await AxiosInstance.get(`/ventes/${vente.id}/`);
       const venteData = response.data;
-      
-      // Options pour le bon de livraison
       const options = {
         date_livraison: new Date().toISOString().split('T')[0],
         adresse_livraison: venteData.client?.adresse || '',
         contact_livraison: venteData.client?.telephone || '',
         instructions: ''
       };
-      
-      await BonLivraisonPdf(venteData, options);
+      await Livraison(venteData, options);
       showNotification(`Bon de livraison généré pour ${vente.reference}`, 'success');
     } catch (error) {
       console.error('Erreur génération bon de livraison:', error);
@@ -151,7 +125,6 @@ const VentesList = () => {
     }
   };
 
-  // Approuver une vente
   const handleApprove = async () => {
     if (!venteToApprove) return;
     try {
@@ -165,7 +138,6 @@ const VentesList = () => {
     }
   };
 
-  // Rejeter une vente
   const handleReject = async () => {
     if (!venteToApprove) return;
     if (!rejectReason.trim()) {
@@ -197,15 +169,8 @@ const VentesList = () => {
     }
   };
 
-  // Vérifier si l'utilisateur peut approuver (chef d'agence ou PDG)
-  const canApprove = () => {
-    return userRoles.est_pdg || userRoles.est_chef_agence;
-  };
-
-  // Vérifier si une vente peut générer un bon de livraison
-  const canGenerateBonLivraison = (vente) => {
-    return vente.status === 'approved' || vente.status === 'completed';
-  };
+  const canApprove = () => userRoles.est_pdg || userRoles.est_chef_agence;
+  const canGenerateBonLivraison = (vente) => vente.status === 'approved' || vente.status === 'completed';
 
   const handleSort = (field) => {
     if (sortField === field) {
@@ -218,9 +183,7 @@ const VentesList = () => {
 
   const SortIcon = ({ field }) => {
     if (sortField !== field) return <ArrowUpDown className="w-3 h-3 opacity-40" />;
-    return sortDirection === 'asc' ? 
-      <ChevronUp className="w-3 h-3" /> : 
-      <ChevronDown className="w-3 h-3" />;
+    return sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />;
   };
 
   const filteredAndSortedVentes = useMemo(() => {
@@ -239,17 +202,14 @@ const VentesList = () => {
     filtered.sort((a, b) => {
       let aVal = a[sortField] || '';
       let bVal = b[sortField] || '';
-      
       if (sortField === 'total' || sortField === 'montant_du') {
         aVal = parseFloat(aVal) || 0;
         bVal = parseFloat(bVal) || 0;
       }
-      
       if (sortField === 'date_vente') {
         aVal = new Date(aVal);
         bVal = new Date(bVal);
       }
-      
       if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
       if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
       return 0;
@@ -306,7 +266,6 @@ const VentesList = () => {
 
   return (
     <div className="space-y-4 lg:space-y-6 p-3 lg:p-6">
-      {/* Notification */}
       {notification.show && (
         <div className="fixed top-16 lg:top-20 right-3 lg:right-6 z-50 animate-slideDown w-[calc(100%-1.5rem)] lg:w-auto max-w-md">
           <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-lg`}>
@@ -316,7 +275,7 @@ const VentesList = () => {
               <AlertCircle className="w-4 h-4 lg:w-5 lg:h-5" />
             )}
             <span className="text-sm lg:text-base font-medium">{notification.message}</span>
-            <button 
+            <button
               className="btn btn-ghost btn-xs btn-circle"
               onClick={() => setNotification({ ...notification, show: false })}
             >
@@ -351,7 +310,7 @@ const VentesList = () => {
               </p>
             </div>
             <div className="modal-action">
-              <button 
+              <button
                 className="btn btn-ghost btn-sm"
                 onClick={() => {
                   setShowApproveModal(false);
@@ -360,7 +319,7 @@ const VentesList = () => {
               >
                 Annuler
               </button>
-              <button 
+              <button
                 className="btn btn-success btn-sm gap-2"
                 onClick={handleApprove}
               >
@@ -400,7 +359,7 @@ const VentesList = () => {
               </div>
             </div>
             <div className="modal-action">
-              <button 
+              <button
                 className="btn btn-ghost btn-sm"
                 onClick={() => {
                   setShowRejectModal(false);
@@ -410,7 +369,7 @@ const VentesList = () => {
               >
                 Annuler
               </button>
-              <button 
+              <button
                 className="btn btn-error btn-sm gap-2"
                 onClick={handleReject}
               >
@@ -444,13 +403,13 @@ const VentesList = () => {
               </p>
             </div>
             <div className="modal-action">
-              <button 
+              <button
                 className="btn btn-ghost btn-sm"
                 onClick={() => setShowDeleteModal(false)}
               >
                 Annuler
               </button>
-              <button 
+              <button
                 className="btn btn-error btn-sm"
                 onClick={handleDeleteVente}
               >
@@ -521,14 +480,24 @@ const VentesList = () => {
         </div>
       </div>
 
-      {/* Filtres - Desktop */}
+      {/* Filtres Desktop */}
       <div className="hidden lg:flex bg-base-100 rounded-xl shadow-sm border border-base-300 p-4">
         <div className="flex items-center gap-3 w-full">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/40" />
-            <input type="text" placeholder="Rechercher par référence ou client..." className="input input-bordered input-sm w-full pl-9" value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }} />
+            <input
+              type="text"
+              placeholder="Rechercher par référence ou client..."
+              className="input input-bordered input-sm w-full pl-9"
+              value={searchTerm}
+              onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+            />
           </div>
-          <select className="select select-bordered select-sm w-36" value={filterStatus} onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1); }}>
+          <select
+            className="select select-bordered select-sm w-36"
+            value={filterStatus}
+            onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1); }}
+          >
             <option value="">Tous statuts</option>
             <option value="draft">Brouillon</option>
             <option value="pending_approval">En attente</option>
@@ -537,26 +506,57 @@ const VentesList = () => {
             <option value="rejected">Rejetée</option>
             <option value="cancelled">Annulée</option>
           </select>
-          <select className="select select-bordered select-sm w-36" value={filterType} onChange={(e) => { setFilterType(e.target.value); setCurrentPage(1); }}>
+          <select
+            className="select select-bordered select-sm w-36"
+            value={filterType}
+            onChange={(e) => { setFilterType(e.target.value); setCurrentPage(1); }}
+          >
             <option value="">Tous types</option>
             <option value="comptoir">Comptoir</option>
             <option value="livraison">Livraison</option>
             <option value="en_ligne">En ligne</option>
           </select>
-          <input type="date" className="input input-bordered input-sm w-36" placeholder="Date début" value={dateRange.start} onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))} />
-          <input type="date" className="input input-bordered input-sm w-36" placeholder="Date fin" value={dateRange.end} onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))} />
-          <button className="btn btn-outline btn-sm" onClick={() => { setFilterStatus(''); setFilterType(''); setSearchTerm(''); setDateRange({ start: '', end: '' }); setCurrentPage(1); }}>
+          <input
+            type="date"
+            className="input input-bordered input-sm w-36"
+            placeholder="Date début"
+            value={dateRange.start}
+            onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+          />
+          <input
+            type="date"
+            className="input input-bordered input-sm w-36"
+            placeholder="Date fin"
+            value={dateRange.end}
+            onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+          />
+          <button
+            className="btn btn-outline btn-sm"
+            onClick={() => {
+              setFilterStatus('');
+              setFilterType('');
+              setSearchTerm('');
+              setDateRange({ start: '', end: '' });
+              setCurrentPage(1);
+            }}
+          >
             <RefreshCw className="w-3 h-3" /> Réinitialiser
           </button>
         </div>
       </div>
 
-      {/* Filtres - Mobile */}
+      {/* Filtres Mobile */}
       <div className="lg:hidden">
         <div className="flex gap-2">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-base-content/40" />
-            <input type="text" placeholder="Rechercher..." className="input input-bordered input-sm w-full pl-8 text-sm" value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }} />
+            <input
+              type="text"
+              placeholder="Rechercher..."
+              className="input input-bordered input-sm w-full pl-8 text-sm"
+              value={searchTerm}
+              onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+            />
           </div>
           <button className="btn btn-outline btn-sm" onClick={() => setShowMobileFilters(!showMobileFilters)}>
             <Filter className="w-3 h-3" /> Filtres
@@ -564,7 +564,11 @@ const VentesList = () => {
         </div>
         {showMobileFilters && (
           <div className="mt-2 p-3 bg-base-100 rounded-lg border border-base-300 space-y-2">
-            <select className="select select-bordered select-sm w-full" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+            <select
+              className="select select-bordered select-sm w-full"
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+            >
               <option value="">Tous statuts</option>
               <option value="draft">Brouillon</option>
               <option value="pending_approval">En attente</option>
@@ -572,22 +576,48 @@ const VentesList = () => {
               <option value="completed">Complétée</option>
               <option value="rejected">Rejetée</option>
             </select>
-            <select className="select select-bordered select-sm w-full" value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+            <select
+              className="select select-bordered select-sm w-full"
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value)}
+            >
               <option value="">Tous types</option>
               <option value="comptoir">Comptoir</option>
               <option value="livraison">Livraison</option>
               <option value="en_ligne">En ligne</option>
             </select>
-            <input type="date" className="input input-bordered input-sm w-full" placeholder="Date début" value={dateRange.start} onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))} />
-            <input type="date" className="input input-bordered input-sm w-full" placeholder="Date fin" value={dateRange.end} onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))} />
-            <button className="btn btn-outline btn-sm w-full" onClick={() => { setFilterStatus(''); setFilterType(''); setSearchTerm(''); setDateRange({ start: '', end: '' }); setCurrentPage(1); setShowMobileFilters(false); }}>
+            <input
+              type="date"
+              className="input input-bordered input-sm w-full"
+              placeholder="Date début"
+              value={dateRange.start}
+              onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+            />
+            <input
+              type="date"
+              className="input input-bordered input-sm w-full"
+              placeholder="Date fin"
+              value={dateRange.end}
+              onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+            />
+            <button
+              className="btn btn-outline btn-sm w-full"
+              onClick={() => {
+                setFilterStatus('');
+                setFilterType('');
+                setSearchTerm('');
+                setDateRange({ start: '', end: '' });
+                setCurrentPage(1);
+                setShowMobileFilters(false);
+              }}
+            >
               Réinitialiser
             </button>
           </div>
         )}
       </div>
 
-      {/* Tableau - Desktop */}
+      {/* Tableau Desktop */}
       <div className="hidden lg:block bg-base-100 rounded-xl shadow-sm border border-base-300 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="table table-zebra">
@@ -619,9 +649,8 @@ const VentesList = () => {
                   </td>
                   <td>
                     <div className="flex justify-end gap-1">
-                      {/* Bouton Bon de Livraison */}
                       {canGenerateBonLivraison(vente) && (
-                        <button 
+                        <button
                           className="btn btn-ghost btn-xs text-info"
                           onClick={() => handleGenerateBonLivraison(vente)}
                           disabled={generatingBl === vente.id}
@@ -634,10 +663,9 @@ const VentesList = () => {
                           )}
                         </button>
                       )}
-                      {/* Boutons Approuver/Rejeter - visible uniquement pour les ventes en attente et pour les chefs d'agence/PDG */}
                       {vente.status === 'pending_approval' && canApprove() && (
                         <>
-                          <button 
+                          <button
                             className="btn btn-ghost btn-xs text-success"
                             onClick={() => {
                               setVenteToApprove(vente);
@@ -647,7 +675,7 @@ const VentesList = () => {
                           >
                             <CheckCircle className="w-3 h-3" />
                           </button>
-                          <button 
+                          <button
                             className="btn btn-ghost btn-xs text-error"
                             onClick={() => {
                               setVenteToApprove(vente);
@@ -677,18 +705,22 @@ const VentesList = () => {
           <div className="p-12 text-center">
             <ShoppingCart className="w-16 h-16 mx-auto mb-3 text-base-content/30" />
             <p className="text-base font-medium text-base-content/50">Aucune vente trouvée</p>
-            <button className="btn btn-primary btn-sm mt-4" onClick={() => navigate('/ventes/nouveau')}><Plus className="w-3 h-3" /> Créer une vente</button>
+            <button className="btn btn-primary btn-sm mt-4" onClick={() => navigate('/ventes/nouveau')}>
+              <Plus className="w-3 h-3" /> Créer une vente
+            </button>
           </div>
         )}
       </div>
 
-      {/* Liste - Mobile */}
+      {/* Liste Mobile */}
       <div className="lg:hidden space-y-2">
         {paginatedVentes.length === 0 ? (
           <div className="bg-base-100 rounded-xl p-8 text-center border border-base-300">
             <ShoppingCart className="w-12 h-12 mx-auto mb-2 text-base-content/30" />
             <p className="text-sm font-medium text-base-content/50">Aucune vente trouvée</p>
-            <button className="btn btn-primary btn-sm mt-3" onClick={() => navigate('/ventes/nouveau')}><Plus className="w-3 h-3" /> Nouvelle vente</button>
+            <button className="btn btn-primary btn-sm mt-3" onClick={() => navigate('/ventes/nouveau')}>
+              <Plus className="w-3 h-3" /> Nouvelle vente
+            </button>
           </div>
         ) : (
           paginatedVentes.map((vente) => {
@@ -700,7 +732,9 @@ const VentesList = () => {
                   <div className="flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-mono font-semibold text-sm">{vente.reference}</h3>
-                      <span className={`badge ${status.bgColor} ${status.color} gap-1 text-xs`}><StatusIcon className="w-3 h-3" /> {status.label}</span>
+                      <span className={`badge ${status.bgColor} ${status.color} gap-1 text-xs`}>
+                        <StatusIcon className="w-3 h-3" /> {status.label}
+                      </span>
                     </div>
                     <p className="text-sm font-medium text-primary mt-1">{formatPrice(vente.total)}</p>
                     <p className="text-xs text-base-content/60 mt-1">{vente.client_nom || 'Anonyme'} • {formatDate(vente.date_vente)}</p>
@@ -713,9 +747,8 @@ const VentesList = () => {
                     </div>
                   </div>
                   <div className="flex gap-1">
-                    {/* Bouton Bon de Livraison - Mobile */}
                     {canGenerateBonLivraison(vente) && (
-                      <button 
+                      <button
                         className="btn btn-ghost btn-xs btn-square text-info"
                         onClick={() => handleGenerateBonLivraison(vente)}
                         disabled={generatingBl === vente.id}
@@ -728,13 +761,20 @@ const VentesList = () => {
                         )}
                       </button>
                     )}
-                    {/* Boutons Approuver/Rejeter - Mobile */}
                     {vente.status === 'pending_approval' && canApprove() && (
                       <>
-                        <button className="btn btn-ghost btn-xs btn-square text-success" onClick={() => { setVenteToApprove(vente); setShowApproveModal(true); }} title="Approuver">
+                        <button
+                          className="btn btn-ghost btn-xs btn-square text-success"
+                          onClick={() => { setVenteToApprove(vente); setShowApproveModal(true); }}
+                          title="Approuver"
+                        >
                           <CheckCircle className="w-3 h-3" />
                         </button>
-                        <button className="btn btn-ghost btn-xs btn-square text-error" onClick={() => { setVenteToApprove(vente); setRejectReason(''); setShowRejectModal(true); }} title="Rejeter">
+                        <button
+                          className="btn btn-ghost btn-xs btn-square text-error"
+                          onClick={() => { setVenteToApprove(vente); setRejectReason(''); setShowRejectModal(true); }}
+                          title="Rejeter"
+                        >
                           <XCircle className="w-3 h-3" />
                         </button>
                       </>
@@ -756,24 +796,30 @@ const VentesList = () => {
       {/* Pagination */}
       {filteredAndSortedVentes.length > 0 && totalPages > 1 && (
         <div className="flex justify-center items-center gap-2">
-          <button className="btn btn-outline btn-sm" onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1}><ChevronLeft className="w-4 h-4" /> Précédent</button>
+          <button className="btn btn-outline btn-sm" onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1}>
+            <ChevronLeft className="w-4 h-4" /> Précédent
+          </button>
           <div className="flex gap-1">
             {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
               let pageNum = totalPages <= 5 ? i + 1 : (currentPage <= 3 ? i + 1 : currentPage >= totalPages - 2 ? totalPages - 4 + i : currentPage - 2 + i);
               return <button key={pageNum} onClick={() => goToPage(pageNum)} className={`btn btn-sm ${currentPage === pageNum ? 'btn-primary text-white' : 'btn-outline'}`}>{pageNum}</button>;
             })}
           </div>
-          <button className="btn btn-outline btn-sm" onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages}>Suivant <ChevronRight className="w-4 h-4" /></button>
+          <button className="btn btn-outline btn-sm" onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages}>
+            Suivant <ChevronRight className="w-4 h-4" />
+          </button>
         </div>
       )}
 
-      {/* Modal de détails avec bouton bon de livraison */}
+      {/* Modal de détails */}
       {showDetailsModal && selectedVente && (
         <div className="modal modal-open">
           <div className="modal-box w-11/12 max-w-lg">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-lg">Détails de la vente</h3>
-              <button className="btn btn-sm btn-circle btn-ghost" onClick={() => setShowDetailsModal(false)}><X className="w-4 h-4" /></button>
+              <button className="btn btn-sm btn-circle btn-ghost" onClick={() => setShowDetailsModal(false)}>
+                <X className="w-4 h-4" />
+              </button>
             </div>
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -798,7 +844,7 @@ const VentesList = () => {
             </div>
             <div className="modal-action flex-wrap gap-2">
               {canGenerateBonLivraison(selectedVente) && (
-                <button 
+                <button
                   className="btn btn-info btn-sm gap-2"
                   onClick={() => {
                     setShowDetailsModal(false);

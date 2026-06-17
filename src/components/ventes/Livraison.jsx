@@ -1,4 +1,4 @@
-// src/components/sales/BonLivraisonPdf.jsx
+// src/components/ventes/Livraison.jsx
 import jsPDF from 'jspdf';
 import logoSvg from '../../assets/logo.svg';
 
@@ -36,7 +36,8 @@ const formatCurrency = (amt) => `${formatNumber(amt)} FCFA`;
 const formatDate = (d) => d ? new Date(d).toLocaleDateString('fr-FR') : '-';
 const formatDateTime = (d) => d ? new Date(d).toLocaleString('fr-FR') : '-';
 
-const BonLivraisonPdf = async (vente, options = {}) => {
+// ⚠️ ICI : j'ai renommé la fonction en "Livraison"
+const Livraison = async (vente, options = {}) => {
   if (!vente || typeof vente !== 'object') {
     throw new Error('Données de la vente invalides');
   }
@@ -463,9 +464,10 @@ const BonLivraisonPdf = async (vente, options = {}) => {
     return true;
 
   } catch (error) {
-    console.error('Erreur BonLivraisonPdf:', error);
+    console.error('Erreur Livraison:', error); // ← message d'erreur mis à jour
     throw error;
   }
 };
 
-export default BonLivraisonPdf;
+// ⚠️ EXPORT CORRIGÉ : maintenant le nom de la fonction et l'export coïncident
+export default Livraison;

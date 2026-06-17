@@ -90,6 +90,7 @@ import DevisList from './components/ventes/DevisList'
 import DevisForm from './components/ventes/DevisForm'
 import DevisDetail from './components/ventes/DevisDetail'
 import DevisPDF from './components/ventes/DevisPDF'
+import Livraison from './components/ventes/Livraison'
 
 
 

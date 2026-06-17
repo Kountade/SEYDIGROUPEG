@@ -1,11 +1,11 @@
-// src/components/sales/VenteDetail.jsx
+// src/components/ventes/VenteDetail.jsx
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
-import BonLivraisonPdf from './BonLivraisonPdf';
-import { 
-  ArrowLeft, ShoppingCart, User, Calendar, CreditCard, 
-  CheckCircle, XCircle, Clock, Printer, AlertCircle, 
+import Livraison from './Livraison'; // ✅ import du bon de livraison
+import {
+  ArrowLeft, ShoppingCart, User, Calendar, CreditCard,
+  CheckCircle, XCircle, Clock, Printer, AlertCircle,
   RefreshCw, Building2, Package, Truck, FileText, Eye, Info,
   Send, ThumbsUp, ThumbsDown, CheckSquare, X, Loader2
 } from 'lucide-react';
@@ -38,22 +38,21 @@ const VenteDetail = () => {
       const response = await AxiosInstance.get('/users/me/');
       const userData = response.data;
       setCurrentUser(userData);
-      
+
       const isPDG = userData.role_global === 'pdg' || userData.is_superuser === true;
       const isChefAgence = userData.roles_agence?.some(r => r.role === 'chef_agence') || false;
       const isCommercial = userData.roles_agence?.some(r => r.role === 'commercial') || false;
-      
+
       setUserRoles({
         est_pdg: isPDG,
         est_chef_agence: isChefAgence,
         est_commercial: isCommercial
       });
-      
+
       console.log('👤 Utilisateur:', userData.email);
       console.log('🎯 Est PDG:', isPDG);
       console.log('🎯 Est Chef agence:', isChefAgence);
       console.log('🎯 Est Commercial:', isCommercial);
-      
     } catch (error) {
       console.error('Erreur chargement utilisateur:', error);
     }
@@ -82,21 +81,18 @@ const VenteDetail = () => {
       showNotification('Seules les ventes approuvées ou complétées peuvent générer un bon de livraison', 'error');
       return;
     }
-    
+
     setGeneratingBl(true);
     try {
-      // Récupérer les détails complets de la vente (si nécessaire)
       const venteData = vente;
-      
-      // Options pour le bon de livraison
       const options = {
         date_livraison: new Date().toISOString().split('T')[0],
         adresse_livraison: venteData.client?.adresse || '',
         contact_livraison: venteData.client?.telephone || '',
         instructions: ''
       };
-      
-      await BonLivraisonPdf(venteData, options);
+
+      await Livraison(venteData, options); // ✅ appel avec le nouveau nom
       showNotification(`Bon de livraison généré pour ${vente.reference}`, 'success');
     } catch (error) {
       console.error('Erreur génération bon de livraison:', error);
@@ -427,8 +423,8 @@ const VenteDetail = () => {
             <button onClick={fetchVente} className="btn btn-outline btn-sm gap-2"><RefreshCw className="w-4 h-4" /> Actualiser</button>
             {/* Bouton Bon de livraison */}
             {canGenerateBonLivraison() && (
-              <button 
-                onClick={handleGenerateBonLivraison} 
+              <button
+                onClick={handleGenerateBonLivraison}
                 className="btn btn-outline btn-sm gap-2 text-info border-info hover:bg-info/10"
                 disabled={generatingBl}
               >
@@ -620,8 +616,8 @@ const VenteDetail = () => {
           {/* Bouton Bon de livraison dans la sidebar pour mobile */}
           {canGenerateBonLivraison() && (
             <div className="lg:hidden">
-              <button 
-                onClick={handleGenerateBonLivraison} 
+              <button
+                onClick={handleGenerateBonLivraison}
                 className="btn btn-info w-full gap-2"
                 disabled={generatingBl}
               >
