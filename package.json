@@ -30,6 +30,7 @@
     "react-hot-toast": "^2.6.0",
     "react-pdf": "^10.4.1",
     "react-router-dom": "^7.6.0",
+    "recharts": "^3.8.1",
     "sort-by": "^0.0.2",
     "tailwindcss": "^4.1.7",
     "yup": "^1.7.1"

@@ -91,7 +91,9 @@ import DevisForm from './components/ventes/DevisForm'
 import DevisDetail from './components/ventes/DevisDetail'
 import DevisPDF from './components/ventes/DevisPDF'
 import Livraison from './components/ventes/Livraison'
-
+import Dashboard from './components/dashboard/Dashboard'
+import Statistiques from './components/dashboard/Statistiques'
+import Analyses from './components/dashboard/Analyses'
 
 
 
@@ -124,7 +126,9 @@ function App() {
         content={
       <Routes>
             <Route element={<ProtectedRoute/>}> 
-                <Route path="/home" element={<Home/>}/>
+                <Route path="/dashboard" element={<Dashboard />} />
+<Route path="/statistiques" element={<Statistiques />} />
+<Route path="/analyses" element={<Analyses />} />
             
                 <Route path="/home" element={<Home/>}/>
                <Route path="/agences" element={<Agences/>}/>
