@@ -15,7 +15,7 @@ import {
 const Analyses = () => {
   const [loading, setLoading] = useState(true);
   const [ventes, setVentes] = useState([]);
-  const [monthlySales, setMonthlySales] = useState([]);
+  const [monthlySales, setMonthlySales] = useState([]); // pour la tendance
   const [topProducts, setTopProducts] = useState([]);
   const [statsData, setStatsData] = useState(null);
   const [period, setPeriod] = useState('12m');
@@ -27,17 +27,24 @@ const Analyses = () => {
   const fetchAnalyses = async () => {
     setLoading(true);
     try {
-      const [ventesRes, salesRes, productsRes, overviewRes] = await Promise.all([
-        AxiosInstance.get('/ventes/'),
-        AxiosInstance.get('/dashboard/ventes_mensuelles/'),
-        AxiosInstance.get('/dashboard/top_produits/'),
-        AxiosInstance.get('/dashboard/overview/')
-      ]);
-      // ✅ Sécurisation : s'assurer que les données sont des tableaux
-      setVentes(Array.isArray(ventesRes.data) ? ventesRes.data : []);
-      setMonthlySales(Array.isArray(salesRes.data) ? salesRes.data : []);
+      // Récupérer les données nécessaires pour chaque onglet
+      // 1. Tendance des ventes (6 mois)
+      const tendanceRes = await AxiosInstance.get('/analyses/tendance_ventes/');
+      const tendanceData = Array.isArray(tendanceRes.data) ? tendanceRes.data : [];
+      setMonthlySales(tendanceData);
+
+      // 2. Top produits (pour l'onglet clients, on peut utiliser /statistiques/top_produits/)
+      const productsRes = await AxiosInstance.get('/statistiques/top_produits/');
       setTopProducts(Array.isArray(productsRes.data) ? productsRes.data : []);
+
+      // 3. Données générales (overview) pour les cartes
+      const overviewRes = await AxiosInstance.get('/dashboard/overview/');
       setStatsData(overviewRes.data || {});
+
+      // 4. Récupérer la liste des ventes pour les statistiques (clients, etc.)
+      const ventesRes = await AxiosInstance.get('/ventes/');
+      setVentes(Array.isArray(ventesRes.data) ? ventesRes.data : []);
+
     } catch (error) {
       console.error('Erreur chargement analyses:', error);
       showNotification('Erreur de chargement des analyses', 'error');
@@ -60,7 +67,7 @@ const Analyses = () => {
     return new Intl.NumberFormat('fr-FR').format(price) + ' FCFA';
   };
 
-  // ✅ Calculs avec valeurs par défaut et protections
+  // Analyses calculées
   const analyses = useMemo(() => {
     const completed = ventes.filter(v => v.status === 'completed');
     const totalCA = completed.reduce((sum, v) => sum + (v.total || 0), 0);
@@ -71,7 +78,7 @@ const Analyses = () => {
     const previousMonth = monthly.length > 1 ? monthly[monthly.length - 2] : { total: 0 };
     const growth = previousMonth.total > 0 ? ((currentMonth.total - previousMonth.total) / previousMonth.total) * 100 : 0;
 
-    // Prévision
+    // Prévision (moyenne mobile sur 3 mois)
     const forecast = [];
     if (monthly.length >= 3) {
       const last3 = monthly.slice(-3);
@@ -79,7 +86,7 @@ const Analyses = () => {
       forecast.push({ mois: 'Prochain mois', total: avg });
     }
 
-    // Saisonnalité
+    // Saisonnalité (par jour de semaine)
     const dayOfWeek = [0, 0, 0, 0, 0, 0, 0];
     const dayNames = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
     completed.forEach(v => {
@@ -149,14 +156,14 @@ const Analyses = () => {
     { id: 'previsions', label: 'Prévisions', icon: Target },
   ];
 
-  // ✅ Fonction de rendu sécurisée pour chaque onglet
+  // Fonction de rendu sécurisée pour chaque onglet
   const renderTabContent = () => {
     switch (activeTab) {
       case 'tendances':
         return (
           <>
             <div className="bg-base-100 rounded-xl shadow-sm border border-base-300 p-4">
-              <h2 className="text-base lg:text-lg font-semibold mb-4">Évolution des ventes</h2>
+              <h2 className="text-base lg:text-lg font-semibold mb-4">Évolution des ventes (6 derniers mois)</h2>
               <div className="h-64 lg:h-80">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={analyses.monthly} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>

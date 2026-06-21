@@ -23,7 +23,6 @@ const Dashboard = () => {
   const [userRoles, setUserRoles] = useState({ est_pdg: false, est_chef_agence: false });
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
 
-  // Couleurs pour les graphiques
   const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#06b6d4', '#6366f1'];
 
   const fetchCurrentUser = async () => {
@@ -42,21 +41,23 @@ const Dashboard = () => {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      // Données principales
+      // ✅ Mise à jour des URLs avec les nouveaux ViewSets
       const overviewRes = await AxiosInstance.get('/dashboard/overview/');
       setDashboardData(overviewRes.data);
 
-      // Ventes mensuelles
-      const salesRes = await AxiosInstance.get('/dashboard/ventes_mensuelles/');
-      setMonthlySales(salesRes.data);
+      // Ventes mensuelles → maintenant dans statistiques
+      const salesRes = await AxiosInstance.get('/statistiques/ventes_mensuelles/');
+      setMonthlySales(Array.isArray(salesRes.data) ? salesRes.data : []);
 
-      // Top produits
-      const productsRes = await AxiosInstance.get('/dashboard/top_produits/');
-      setTopProducts(productsRes.data);
+      // Top produits → maintenant dans statistiques
+      const productsRes = await AxiosInstance.get('/statistiques/top_produits/');
+      // S'assurer que les données correspondent au format attendu
+      const productsData = Array.isArray(productsRes.data) ? productsRes.data : [];
+      setTopProducts(productsData);
 
-      // Alertes stock
+      // Alertes stock → toujours dans dashboard
       const alertsRes = await AxiosInstance.get('/dashboard/alertes_stock/');
-      setStockAlerts(alertsRes.data);
+      setStockAlerts(Array.isArray(alertsRes.data) ? alertsRes.data : []);
 
     } catch (error) {
       console.error('Erreur chargement dashboard:', error);
@@ -261,7 +262,7 @@ const Dashboard = () => {
                     {index + 1}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{product.product__name || 'Produit'}</p>
+                    <p className="text-sm font-medium truncate">{product.produit || 'Produit inconnu'}</p>
                     <p className="text-xs text-base-content/50">{product.quantite || 0} unités</p>
                   </div>
                   <div className="text-right">

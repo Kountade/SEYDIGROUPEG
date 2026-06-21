@@ -21,7 +21,7 @@ const Statistiques = () => {
   const [monthlySales, setMonthlySales] = useState([]);
   const [topProducts, setTopProducts] = useState([]);
   const [ventes, setVentes] = useState([]);
-  const [period, setPeriod] = useState('12m'); // 3m, 6m, 12m, all
+  const [period, setPeriod] = useState('12m');
   const [filterAgence, setFilterAgence] = useState('');
   const [agences, setAgences] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
@@ -46,7 +46,7 @@ const Statistiques = () => {
   const fetchAgences = async () => {
     try {
       const response = await AxiosInstance.get('/agences/');
-      setAgences(response.data);
+      setAgences(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       console.error('Erreur chargement agences:', error);
     }
@@ -57,19 +57,19 @@ const Statistiques = () => {
     try {
       // Récupérer les ventes pour analyses
       const ventesRes = await AxiosInstance.get('/ventes/');
-      setVentes(ventesRes.data);
+      setVentes(Array.isArray(ventesRes.data) ? ventesRes.data : []);
 
-      // Ventes mensuelles
-      const salesRes = await AxiosInstance.get('/dashboard/ventes_mensuelles/');
-      setMonthlySales(salesRes.data);
+      // ✅ Ventes mensuelles (endpoint corrigé)
+      const salesRes = await AxiosInstance.get('/statistiques/ventes_mensuelles/');
+      setMonthlySales(Array.isArray(salesRes.data) ? salesRes.data : []);
 
-      // Top produits
-      const productsRes = await AxiosInstance.get('/dashboard/top_produits/');
-      setTopProducts(productsRes.data);
+      // ✅ Top produits (endpoint corrigé)
+      const productsRes = await AxiosInstance.get('/statistiques/top_produits/');
+      setTopProducts(Array.isArray(productsRes.data) ? productsRes.data : []);
 
       // Stats générales
       const overviewRes = await AxiosInstance.get('/dashboard/overview/');
-      setStatsData(overviewRes.data);
+      setStatsData(overviewRes.data || {});
 
     } catch (error) {
       console.error('Erreur chargement statistiques:', error);
@@ -288,7 +288,7 @@ const Statistiques = () => {
               <BarChart data={topProducts.slice(0, 10)} layout="vertical" margin={{ top: 5, right: 10, left: 60, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                 <XAxis type="number" tick={{ fontSize: 11 }} />
-                <YAxis type="category" dataKey="product__name" tick={{ fontSize: 10 }} width={60} />
+                <YAxis type="category" dataKey="produit" tick={{ fontSize: 10 }} width={60} />
                 <Tooltip formatter={(value) => `${value} unités`} />
                 <Bar dataKey="quantite" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
               </BarChart>
