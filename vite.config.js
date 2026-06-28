@@ -14,7 +14,7 @@ export default defineConfig({
         name: 'Seydi Group App',
         short_name: 'SeydiApp',
         description: 'Application Seydi Group',
-        theme_color: '#ffffff',
+        theme_color: '#10b981',
         background_color: '#ffffff',
         display: 'standalone',
         icons: [
@@ -33,28 +33,8 @@ export default defineConfig({
         ]
       },
       workbox: {
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         runtimeCaching: [
-          {
-            // ⭐ POUR VOTRE API : Capture toutes les requêtes vers votre backend
-            urlPattern: ({ url }) => {
-              // Capture les URLs qui contiennent votre domaine backend
-              return url.hostname === 'seydi-group-back.onrender.com' ||
-                     url.hostname === '127.0.0.1' ||
-                     url.hostname === 'localhost';
-            },
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 // 24 heures
-              },
-              // Stratégie : essayer le réseau d'abord, puis le cache
-              networkTimeoutSeconds: 3
-            }
-          },
-          // OU ALTERNATIVE PLUS SIMPLE :
-          // Capture toutes les URLs qui contiennent '/api/'
           {
             urlPattern: /\/api\//i,
             handler: 'NetworkFirst',
@@ -73,7 +53,7 @@ export default defineConfig({
               cacheName: 'image-cache',
               expiration: {
                 maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 30 // 30 jours
+                maxAgeSeconds: 60 * 60 * 24 * 30
               }
             }
           },
@@ -97,16 +77,8 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
-    sourcemap: false,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom'],
-          'dexie-vendor': ['dexie'],
-          'axios-vendor': ['axios']
-        }
-      }
-    }
+    sourcemap: false
+    // ✅ PAS DE rollupOptions pour éviter les erreurs
   },
   
   server: {
