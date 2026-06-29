@@ -98,8 +98,6 @@ import Analyses from './components/dashboard/Analyses'
 
 
 
-import AuditLog from './components/audit/AuditLog'
-
 
 
 
@@ -298,7 +296,7 @@ function App() {
 <Route path="/devis/:id" element={<DevisDetail />} />
 <Route path="/devis/:id/edit" element={<DevisForm />} />
 
- <Route path="/audit" element={<AuditLog />} />
+
             </Route>
           </Routes>
         }
