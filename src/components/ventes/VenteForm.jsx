@@ -3,9 +3,9 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
 import {
-  Save, X, ArrowLeft, Search, Plus, Minus, Trash2, User, ShoppingCart,
-  CheckCircle, AlertCircle, Loader2, Building2, Store, Lock, Info,
-  RefreshCw, Package, DollarSign
+  Save, X, ArrowLeft, Plus, Minus, Trash2, User, ShoppingCart,
+  CheckCircle, AlertCircle, Loader2, Building2, 
+  Package, DollarSign, FileText, Warehouse
 } from 'lucide-react';
 
 const VenteForm = () => {
@@ -26,17 +26,13 @@ const VenteForm = () => {
   const [entrepot, setEntrepot] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   const [loadingUser, setLoadingUser] = useState(true);
-
-  // Panier
-  const [cart, setCart] = useState([]);
-  const [showProductModal, setShowProductModal] = useState(false);
-  const [productSearch, setProductSearch] = useState('');
-  const [selectedProductForCart, setSelectedProductForCart] = useState(null);
-  const [newItemQuantity, setNewItemQuantity] = useState(1);
-  const [stockForSelectedProduct, setStockForSelectedProduct] = useState(0);
+  const [notes, setNotes] = useState('');
+  
+  // Items (lignes de produits)
+  const [items, setItems] = useState([]);
 
   // Totaux
-  const [totals, setTotals] = useState({ sous_total: 0, tva: 0, total: 0 });
+  const [totals, setTotals] = useState({ subtotal: 0, tax_amount: 0, total: 0 });
 
   const showNotification = (message, type = 'success', details = null) => {
     setNotification({ show: true, message, type, details });
@@ -104,15 +100,19 @@ const VenteForm = () => {
         const productsWithPrices = await Promise.all(allProducts.map(async (product) => {
           try {
             const priceRes = await AxiosInstance.get(`/product-prices/by_product_and_warehouse/?product_id=${product.id}&warehouse_id=${entrepot.id}`);
+            const stockRes = await AxiosInstance.get(`/warehouse-stocks/by_product/?product_id=${product.id}`);
+            const stock = stockRes.data?.find(s => s.warehouse === entrepot.id);
             return {
               ...product,
               warehouse_price: priceRes.data.sale_price,
+              stock_quantity: stock?.quantity || 0,
               has_price: true
             };
           } catch {
             return {
               ...product,
               warehouse_price: product.sale_price || 0,
+              stock_quantity: 0,
               has_price: false
             };
           }
@@ -147,115 +147,79 @@ const VenteForm = () => {
   }, [clientIdParam]);
 
   // ============================================================
-  // 4. Vérification du stock pour un produit
+  // 4. Gestion des lignes (items)
   // ============================================================
-  const checkStock = async (productId) => {
-    if (!entrepot || !entrepot.id) return 0;
-    try {
-      const response = await AxiosInstance.get(`/warehouse-stocks/by_product/?product_id=${productId}`);
-      const stock = response.data?.find(s => s.warehouse === entrepot.id);
-      return stock?.quantity || 0;
-    } catch {
-      return 0;
-    }
+  const handleAddItem = () => {
+    setItems(prev => [...prev, {
+      id: Date.now(),
+      product_id: '',
+      product_name: '',
+      product_reference: '',
+      quantity: 1,
+      unit_price: 0,
+      discount: 0,
+      total: 0,
+      stock_max: 0
+    }]);
   };
 
-  // ============================================================
-  // 5. Gestion du panier
-  // ============================================================
-  const openProductModal = () => {
-    setProductSearch('');
-    setSelectedProductForCart(null);
-    setNewItemQuantity(1);
-    setStockForSelectedProduct(0);
-    setShowProductModal(true);
+  const handleRemoveItem = (itemId) => {
+    setItems(items.filter(item => item.id !== itemId));
   };
 
-  const handleSelectProduct = async (product) => {
-    setSelectedProductForCart(product);
-    const stock = await checkStock(product.id);
-    setStockForSelectedProduct(stock);
-    setNewItemQuantity(1);
-  };
-
-  const addToCart = () => {
-    if (!selectedProductForCart) {
-      showNotification('Veuillez sélectionner un produit', 'error');
-      return;
-    }
-    if (newItemQuantity < 1) {
-      showNotification('La quantité doit être au moins 1', 'error');
-      return;
-    }
-    if (newItemQuantity > stockForSelectedProduct) {
-      showNotification(`Stock insuffisant. Maximum : ${stockForSelectedProduct}`, 'error');
-      return;
-    }
-
-    const existingIndex = cart.findIndex(item => item.product.id === selectedProductForCart.id);
-    if (existingIndex !== -1) {
-      const newCart = [...cart];
-      const newQty = newCart[existingIndex].quantity + newItemQuantity;
-      if (newQty > stockForSelectedProduct) {
-        showNotification(`Quantité totale (${newQty}) dépasse le stock (${stockForSelectedProduct})`, 'error');
-        return;
+  const handleItemChange = (itemId, field, value) => {
+    const updatedItems = items.map(item => {
+      if (item.id === itemId) {
+        const updatedItem = { ...item, [field]: value };
+        
+        // Si le produit change, mettre à jour les infos
+        if (field === 'product_id') {
+          const product = products.find(p => p.id === parseInt(value));
+          if (product) {
+            updatedItem.product_name = product.name;
+            updatedItem.product_reference = product.reference || '';
+            updatedItem.unit_price = product.warehouse_price;
+            updatedItem.stock_max = product.stock_quantity;
+          }
+        }
+        
+        // Recalculer le total si quantité, prix ou remise change
+        if (field === 'quantity' || field === 'unit_price' || field === 'discount' || field === 'product_id') {
+          const qty = parseFloat(updatedItem.quantity) || 0;
+          const price = parseFloat(updatedItem.unit_price) || 0;
+          const discount = parseFloat(updatedItem.discount) || 0;
+          updatedItem.total = qty * price * (1 - discount / 100);
+        }
+        
+        return updatedItem;
       }
-      newCart[existingIndex].quantity = newQty;
-      newCart[existingIndex].total = newQty * newCart[existingIndex].prix_unitaire;
-      setCart(newCart);
-    } else {
-      const newItem = {
-        id: Date.now(),
-        product: selectedProductForCart,
-        quantity: newItemQuantity,
-        prix_unitaire: selectedProductForCart.warehouse_price,
-        total: newItemQuantity * selectedProductForCart.warehouse_price,
-        stock_max: stockForSelectedProduct
-      };
-      setCart([...cart, newItem]);
-    }
-    setShowProductModal(false);
-    setSelectedProductForCart(null);
-    setNewItemQuantity(1);
-    setStockForSelectedProduct(0);
+      return item;
+    });
+    setItems(updatedItems);
   };
 
-  const updateCartQuantity = (itemId, delta) => {
-    const itemIndex = cart.findIndex(i => i.id === itemId);
-    if (itemIndex === -1) return;
-    const newCart = [...cart];
-    const newQty = newCart[itemIndex].quantity + delta;
-    if (newQty < 1) {
-      newCart.splice(itemIndex, 1);
-      setCart(newCart);
-      return;
-    }
-    if (newQty > newCart[itemIndex].stock_max) {
-      showNotification(`Stock insuffisant pour ${newCart[itemIndex].product.name}. Maximum : ${newCart[itemIndex].stock_max}`, 'error');
-      return;
-    }
-    newCart[itemIndex].quantity = newQty;
-    newCart[itemIndex].total = newQty * newCart[itemIndex].prix_unitaire;
-    setCart(newCart);
-  };
-
-  const removeCartItem = (itemId) => {
-    setCart(cart.filter(i => i.id !== itemId));
-  };
-
-  // Recalcul des totaux
+  // ============================================================
+  // 5. Calcul des totaux
+  // ============================================================
   useEffect(() => {
-    const sous_total = cart.reduce((sum, item) => sum + item.total, 0);
-    const tva = sous_total * 0.18;
-    const total = sous_total + tva;
-    setTotals({ sous_total, tva, total });
-  }, [cart]);
+    const subtotal = items.reduce((sum, item) => sum + (item.total || 0), 0);
+    const tax_amount = 0; // TVA à 0%
+    const total = subtotal + tax_amount;
+    setTotals({ subtotal, tax_amount, total });
+  }, [items]);
 
   // ============================================================
   // 6. Soumission de la vente
   // ============================================================
   const handleSubmit = async () => {
-    if (cart.length === 0) {
+    // Vérifier que tous les items ont un produit sélectionné
+    const emptyItems = items.filter(item => !item.product_id);
+    if (emptyItems.length > 0) {
+      showNotification('Veuillez sélectionner un produit pour chaque ligne', 'error');
+      return;
+    }
+
+    if (items.length === 0) {
       showNotification('Ajoutez au moins un produit à la vente', 'error');
       return;
     }
@@ -265,23 +229,24 @@ const VenteForm = () => {
     }
 
     setSubmitting(true);
+    
     const payload = {
       type_vente: typeVente,
       agence: agence.id,
       client_id: selectedClient?.id || null,
-      notes: `Vente du ${new Date().toLocaleString()}`,
-      items: cart.map(item => ({
-        product: item.product.id,
+      notes: notes || `Vente du ${new Date().toLocaleString()}`,
+      items: items.map(item => ({
+        product: parseInt(item.product_id),
         quantity: item.quantity,
-        prix_unitaire: item.prix_unitaire,
-        tva: item.prix_unitaire * 0.18,
-        remise: 0
+        prix_unitaire: item.unit_price,
+        tva: 0,
+        remise: item.discount || 0
       }))
     };
 
     try {
-      const response = await AxiosInstance.post('/ventes/', payload);
-      showNotification('Vente créée avec succès ! Vous pouvez la soumettre depuis la liste.', 'success');
+      await AxiosInstance.post('/ventes/', payload);
+      showNotification('Vente créée avec succès !', 'success');
       setTimeout(() => navigate('/ventes'), 2000);
     } catch (error) {
       console.error(error);
@@ -297,18 +262,13 @@ const VenteForm = () => {
 
   const formatPrice = (price) => new Intl.NumberFormat('fr-FR').format(price || 0) + ' FCFA';
 
-  const filteredProducts = products.filter(p =>
-    p.name?.toLowerCase().includes(productSearch.toLowerCase()) ||
-    p.reference?.toLowerCase().includes(productSearch.toLowerCase())
-  );
-
   if (loadingUser || loading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-200px)]">
         <div className="text-center space-y-4">
           <div className="loading loading-spinner loading-lg text-primary"></div>
           <p className="text-base font-medium text-base-content/70 animate-pulse">
-            Chargement de l’environnement de vente...
+            Chargement de l'environnement de vente...
           </p>
         </div>
       </div>
@@ -316,7 +276,7 @@ const VenteForm = () => {
   }
 
   return (
-    <div className="space-y-4 lg:space-y-6 p-3 lg:p-6 bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
+    <div className="px-0 lg:px-0 py-4 lg:py-6 bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
       {/* Notification Toast */}
       {notification.show && (
         <div className="fixed top-16 lg:top-20 right-3 lg:right-6 z-50 animate-slideDown w-[calc(100%-1.5rem)] lg:w-auto max-w-md">
@@ -336,14 +296,18 @@ const VenteForm = () => {
         </div>
       )}
 
-      {/* En-tête avec gradient */}
-      <div className="relative overflow-hidden bg-gradient-to-r from-primary/10 via-primary/5 to-transparent rounded-2xl p-5">
+      {/* En-tête avec gradient - PLEINE LARGEUR */}
+      <div className="relative overflow-hidden bg-gradient-to-r from-primary/10 via-primary/5 to-transparent py-5 px-4 lg:px-6 mx-0">
         <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full filter blur-3xl"></div>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 relative z-10">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 relative z-10 max-w-full">
           <div>
             <div className="flex items-center gap-3 mb-2">
-              <div className="p-2 bg-primary/10 rounded-xl"><ShoppingCart className="w-7 h-7 text-primary" /></div>
-              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-primary">Nouvelle vente</h1>
+              <div className="p-2 bg-primary/10 rounded-xl">
+                <ShoppingCart className="w-7 h-7 text-primary" />
+              </div>
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-primary">
+                Nouvelle vente
+              </h1>
             </div>
             <p className="text-sm text-base-content/60 ml-1">
               {agence ? `Agence : ${agence.nom}` : 'Nouvelle vente'}
@@ -352,9 +316,13 @@ const VenteForm = () => {
           </div>
           <div className="flex flex-wrap gap-3">
             <button onClick={() => navigate('/ventes')} className="btn btn-outline btn-sm lg:btn-md gap-2">
-              <RefreshCw className="w-4 h-4" /> Retour
+              <ArrowLeft className="w-4 h-4" /> Retour
             </button>
-            <button onClick={handleSubmit} disabled={submitting} className="btn btn-primary btn-sm lg:btn-md gap-2 shadow-lg hover:shadow-xl transition-all">
+            <button 
+              onClick={handleSubmit} 
+              disabled={submitting} 
+              className="btn btn-primary btn-sm lg:btn-md gap-2 shadow-lg hover:shadow-xl transition-all"
+            >
               {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Valider la vente
             </button>
@@ -362,22 +330,36 @@ const VenteForm = () => {
         </div>
       </div>
 
-      {/* Carte principale */}
-      <div className="max-w-5xl mx-auto">
+      {/* Carte principale - PLEINE LARGEUR */}
+      <div className="max-w-full mx-0 px-4 lg:px-6">
         <div className="bg-white rounded-xl shadow-xl border border-base-200 overflow-hidden">
-          <div className="p-6">
+          <div className="p-4 lg:p-6">
             {/* Informations générales */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6 mb-6">
               <div className="form-control">
-                <label className="label"><span className="label-text font-medium">Type de vente</span></label>
-                <select className="select select-bordered w-full" value={typeVente} onChange={(e) => setTypeVente(e.target.value)}>
+                <label className="label">
+                  <span className="label-text font-semibold flex items-center gap-2">
+                    <ShoppingCart className="w-4 h-4 text-primary" />
+                    Type de vente <span className="text-error">*</span>
+                  </span>
+                </label>
+                <select 
+                  className="select select-bordered w-full" 
+                  value={typeVente} 
+                  onChange={(e) => setTypeVente(e.target.value)}
+                >
                   <option value="comptoir">Comptoir</option>
                   <option value="livraison">Livraison</option>
                   <option value="en_ligne">En ligne</option>
                 </select>
               </div>
               <div className="form-control">
-                <label className="label"><span className="label-text font-medium">Client</span></label>
+                <label className="label">
+                  <span className="label-text font-semibold flex items-center gap-2">
+                    <User className="w-4 h-4 text-primary" />
+                    Client
+                  </span>
+                </label>
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -390,135 +372,211 @@ const VenteForm = () => {
                   </button>
                 </div>
               </div>
-            </div>
-
-            {/* Agence et Entrepôt (lecture seule) */}
-            <div className="grid grid-cols-2 gap-4 mb-6">
               <div className="form-control">
-                <label className="label"><span className="label-text font-medium"><Building2 className="w-4 h-4 inline mr-1" /> Agence</span></label>
-                <div className="bg-gray-100 rounded-lg p-2 px-3 border border-gray-200">
-                  <p className="font-medium">{agence?.nom || 'Chargement...'}</p>
-                </div>
-              </div>
-              <div className="form-control">
-                <label className="label"><span className="label-text font-medium"><Store className="w-4 h-4 inline mr-1" /> Entrepôt</span></label>
-                <div className="bg-gray-100 rounded-lg p-2 px-3 border border-gray-200">
+                <label className="label">
+                  <span className="label-text font-semibold flex items-center gap-2">
+                    <Warehouse className="w-4 h-4 text-primary" />
+                    Entrepôt
+                  </span>
+                </label>
+                <div className="bg-gray-100 rounded-lg p-2 px-3 border border-gray-200 h-12 flex items-center">
                   <p className="font-medium">{entrepot?.name || 'Entrepôt principal'}</p>
                 </div>
               </div>
             </div>
 
-            {/* Section Panier */}
-            <div className="mb-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-semibold flex items-center gap-2">
-                  <Package className="w-5 h-5 text-primary" /> Articles
-                </h2>
-                <button type="button" className="btn btn-primary btn-sm gap-1" onClick={openProductModal}>
-                  <Plus className="w-4 h-4" /> Ajouter un produit
+            {/* Articles - Lignes avec select */}
+            <div className="border-t border-base-300 pt-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-lg flex items-center gap-2">
+                  <Package className="w-5 h-5 text-primary" />
+                  Articles
+                  <span className="badge badge-primary badge-sm">{items.length}</span>
+                </h3>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm gap-2"
+                  onClick={handleAddItem}
+                  disabled={submitting}
+                >
+                  <Plus className="w-4 h-4" /> Ajouter une ligne
                 </button>
               </div>
 
-              {cart.length === 0 ? (
-                <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
-                  <ShoppingCart className="w-12 h-12 mx-auto text-gray-400 mb-2" />
-                  <p className="text-gray-500">Aucun article dans le panier</p>
-                  <button className="btn btn-outline btn-sm mt-3" onClick={openProductModal}>
-                    Ajouter un produit
-                  </button>
+              {items.length === 0 ? (
+                <div className="text-center py-8 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
+                  <Package className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+                  <p className="text-gray-500">Aucun article ajouté</p>
+                  <p className="text-sm text-gray-400">Cliquez sur "Ajouter une ligne" pour commencer</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto rounded-xl border border-gray-200">
-                  <table className="table table-zebra w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th>Produit</th>
-                        <th className="text-center">Quantité</th>
-                        <th className="text-right">Prix unitaire</th>
-                        <th className="text-right">Total</th>
-                        <th className="text-center">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {cart.map((item) => (
-                        <tr key={item.id}>
-                          <td>
-                            <div>
-                              <p className="font-medium">{item.product.name}</p>
-                              <p className="text-xs text-gray-500">{item.product.reference}</p>
-                            </div>
-                          </td>
-                          <td className="text-center">
-                            <div className="flex items-center justify-center gap-2">
-                              <button
-                                className="btn btn-ghost btn-xs btn-square"
-                                onClick={() => updateCartQuantity(item.id, -1)}
-                              >
-                                <Minus className="w-3 h-3" />
-                              </button>
-                              <span className="w-8 text-center">{item.quantity}</span>
-                              <button
-                                className="btn btn-ghost btn-xs btn-square"
-                                onClick={() => updateCartQuantity(item.id, 1)}
-                              >
-                                <Plus className="w-3 h-3" />
-                              </button>
-                            </div>
-                          </td>
-                          <td className="text-right font-mono">{formatPrice(item.prix_unitaire)}</td>
-                          <td className="text-right font-semibold">{formatPrice(item.total)}</td>
-                          <td className="text-center">
+                <>
+                  {items.map((item, index) => (
+                    <div key={item.id} className="bg-gray-50 rounded-xl p-4 mb-4 border border-gray-200">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="font-semibold text-sm">Ligne #{index + 1}</span>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-xs text-error"
+                          onClick={() => handleRemoveItem(item.id)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+                        {/* Select Produit */}
+                        <div className="form-control w-full md:col-span-2">
+                          <label className="label">
+                            <span className="label-text text-sm font-semibold">Produit</span>
+                          </label>
+                          <select
+                            className="select select-bordered w-full"
+                            value={item.product_id}
+                            onChange={(e) => handleItemChange(item.id, 'product_id', e.target.value)}
+                            disabled={submitting}
+                          >
+                            <option value="">Sélectionner un produit</option>
+                            {products.map(p => (
+                              <option key={p.id} value={p.id}>
+                                {p.name} - {p.reference} (Stock: {p.stock_quantity})
+                              </option>
+                            ))}
+                          </select>
+                          {item.product_id && item.stock_max > 0 && (
+                            <span className="text-xs text-success mt-1">Stock disponible: {item.stock_max}</span>
+                          )}
+                          {item.product_id && item.stock_max === 0 && (
+                            <span className="text-xs text-error mt-1">Stock épuisé</span>
+                          )}
+                        </div>
+
+                        {/* Quantité */}
+                        <div className="form-control w-full">
+                          <label className="label">
+                            <span className="label-text text-sm font-semibold">Qté</span>
+                          </label>
+                          <div className="flex items-center gap-1">
                             <button
-                              className="btn btn-ghost btn-xs btn-square text-error"
-                              onClick={() => removeCartItem(item.id)}
+                              className="btn btn-ghost btn-xs btn-square"
+                              onClick={() => handleItemChange(item.id, 'quantity', Math.max(1, item.quantity - 1))}
+                              disabled={item.quantity <= 1 || submitting}
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Minus className="w-3 h-3" />
                             </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot className="bg-gray-50">
-                      <tr>
-                        <td colSpan="3" className="text-right font-semibold">Sous-total</td>
-                        <td className="text-right font-semibold">{formatPrice(totals.sous_total)}</td>
-                        <td></td>
-                      </tr>
-                      <tr>
-                        <td colSpan="3" className="text-right">TVA (18%)</td>
-                        <td className="text-right">{formatPrice(totals.tva)}</td>
-                        <td></td>
-                      </tr>
-                      <tr className="border-t">
-                        <td colSpan="3" className="text-right font-bold text-lg">Total TTC</td>
-                        <td className="text-right font-bold text-primary text-lg">{formatPrice(totals.total)}</td>
-                        <td></td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
+                            <input
+                              type="number"
+                              className="input input-bordered w-full text-center"
+                              value={item.quantity}
+                              onChange={(e) => handleItemChange(item.id, 'quantity', parseInt(e.target.value) || 1)}
+                              min="1"
+                              max={item.stock_max || 999}
+                              disabled={submitting}
+                            />
+                            <button
+                              className="btn btn-ghost btn-xs btn-square"
+                              onClick={() => handleItemChange(item.id, 'quantity', Math.min(item.stock_max || 999, item.quantity + 1))}
+                              disabled={item.quantity >= item.stock_max || submitting}
+                            >
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Prix unitaire */}
+                        <div className="form-control w-full">
+                          <label className="label">
+                            <span className="label-text text-sm font-semibold">Prix unit.</span>
+                          </label>
+                          <input
+                            type="number"
+                            className="input input-bordered w-full"
+                            value={item.unit_price}
+                            onChange={(e) => handleItemChange(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
+                            min="0"
+                            step="0.01"
+                            disabled={submitting}
+                          />
+                        </div>
+
+                        {/* Remise */}
+                        <div className="form-control w-full">
+                          <label className="label">
+                            <span className="label-text text-sm font-semibold">Remise %</span>
+                          </label>
+                          <input
+                            type="number"
+                            className="input input-bordered w-full"
+                            value={item.discount}
+                            onChange={(e) => handleItemChange(item.id, 'discount', parseFloat(e.target.value) || 0)}
+                            min="0"
+                            max="100"
+                            disabled={submitting}
+                          />
+                        </div>
+
+                        {/* Total */}
+                        <div className="form-control w-full">
+                          <label className="label">
+                            <span className="label-text text-sm font-semibold text-primary">Total</span>
+                          </label>
+                          <div className="h-10 flex items-center justify-end px-3 bg-primary/5 rounded-lg border border-primary/20">
+                            <span className="font-bold text-primary">{formatPrice(item.total)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Total général */}
+                  <div className="text-right pt-4 border-t border-gray-200">
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Sous-total</span>
+                        <span className="font-semibold">{formatPrice(totals.subtotal)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm text-success">
+                        <span className="text-gray-600">TVA (0%)</span>
+                        <span>{formatPrice(totals.tax_amount)}</span>
+                      </div>
+                      <div className="flex justify-between text-xl font-bold">
+                        <span>Total</span>
+                        <span className="text-primary">{formatPrice(totals.total)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </>
               )}
             </div>
 
             {/* Notes optionnelles */}
-            <div className="form-control">
-              <label className="label"><span className="label-text font-medium">Notes (optionnel)</span></label>
+            <div className="form-control mt-6">
+              <label className="label">
+                <span className="label-text font-semibold flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-primary" />
+                  Notes (optionnel)
+                </span>
+              </label>
               <textarea
                 className="textarea textarea-bordered"
                 rows="2"
                 placeholder="Informations complémentaires..."
-                value={''}
-                onChange={() => {}}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
               />
             </div>
           </div>
 
           {/* Actions */}
-          <div className="flex justify-end gap-3 p-6 bg-base-200/50 border-t border-base-200">
+          <div className="flex flex-col sm:flex-row justify-end gap-3 p-4 lg:p-6 bg-base-200/50 border-t border-base-200">
             <button className="btn btn-ghost gap-2" onClick={() => navigate('/ventes')}>
               Annuler
             </button>
-            <button className="btn btn-primary gap-2" onClick={handleSubmit} disabled={submitting}>
+            <button 
+              className="btn btn-primary gap-2 shadow-lg hover:shadow-xl transition-all" 
+              onClick={handleSubmit} 
+              disabled={submitting}
+            >
               {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Valider la vente
             </button>
@@ -565,104 +623,15 @@ const VenteForm = () => {
         </div>
       )}
 
-      {/* Modal de sélection produit */}
-      {showProductModal && (
-        <div className="modal modal-open">
-          <div className="modal-box max-w-3xl p-0 overflow-hidden">
-            <div className="sticky top-0 z-10 bg-gradient-to-r from-primary to-primary-focus p-4 text-white">
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                  <Package className="w-6 h-6" />
-                  <h2 className="text-xl font-bold">Ajouter un produit</h2>
-                </div>
-                <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setShowProductModal(false)}>
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <div className="mt-3 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Rechercher par nom ou référence..."
-                  className="input input-bordered w-full pl-10 bg-white text-gray-800"
-                  value={productSearch}
-                  onChange={(e) => setProductSearch(e.target.value)}
-                  autoFocus
-                />
-              </div>
-            </div>
-            <div className="flex flex-col lg:flex-row max-h-[60vh]">
-              {/* Liste des produits */}
-              <div className="flex-1 overflow-y-auto p-4 border-r">
-                {filteredProducts.length === 0 ? (
-                  <div className="text-center py-12">
-                    <Package className="w-12 h-12 mx-auto text-gray-300 mb-2" />
-                    <p className="text-gray-500">Aucun produit trouvé</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {filteredProducts.map(product => (
-                      <button
-                        key={product.id}
-                        className={`w-full text-left p-3 rounded-lg border transition-all ${
-                          selectedProductForCart?.id === product.id
-                            ? 'border-primary bg-primary/10'
-                            : 'border-gray-200 hover:bg-gray-50'
-                        }`}
-                        onClick={() => handleSelectProduct(product)}
-                      >
-                        <div className="flex justify-between">
-                          <div>
-                            <p className="font-medium">{product.name}</p>
-                            <p className="text-xs text-gray-500">{product.reference}</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-semibold text-primary">{formatPrice(product.warehouse_price)}</p>
-                            <p className="text-xs text-gray-400">Prix entrepôt</p>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {/* Panneau de quantité */}
-              {selectedProductForCart && (
-                <div className="w-full lg:w-80 p-4 bg-gray-50 flex flex-col gap-4">
-                  <div>
-                    <label className="label text-sm font-medium">Produit sélectionné</label>
-                    <p className="font-semibold">{selectedProductForCart.name}</p>
-                    <p className="text-xs text-gray-500">Stock disponible : {stockForSelectedProduct}</p>
-                  </div>
-                  <div className="form-control">
-                    <label className="label text-sm font-medium">Quantité</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max={stockForSelectedProduct}
-                      className="input input-bordered"
-                      value={newItemQuantity}
-                      onChange={(e) => setNewItemQuantity(parseInt(e.target.value) || 1)}
-                    />
-                  </div>
-                  <div className="mt-2 p-2 bg-white rounded-lg">
-                    <div className="flex justify-between text-sm">
-                      <span>Total ligne :</span>
-                      <span className="font-semibold">{formatPrice(newItemQuantity * selectedProductForCart.warehouse_price)}</span>
-                    </div>
-                  </div>
-                  <button className="btn btn-primary w-full gap-2" onClick={addToCart}>
-                    <Plus className="w-4 h-4" /> Ajouter au panier
-                  </button>
-                </div>
-              )}
-            </div>
-            <div className="p-4 border-t bg-gray-50 flex justify-end">
-              <button className="btn btn-ghost" onClick={() => setShowProductModal(false)}>Fermer</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <style>{`
+        @keyframes slideDown {
+          from { transform: translateY(-20px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        .animate-slideDown {
+          animation: slideDown 0.3s ease-out;
+        }
+      `}</style>
     </div>
   );
 };

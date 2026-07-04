@@ -94,6 +94,10 @@ import Livraison from './components/ventes/Livraison'
 import Dashboard from './components/dashboard/Dashboard'
 import Statistiques from './components/dashboard/Statistiques'
 import Analyses from './components/dashboard/Analyses'
+import FraisList from './components/achats/FraisList'
+import FraisForm from './components/achats/FraisForm'
+import FraisDetail from './components/achats/FraisDetail'
+
 
 
 
@@ -213,6 +217,14 @@ function App() {
 <Route path="/receptions/nouveau" element={<ReceptionForm />} />
 <Route path="/receptions/:id/edit" element={<ReceptionForm />} />
 <Route path="/receptions/:id" element={<ReceptionDetail />} />
+
+
+ {/* Gestion des RECEPTIOS */}
+
+<Route path="/frais" element={<FraisList />} />
+<Route path="/frais/nouveau" element={<FraisForm />} />
+<Route path="/frais/:id" element={<FraisDetail />} />
+<Route path="/frais/:id/modifier" element={<FraisForm />} />
 
     {/* Departments */}
           <Route path="/departments" element={<Departments />} />

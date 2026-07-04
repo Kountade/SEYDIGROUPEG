@@ -53,7 +53,7 @@ import {
   GraduationCap,
   BarChart3,
   RefreshCw,
-  Plus
+  Plus,
 } from 'lucide-react';
 
 import logo from '../assets/logo.svg';
@@ -435,19 +435,66 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     }
   ]
 },
-    {
-      name: 'ACHATS',
-      icon: ShoppingBag,
-      permission: canViewPurchases() || canViewSuppliers(),
-      items: [
-        { id: 'fournisseurs', text: 'Fournisseurs', icon: Building2, path: '/fournisseurs', permission: canViewSuppliers(), badge: fournisseursCount },
-        { id: 'commandes', text: 'Commandes', icon: FileText, path: '/commandes-fournisseurs', permission: canViewPurchases(), badge: achatsALivrer },
-        { id: 'receptions', text: 'Réceptions', icon: Truck, path: '/receptions', permission: canViewPurchases() },
-        { id: 'catalogue', text: 'Catalogue', icon: ClipboardList, path: '/supplier-catalogs', permission: canViewPurchases() },
-        { id: 'prix', text: 'Historique prix', icon: History, path: '/price-history', permission: canViewPurchases() },
-        { id: 'alertes', text: 'Alertes', icon: AlertTriangle, path: '/purchase-alerts', permission: canViewPurchases(), badge: alertsCount }
-      ]
+{
+  name: 'ACHATS',
+  icon: ShoppingBag,
+  permission: canViewPurchases() || canViewSuppliers(),
+  items: [
+    { 
+      id: 'fournisseurs', 
+      text: 'Fournisseurs', 
+      icon: Building2, 
+      path: '/fournisseurs', 
+      permission: canViewSuppliers(), 
+      badge: fournisseursCount 
     },
+    { 
+      id: 'commandes', 
+      text: 'Commandes', 
+      icon: FileText, 
+      path: '/commandes-fournisseurs', 
+      permission: canViewPurchases(), 
+      badge: achatsALivrer 
+    },
+    { 
+      id: 'receptions', 
+      text: 'Réceptions', 
+      icon: Truck, 
+      path: '/receptions', 
+      permission: canViewPurchases() 
+    },
+    // 👇 NOUVEAU : Lien vers les frais de réception
+    { 
+      id: 'frais', 
+      text: 'Frais de réception', 
+      icon: DollarSign, 
+      path: '/frais', 
+      permission: canViewPurchases() 
+    },
+    { 
+      id: 'catalogue', 
+      text: 'Catalogue', 
+      icon: ClipboardList, 
+      path: '/supplier-catalogs', 
+      permission: canViewPurchases() 
+    },
+    { 
+      id: 'prix', 
+      text: 'Historique prix', 
+      icon: History, 
+      path: '/price-history', 
+      permission: canViewPurchases() 
+    },
+    { 
+      id: 'alertes', 
+      text: 'Alertes', 
+      icon: AlertTriangle, 
+      path: '/purchase-alerts', 
+      permission: canViewPurchases(), 
+      badge: alertsCount 
+    }
+  ]
+},
    {
   name: 'STOCK & LOGISTIQUE',
   icon: Package,
