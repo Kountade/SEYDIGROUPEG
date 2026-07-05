@@ -147,19 +147,38 @@ const VenteForm = () => {
   }, [clientIdParam]);
 
   // ============================================================
-  // 4. Gestion des lignes (items)
+  // 4. Gestion des lignes (items) - AVEC VÉRIFICATION DES DOUBLONS
   // ============================================================
+  
+  // Vérifier si un produit est déjà dans la liste
+  const isProductAlreadyAdded = (productId) => {
+    return items.some(item => item.product_id === productId);
+  };
+
+  // Ajouter un nouvel item avec vérification des doublons
   const handleAddItem = () => {
+    // Si des produits sont déjà sélectionnés, on propose d'ajouter un nouveau produit
+    // mais on ne peut pas ajouter de ligne vide car le select montre tous les produits
+    
+    // On vérifie si tous les produits disponibles sont déjà ajoutés
+    const availableProducts = products.filter(p => !isProductAlreadyAdded(p.id));
+    if (availableProducts.length === 0) {
+      showNotification('Tous les produits sont déjà dans la liste', 'warning');
+      return;
+    }
+    
+    // Ajouter une nouvelle ligne avec le premier produit disponible
+    const firstAvailable = availableProducts[0];
     setItems(prev => [...prev, {
       id: Date.now(),
-      product_id: '',
-      product_name: '',
-      product_reference: '',
+      product_id: firstAvailable.id,
+      product_name: firstAvailable.name,
+      product_reference: firstAvailable.reference || '',
       quantity: 1,
-      unit_price: 0,
+      unit_price: firstAvailable.warehouse_price || 0,
       discount: 0,
-      total: 0,
-      stock_max: 0
+      total: firstAvailable.warehouse_price || 0,
+      stock_max: firstAvailable.stock_quantity || 0
     }]);
   };
 
@@ -176,10 +195,20 @@ const VenteForm = () => {
         if (field === 'product_id') {
           const product = products.find(p => p.id === parseInt(value));
           if (product) {
+            // Vérifier si le produit est déjà utilisé ailleurs (sauf pour l'item en cours)
+            const isDuplicate = items.some(other => 
+              other.id !== itemId && other.product_id === parseInt(value)
+            );
+            
+            if (isDuplicate) {
+              showNotification(`Le produit "${product.name}" est déjà dans la liste`, 'warning');
+              return item; // Retourner l'item inchangé
+            }
+            
             updatedItem.product_name = product.name;
             updatedItem.product_reference = product.reference || '';
-            updatedItem.unit_price = product.warehouse_price;
-            updatedItem.stock_max = product.stock_quantity;
+            updatedItem.unit_price = product.warehouse_price || 0;
+            updatedItem.stock_max = product.stock_quantity || 0;
           }
         }
         
@@ -209,7 +238,7 @@ const VenteForm = () => {
   }, [items]);
 
   // ============================================================
-  // 6. Soumission de la vente
+  // 6. Soumission de la vente - AVEC VÉRIFICATION DES DOUBLONS
   // ============================================================
   const handleSubmit = async () => {
     // Vérifier que tous les items ont un produit sélectionné
@@ -225,6 +254,26 @@ const VenteForm = () => {
     }
     if (!agence) {
       showNotification('Agence non trouvée', 'error');
+      return;
+    }
+
+    // ✅ VÉRIFICATION DES DOUBLONS AVANT ENVOI
+    const productIds = items.map(item => item.product_id);
+    const uniqueProductIds = new Set(productIds);
+    if (productIds.length !== uniqueProductIds.size) {
+      showNotification('Des produits sont dupliqués dans la liste. Veuillez corriger.', 'error');
+      return;
+    }
+
+    // ✅ VÉRIFICATION DU STOCK
+    const stockErrors = [];
+    items.forEach(item => {
+      if (item.quantity > item.stock_max) {
+        stockErrors.push(`${item.product_name} : ${item.stock_max} disponible, ${item.quantity} demandé`);
+      }
+    });
+    if (stockErrors.length > 0) {
+      showNotification(`Stock insuffisant :\n${stockErrors.join('\n')}`, 'error');
       return;
     }
 
@@ -260,6 +309,24 @@ const VenteForm = () => {
     }
   };
 
+  // ============================================================
+  // 7. Gestion de la quantité avec limite de stock
+  // ============================================================
+  const handleQuantityChange = (itemId, newQuantity) => {
+    const item = items.find(i => i.id === itemId);
+    if (!item) return;
+    
+    // Limiter la quantité au stock disponible
+    const maxQty = item.stock_max || 999;
+    const safeQty = Math.max(1, Math.min(newQuantity, maxQty));
+    
+    if (safeQty !== newQuantity) {
+      showNotification(`Stock maximum pour ${item.product_name} : ${maxQty}`, 'warning');
+    }
+    
+    handleItemChange(itemId, 'quantity', safeQty);
+  };
+
   const formatPrice = (price) => new Intl.NumberFormat('fr-FR').format(price || 0) + ' FCFA';
 
   if (loadingUser || loading) {
@@ -275,14 +342,20 @@ const VenteForm = () => {
     );
   }
 
+  // Filtrer les produits disponibles (non déjà ajoutés)
+  const getAvailableProducts = () => {
+    const selectedIds = items.map(item => item.product_id);
+    return products.filter(p => !selectedIds.includes(p.id));
+  };
+
   return (
     <div className="px-0 lg:px-0 py-4 lg:py-6 bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
       {/* Notification Toast */}
       {notification.show && (
         <div className="fixed top-16 lg:top-20 right-3 lg:right-6 z-50 animate-slideDown w-[calc(100%-1.5rem)] lg:w-auto max-w-md">
-          <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-lg`}>
+          <div className={`alert ${notification.type === 'success' ? 'alert-success' : notification.type === 'warning' ? 'alert-warning' : 'alert-error'} shadow-lg`}>
             {notification.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-            <span className="text-sm lg:text-base font-medium">{notification.message}</span>
+            <span className="text-sm lg:text-base font-medium whitespace-pre-line">{notification.message}</span>
             {notification.details && (
               <details className="text-xs">
                 <summary className="cursor-pointer">Détails</summary>
@@ -296,7 +369,7 @@ const VenteForm = () => {
         </div>
       )}
 
-      {/* En-tête avec gradient - PLEINE LARGEUR */}
+      {/* En-tête */}
       <div className="relative overflow-hidden bg-gradient-to-r from-primary/10 via-primary/5 to-transparent py-5 px-4 lg:px-6 mx-0">
         <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full filter blur-3xl"></div>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 relative z-10 max-w-full">
@@ -330,7 +403,7 @@ const VenteForm = () => {
         </div>
       </div>
 
-      {/* Carte principale - PLEINE LARGEUR */}
+      {/* Carte principale */}
       <div className="max-w-full mx-0 px-4 lg:px-6">
         <div className="bg-white rounded-xl shadow-xl border border-base-200 overflow-hidden">
           <div className="p-4 lg:p-6">
@@ -385,7 +458,7 @@ const VenteForm = () => {
               </div>
             </div>
 
-            {/* Articles - Lignes avec select */}
+            {/* Articles */}
             <div className="border-t border-base-300 pt-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold text-lg flex items-center gap-2">
@@ -393,14 +466,19 @@ const VenteForm = () => {
                   Articles
                   <span className="badge badge-primary badge-sm">{items.length}</span>
                 </h3>
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm gap-2"
-                  onClick={handleAddItem}
-                  disabled={submitting}
-                >
-                  <Plus className="w-4 h-4" /> Ajouter une ligne
-                </button>
+                <div className="flex gap-2">
+                  <span className="text-xs text-gray-500 self-center">
+                    {getAvailableProducts().length} produits disponibles
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm gap-2"
+                    onClick={handleAddItem}
+                    disabled={submitting || getAvailableProducts().length === 0}
+                  >
+                    <Plus className="w-4 h-4" /> Ajouter une ligne
+                  </button>
+                </div>
               </div>
 
               {items.length === 0 ? (
@@ -411,122 +489,133 @@ const VenteForm = () => {
                 </div>
               ) : (
                 <>
-                  {items.map((item, index) => (
-                    <div key={item.id} className="bg-gray-50 rounded-xl p-4 mb-4 border border-gray-200">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="font-semibold text-sm">Ligne #{index + 1}</span>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-xs text-error"
-                          onClick={() => handleRemoveItem(item.id)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-                        {/* Select Produit */}
-                        <div className="form-control w-full md:col-span-2">
-                          <label className="label">
-                            <span className="label-text text-sm font-semibold">Produit</span>
-                          </label>
-                          <select
-                            className="select select-bordered w-full"
-                            value={item.product_id}
-                            onChange={(e) => handleItemChange(item.id, 'product_id', e.target.value)}
-                            disabled={submitting}
+                  {items.map((item, index) => {
+                    const availableProducts = products.filter(p => 
+                      !items.some(other => other.id !== item.id && other.product_id === p.id)
+                    );
+                    
+                    return (
+                      <div key={item.id} className="bg-gray-50 rounded-xl p-4 mb-4 border border-gray-200">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="font-semibold text-sm">Ligne #{index + 1}</span>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs text-error"
+                            onClick={() => handleRemoveItem(item.id)}
                           >
-                            <option value="">Sélectionner un produit</option>
-                            {products.map(p => (
-                              <option key={p.id} value={p.id}>
-                                {p.name} - {p.reference} (Stock: {p.stock_quantity})
-                              </option>
-                            ))}
-                          </select>
-                          {item.product_id && item.stock_max > 0 && (
-                            <span className="text-xs text-success mt-1">Stock disponible: {item.stock_max}</span>
-                          )}
-                          {item.product_id && item.stock_max === 0 && (
-                            <span className="text-xs text-error mt-1">Stock épuisé</span>
-                          )}
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
-
-                        {/* Quantité */}
-                        <div className="form-control w-full">
-                          <label className="label">
-                            <span className="label-text text-sm font-semibold">Qté</span>
-                          </label>
-                          <div className="flex items-center gap-1">
-                            <button
-                              className="btn btn-ghost btn-xs btn-square"
-                              onClick={() => handleItemChange(item.id, 'quantity', Math.max(1, item.quantity - 1))}
-                              disabled={item.quantity <= 1 || submitting}
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+                          {/* Select Produit - avec filtrage des doublons */}
+                          <div className="form-control w-full md:col-span-2">
+                            <label className="label">
+                              <span className="label-text text-sm font-semibold">Produit</span>
+                            </label>
+                            <select
+                              className="select select-bordered w-full"
+                              value={item.product_id}
+                              onChange={(e) => handleItemChange(item.id, 'product_id', parseInt(e.target.value))}
+                              disabled={submitting}
                             >
-                              <Minus className="w-3 h-3" />
-                            </button>
+                              <option value="">Sélectionner un produit</option>
+                              {/* Afficher uniquement les produits non déjà sélectionnés + le produit actuel */}
+                              {products.map(p => {
+                                const isSelected = items.some(other => other.id !== item.id && other.product_id === p.id);
+                                return (
+                                  <option key={p.id} value={p.id} disabled={isSelected}>
+                                    {p.name} - {p.reference} (Stock: {p.stock_quantity})
+                                    {isSelected && ' ⚠️ déjà ajouté'}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                            {item.product_id && item.stock_max > 0 && (
+                              <span className="text-xs text-success mt-1">Stock disponible: {item.stock_max}</span>
+                            )}
+                            {item.product_id && item.stock_max === 0 && (
+                              <span className="text-xs text-error mt-1">Stock épuisé</span>
+                            )}
+                          </div>
+
+                          {/* Quantité */}
+                          <div className="form-control w-full">
+                            <label className="label">
+                              <span className="label-text text-sm font-semibold">Qté</span>
+                            </label>
+                            <div className="flex items-center gap-1">
+                              <button
+                                className="btn btn-ghost btn-xs btn-square"
+                                onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
+                                disabled={item.quantity <= 1 || submitting}
+                              >
+                                <Minus className="w-3 h-3" />
+                              </button>
+                              <input
+                                type="number"
+                                className="input input-bordered w-full text-center"
+                                value={item.quantity}
+                                onChange={(e) => handleQuantityChange(item.id, parseInt(e.target.value) || 1)}
+                                min="1"
+                                max={item.stock_max || 999}
+                                disabled={submitting}
+                              />
+                              <button
+                                className="btn btn-ghost btn-xs btn-square"
+                                onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
+                                disabled={item.quantity >= item.stock_max || submitting}
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Prix unitaire */}
+                          <div className="form-control w-full">
+                            <label className="label">
+                              <span className="label-text text-sm font-semibold">Prix unit.</span>
+                            </label>
                             <input
                               type="number"
-                              className="input input-bordered w-full text-center"
-                              value={item.quantity}
-                              onChange={(e) => handleItemChange(item.id, 'quantity', parseInt(e.target.value) || 1)}
-                              min="1"
-                              max={item.stock_max || 999}
+                              className="input input-bordered w-full"
+                              value={item.unit_price}
+                              onChange={(e) => handleItemChange(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
+                              min="0"
+                              step="0.01"
                               disabled={submitting}
                             />
-                            <button
-                              className="btn btn-ghost btn-xs btn-square"
-                              onClick={() => handleItemChange(item.id, 'quantity', Math.min(item.stock_max || 999, item.quantity + 1))}
-                              disabled={item.quantity >= item.stock_max || submitting}
-                            >
-                              <Plus className="w-3 h-3" />
-                            </button>
                           </div>
-                        </div>
 
-                        {/* Prix unitaire */}
-                        <div className="form-control w-full">
-                          <label className="label">
-                            <span className="label-text text-sm font-semibold">Prix unit.</span>
-                          </label>
-                          <input
-                            type="number"
-                            className="input input-bordered w-full"
-                            value={item.unit_price}
-                            onChange={(e) => handleItemChange(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
-                            min="0"
-                            step="0.01"
-                            disabled={submitting}
-                          />
-                        </div>
+                          {/* Remise */}
+                          <div className="form-control w-full">
+                            <label className="label">
+                              <span className="label-text text-sm font-semibold">Remise %</span>
+                            </label>
+                            <input
+                              type="number"
+                              className="input input-bordered w-full"
+                              value={item.discount}
+                              onChange={(e) => handleItemChange(item.id, 'discount', parseFloat(e.target.value) || 0)}
+                              min="0"
+                              max="100"
+                              disabled={submitting}
+                            />
+                          </div>
 
-                        {/* Remise */}
-                        <div className="form-control w-full">
-                          <label className="label">
-                            <span className="label-text text-sm font-semibold">Remise %</span>
-                          </label>
-                          <input
-                            type="number"
-                            className="input input-bordered w-full"
-                            value={item.discount}
-                            onChange={(e) => handleItemChange(item.id, 'discount', parseFloat(e.target.value) || 0)}
-                            min="0"
-                            max="100"
-                            disabled={submitting}
-                          />
-                        </div>
-
-                        {/* Total */}
-                        <div className="form-control w-full">
-                          <label className="label">
-                            <span className="label-text text-sm font-semibold text-primary">Total</span>
-                          </label>
-                          <div className="h-10 flex items-center justify-end px-3 bg-primary/5 rounded-lg border border-primary/20">
-                            <span className="font-bold text-primary">{formatPrice(item.total)}</span>
+                          {/* Total */}
+                          <div className="form-control w-full">
+                            <label className="label">
+                              <span className="label-text text-sm font-semibold text-primary">Total</span>
+                            </label>
+                            <div className="h-10 flex items-center justify-end px-3 bg-primary/5 rounded-lg border border-primary/20">
+                              <span className="font-bold text-primary">{formatPrice(item.total)}</span>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   {/* Total général */}
                   <div className="text-right pt-4 border-t border-gray-200">

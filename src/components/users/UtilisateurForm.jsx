@@ -1,4 +1,4 @@
-// src/components/users/UtilisateurForm.jsx - Version corrigée
+// src/components/users/UtilisateurForm.jsx - Version avec rôle Comptable
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
@@ -10,7 +10,8 @@ import {
   CreditCard, Award, Sparkles, Trophy, 
   AlertCircle, UserCheck, HardDrive, Clock,
   FileText, IdCard, Home, Eye, EyeOff,
-  X, Edit, Trash2
+  X, Edit, Trash2, Calculator, FileSpreadsheet,
+  PieChart, DollarSign, Receipt, BookOpen
 } from 'lucide-react'
 
 // Configuration des rôles globaux
@@ -20,12 +21,49 @@ const ROLES_GLOBAUX = [
   { value: 'autre', label: 'Utilisateur standard', description: 'Rôle spécifique par agence', icon: User, color: 'neutral' }
 ]
 
-// Configuration des rôles par agence (fallback si API échoue)
+// ✅ Configuration des rôles par agence avec les nouveaux rôles
 const ROLES_AGENCE_FALLBACK = [
-  { value: 'chef_agence', label: "Chef d'agence", description: "Gestion complète de l'agence", icon: Store },
-  { value: 'gestionnaire_stock', label: 'Gestionnaire de stock', description: 'Gestion des stocks et logistique', icon: HardDrive },
-  { value: 'commercial', label: 'Commercial', description: 'Force de vente', icon: Users }
+  { value: 'chef_agence', label: "Chef d'agence", description: "Gestion complète de l'agence", icon: Store, color: 'primary' },
+  { value: 'gestionnaire_stock', label: 'Gestionnaire de stock', description: 'Gestion des stocks et logistique', icon: HardDrive, color: 'info' },
+  { value: 'commercial', label: 'Commercial', description: 'Force de vente et relation client', icon: Users, color: 'success' },
+  { value: 'comptable', label: 'Comptable', description: 'Gestion comptable et financière', icon: Calculator, color: 'warning' }  // ✅ NOUVEAU
 ]
+
+// ✅ Icônes spécifiques pour les rôles (pour l'affichage des badges)
+const ROLE_ICONS = {
+  chef_agence: Store,
+  gestionnaire_stock: HardDrive,
+  commercial: Users,
+  comptable: Calculator
+}
+
+// ✅ Couleurs spécifiques pour les badges
+const ROLE_COLORS = {
+  chef_agence: 'primary',
+  gestionnaire_stock: 'info',
+  commercial: 'success',
+  comptable: 'warning'
+}
+
+// ✅ Descriptions détaillées pour l'affichage
+const ROLE_DETAILS = {
+  chef_agence: {
+    description: "Gère l'ensemble des opérations de l'agence",
+    permissions: ['Gestion utilisateurs', 'Validation commandes', 'Rapports', 'Gestion stock']
+  },
+  gestionnaire_stock: {
+    description: "Gère les stocks et la logistique",
+    permissions: ['Gestion inventaire', 'Transferts', 'Commandes', 'Rapports stock']
+  },
+  commercial: {
+    description: "Développe les ventes et relations clients",
+    permissions: ['Gestion clients', 'Devis', 'Factures', 'Suivi commandes']
+  },
+  comptable: {
+    description: "Gère la comptabilité et les finances",
+    permissions: ['Gestion factures', 'Paiements', 'Rapports financiers', 'Analyses']
+  }
+}
 
 const UtilisateurForm = () => {
   const navigate = useNavigate()
@@ -133,11 +171,14 @@ const UtilisateurForm = () => {
       if (rolesData.length > 0) {
         const rolesFiltres = rolesData.map(role => {
           const fallbackRole = ROLES_AGENCE_FALLBACK.find(r => r.value === role.value)
+          const details = ROLE_DETAILS[role.value] || {}
           return {
             value: role.value,
             label: role.label,
-            description: fallbackRole?.description || '',
-            icon: fallbackRole?.icon || Briefcase
+            description: details.description || fallbackRole?.description || '',
+            icon: ROLE_ICONS[role.value] || fallbackRole?.icon || Briefcase,
+            color: ROLE_COLORS[role.value] || fallbackRole?.color || 'neutral',
+            permissions: details.permissions || []
           }
         })
         setRolesAgenceDisponibles(rolesFiltres)
@@ -232,10 +273,10 @@ const UtilisateurForm = () => {
       password: formData.password,
       first_name: formData.first_name,
       last_name: formData.last_name,
-      phone: formData.phone || null,  // ← Envoyer null si vide
+      phone: formData.phone || null,
       address: formData.address || null,
       city: formData.city || null,
-      employee_id: formData.employee_id || null,  // ← Envoyer null si vide (évite l'erreur UNIQUE)
+      employee_id: formData.employee_id || null,
       role_global: formData.role_global
     }
     
@@ -249,9 +290,9 @@ const UtilisateurForm = () => {
       }
     }
     
-    // Supprimer les champs vides pour éviter les erreurs de validation
+    // Supprimer les champs vides
     Object.keys(submitData).forEach(key => {
-      if (submitData[key] === '' || submitData[key] === undefined) {
+      if (submitData[key] === '' || submitData[key] === undefined || submitData[key] === null) {
         delete submitData[key]
       }
     })
@@ -306,6 +347,19 @@ const UtilisateurForm = () => {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  // ✅ Fonction pour afficher le badge de rôle avec couleur et icône
+  const renderRoleBadge = (roleValue, roleLabel) => {
+    const color = ROLE_COLORS[roleValue] || 'neutral'
+    const Icon = ROLE_ICONS[roleValue] || Briefcase
+    
+    return (
+      <span className={`badge badge-${color} gap-2 px-3 py-2 text-sm font-medium`}>
+        <Icon className="h-3 w-3" />
+        {roleLabel}
+      </span>
+    )
   }
 
   if (apiError && agences.length === 0 && !isEditMode) {
@@ -623,11 +677,14 @@ const UtilisateurForm = () => {
                         className={`select select-bordered w-full focus:border-primary ${errors.role_agence ? 'select-error' : ''}`}
                       >
                         <option value="">-- Sélectionner un rôle --</option>
-                        {rolesAgenceDisponibles.map((role) => (
-                          <option key={role.value} value={role.value}>
-                            📌 {role.label}
-                          </option>
-                        ))}
+                        {rolesAgenceDisponibles.map((role) => {
+                          const Icon = role.icon
+                          return (
+                            <option key={role.value} value={role.value}>
+                              {role.label} {role.value === 'comptable' ? '📊' : ''}
+                            </option>
+                          )
+                        })}
                       </select>
                       {loadingAgences && (
                         <span className="text-info text-xs mt-1 flex items-center gap-1">
@@ -636,6 +693,36 @@ const UtilisateurForm = () => {
                         </span>
                       )}
                       {errors.role_agence && <span className="text-error text-xs mt-1">{errors.role_agence}</span>}
+                      
+                      {/* ✅ Affichage des détails du rôle sélectionné */}
+                      {formData.role_agence && (
+                        <div className="mt-3 p-3 bg-base-200 rounded-lg">
+                          {(() => {
+                            const selectedRole = rolesAgenceDisponibles.find(r => r.value === formData.role_agence)
+                            if (!selectedRole) return null
+                            const details = ROLE_DETAILS[selectedRole.value]
+                            return (
+                              <div>
+                                <div className="flex items-center gap-2 mb-1">
+                                  {renderRoleBadge(selectedRole.value, selectedRole.label)}
+                                  <span className="text-xs text-base-content/50">
+                                    {selectedRole.description}
+                                  </span>
+                                </div>
+                                {details?.permissions && (
+                                  <div className="flex flex-wrap gap-1 mt-1">
+                                    {details.permissions.map((perm, idx) => (
+                                      <span key={idx} className="badge badge-ghost badge-xs">
+                                        {perm}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })()}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -649,6 +736,17 @@ const UtilisateurForm = () => {
                     {selectedRoleGlobal === 'pdg' 
                       ? '👑 Le PDG aura accès à toutes les agences et toutes les fonctionnalités.'
                       : '👥 Le DRH pourra gérer les ressources humaines de toutes les agences.'}
+                  </span>
+                </div>
+              )}
+
+              {/* ✅ ALERTE pour le rôle Comptable */}
+              {formData.role_agence === 'comptable' && selectedRoleGlobal === 'autre' && (
+                <div className="alert alert-warning shadow-lg mt-4">
+                  <Calculator className="h-5 w-5" />
+                  <span className="text-sm">
+                    📊 Le comptable aura accès à la gestion financière, aux rapports 
+                    comptables et aux opérations de paiement pour cette agence.
                   </span>
                 </div>
               )}

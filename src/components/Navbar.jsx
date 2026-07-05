@@ -1,6 +1,6 @@
-// src/components/Navbar.jsx - Version Adaptée pour Code B
-import React, { useState, useEffect } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+// src/components/Navbar.jsx - Version Refactorisée avec style Clients.jsx
+import React, { useState, useEffect } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { 
   LayoutDashboard, 
   ShoppingBag, 
@@ -54,319 +54,384 @@ import {
   BarChart3,
   RefreshCw,
   Plus,
-} from 'lucide-react';
+  Calculator,
+  BookOpen,
+  Landmark,
+  FileSpreadsheet,
+  PieChart,
+  Wallet,
+  Banknote,
+  Scale,
+  ChartNoAxesColumn,
+  ReceiptText,
+  Notebook,
+  BadgeDollarSign,
+  Home,
+  Info,
+  AlertCircle,
+  Check,
+  Loader2,
+  ArrowLeft,
+  Eye,
+  Edit,
+  Trash2,
+  MoreVertical,
+  Filter,
+  LayoutGrid,
+  List,
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
+  Grid,
+  Mail,
+  Phone,
+  UserCheck,
+  UserX,
+  Clock as ClockIcon,
+  Download,
+  Printer,
+  FileCheck
+} from 'lucide-react'
 
-import logo from '../assets/logo.svg';
-import AxiosInstance from './AxiosInstance';
+import logo from '../assets/logo.svg'
+import AxiosInstance from './AxiosInstance'
 
 // Configuration des rôles
 const ROLE_GLOBAL_CONFIG = {
   pdg: { label: 'PDG', color: 'error', icon: Crown, description: 'Accès total - Toutes agences', level: 100 },
   drh: { label: 'DRH', color: 'secondary', icon: UsersRound, description: 'Ressources Humaines - Toutes agences', level: 90 },
   autre: { label: 'Utilisateur', color: 'neutral', icon: UserCircle, description: 'Compte standard', level: 50 }
-};
+}
 
 const ROLE_AGENCE_CONFIG = {
   chef_agence: { label: "Chef d'agence", color: 'primary', icon: Store, description: 'Gestion complète de l\'agence', level: 80 },
   gestionnaire_stock: { label: 'Gestionnaire stock', color: 'info', icon: Boxes, description: 'Gestion des stocks', level: 60 },
-  commercial: { label: 'Commercial', color: 'warning', icon: Handshake, description: 'Force de vente', level: 60 }
-};
+  commercial: { label: 'Commercial', color: 'warning', icon: Handshake, description: 'Force de vente', level: 60 },
+  comptable: { label: 'Comptable', color: 'success', icon: Calculator, description: 'Gestion comptable et financière', level: 70 }
+}
 
 const Navbar = ({ content, mode, toggleColorMode }) => {
-  const location = useLocation();
-  const path = location.pathname;
-  const navigate = useNavigate();
+  const location = useLocation()
+  const path = location.pathname
+  const navigate = useNavigate()
 
   // États
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-  const [isAgencesMenuOpen, setIsAgencesMenuOpen] = useState(false);
-  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
+  const [isAgencesMenuOpen, setIsAgencesMenuOpen] = useState(false)
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
+  const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
   const [openSections, setOpenSections] = useState({
     'TABLEAU DE BORD': true,
-    'COMMERCIAL': true,
+    'COMMERCIAL': false,
     'ACHATS': false,
     'STOCK & LOGISTIQUE': false,
+    'COMPTABILITÉ & FINANCE': false,
     'RESSOURCES HUMAINES': false,
     'ADMINISTRATION': false,
     'MON ESPACE': false
-  });
+  })
   
-  const [userInitial, setUserInitial] = useState('');
-  const [userFullName, setUserFullName] = useState('');
-  const [agences, setAgences] = useState([]);
-  const [agenceCourante, setAgenceCourante] = useState(null);
-  const [effectiveRole, setEffectiveRole] = useState('autre');
-  const [roleType, setRoleType] = useState('global');
-  const [userData, setUserData] = useState(null);
-  const [notifications, setNotifications] = useState([]);
-  const [notificationCount, setNotificationCount] = useState(0);
-  const [currentTime, setCurrentTime] = useState(new Date());
-  const [isLoading, setIsLoading] = useState(true);
-  const [userAgencesIds, setUserAgencesIds] = useState([]); // IDs des agences auxquelles l'utilisateur a accès
+  const [userInitial, setUserInitial] = useState('')
+  const [userFullName, setUserFullName] = useState('')
+  const [agences, setAgences] = useState([])
+  const [agenceCourante, setAgenceCourante] = useState(null)
+  const [effectiveRole, setEffectiveRole] = useState('autre')
+  const [roleType, setRoleType] = useState('global')
+  const [userData, setUserData] = useState(null)
+  const [notifications, setNotifications] = useState([])
+  const [notificationCount, setNotificationCount] = useState(0)
+  const [currentTime, setCurrentTime] = useState(new Date())
+  const [isLoading, setIsLoading] = useState(true)
+  const [userAgencesIds, setUserAgencesIds] = useState([])
+  
+  // États comptabilité
+  const [ecrituresEnAttente, setEcrituresEnAttente] = useState(0)
+  const [facturesImpayees, setFacturesImpayees] = useState(0)
+  const [tresorerie, setTresorerie] = useState(0)
+  const [clotureEnCours, setClotureEnCours] = useState(false)
+  const [balancesDisponibles, setBalancesDisponibles] = useState(0)
   
   // Données pour les différentes sections
-  const [achatsALivrer, setAchatsALivrer] = useState(0);
-  const [alertsCount, setAlertsCount] = useState(0);
-  const [fournisseursCount, setFournisseursCount] = useState(0);
-  const [stocksFaibles, setStocksFaibles] = useState(0);
-  const [ventesImpayees, setVentesImpayees] = useState(0);
-  const [absencesEnAttente, setAbsencesEnAttente] = useState(0);
+  const [achatsALivrer, setAchatsALivrer] = useState(0)
+  const [alertsCount, setAlertsCount] = useState(0)
+  const [fournisseursCount, setFournisseursCount] = useState(0)
+  const [stocksFaibles, setStocksFaibles] = useState(0)
+  const [ventesImpayees, setVentesImpayees] = useState(0)
+  const [absencesEnAttente, setAbsencesEnAttente] = useState(0)
 
   // Récupérer l'utilisateur
   const getUserData = () => {
     try {
-      const userData = localStorage.getItem('User');
-      return userData ? JSON.parse(userData) : null;
+      const userData = localStorage.getItem('User')
+      return userData ? JSON.parse(userData) : null
     } catch {
-      return null;
+      return null
     }
-  };
+  }
 
-  const user = getUserData();
-  const userRole = user?.role_global || 'autre';
-  const userEmail = user?.email || '';
-  const firstName = user?.first_name || '';
-  const lastName = user?.last_name || '';
-  const userName = firstName || lastName || user?.username || userEmail?.split('@')[0] || 'Utilisateur';
+  const user = getUserData()
+  const userRole = user?.role_global || 'autre'
+  const userEmail = user?.email || ''
+  const firstName = user?.first_name || ''
+  const lastName = user?.last_name || ''
+  const userName = firstName || lastName || user?.username || userEmail?.split('@')[0] || 'Utilisateur'
 
   // Horloge
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
 
-  const formattedTime = currentTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-  const formattedDate = currentTime.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  const formattedTime = currentTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+  const formattedDate = currentTime.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
 
   // Déterminer le rôle effectif
   const determineEffectiveRole = (userData, currentAgence) => {
-    if (!userData) return { role: 'autre', type: 'global' };
-    if (userData.role_global === 'pdg') return { role: 'pdg', type: 'global' };
-    if (userData.role_global === 'drh') return { role: 'drh', type: 'global' };
+    if (!userData) return { role: 'autre', type: 'global' }
+    if (userData.role_global === 'pdg') return { role: 'pdg', type: 'global' }
+    if (userData.role_global === 'drh') return { role: 'drh', type: 'global' }
     if (currentAgence && userData.roles_agence) {
-      const roleInAgence = userData.roles_agence.find(r => r.agence_id === currentAgence.id && r.est_actif);
-      if (roleInAgence) return { role: roleInAgence.role, type: 'agence' };
+      const roleInAgence = userData.roles_agence.find(r => r.agence_id === currentAgence.id && r.est_actif)
+      if (roleInAgence) return { role: roleInAgence.role, type: 'agence' }
     }
-    return { role: 'autre', type: 'global' };
-  };
+    return { role: 'autre', type: 'global' }
+  }
 
-  // Vérifier si l'utilisateur a accès à une agence (pour filtrer)
   const checkUserAccessToAgence = (agenceId, rolesAgence) => {
-    if (!rolesAgence) return false;
-    return rolesAgence.some(r => r.agence_id === agenceId && r.est_actif);
-  };
+    if (!rolesAgence) return false
+    return rolesAgence.some(r => r.agence_id === agenceId && r.est_actif)
+  }
+
+  const isUserComptable = (rolesAgence) => {
+    if (!rolesAgence || !Array.isArray(rolesAgence)) return false
+    return rolesAgence.some(r => r.role === 'comptable' && r.est_actif === true)
+  }
 
   // Charger les données
   useEffect(() => {
     const loadData = async () => {
-      setIsLoading(true);
+      setIsLoading(true)
       try {
-        // Récupérer TOUTES les agences actives (Code B)
-        const agencesRes = await AxiosInstance.get('/agences/');
-        const toutesLesAgences = agencesRes.data || [];
+        const agencesRes = await AxiosInstance.get('/agences/')
+        const toutesLesAgences = agencesRes.data || []
         
-        // Récupérer les détails de l'utilisateur pour connaître ses agences autorisées
-        let userRolesAgence = [];
-        let userFullData = null;
+        let userRolesAgence = []
+        let userFullData = null
         
         if (user?.id) {
-          const userRes = await AxiosInstance.get(`/users/${user.id}/`);
-          userFullData = userRes.data;
-          userRolesAgence = userFullData.roles_agence || [];
+          const userRes = await AxiosInstance.get(`/users/${user.id}/`)
+          userFullData = userRes.data
+          userRolesAgence = userFullData.roles_agence || []
           
-          // IDs des agences auxquelles l'utilisateur a accès (pour les permissions)
           const accessibleIds = userRolesAgence
             .filter(r => r.est_actif)
-            .map(r => r.agence_id);
-          setUserAgencesIds(accessibleIds);
+            .map(r => r.agence_id)
+          setUserAgencesIds(accessibleIds)
         }
         
-        // Pour les chefs d'agence, on affiche toutes les agences dans le sélecteur
-        // mais on marque celles auxquelles ils n'ont PAS accès comme "non accessibles"
         const agencesAvecAcces = toutesLesAgences.map(agence => {
           const hasAccess = user?.role_global === 'pdg' || 
                            user?.role_global === 'drh' || 
-                           checkUserAccessToAgence(agence.id, userRolesAgence);
-          return { ...agence, hasAccess };
-        });
+                           checkUserAccessToAgence(agence.id, userRolesAgence)
+          return { ...agence, hasAccess }
+        })
         
-        setAgences(agencesAvecAcces);
+        setAgences(agencesAvecAcces)
         
-        // Sélectionner l'agence courante
-        const savedAgence = localStorage.getItem('AgenceCourante');
-        let currentAgence = null;
+        const savedAgence = localStorage.getItem('AgenceCourante')
+        let currentAgence = null
         
         if (savedAgence) {
-          const parsed = JSON.parse(savedAgence);
-          // Vérifier que l'utilisateur a toujours accès à cette agence
+          const parsed = JSON.parse(savedAgence)
           const hasAccess = user?.role_global === 'pdg' || 
                            user?.role_global === 'drh' || 
-                           checkUserAccessToAgence(parsed.id, userRolesAgence);
+                           checkUserAccessToAgence(parsed.id, userRolesAgence)
           if (hasAccess) {
-            currentAgence = parsed;
+            currentAgence = parsed
           }
         }
         
-        // Si pas d'agence courante valide, prendre la première accessible
         if (!currentAgence && agencesAvecAcces.length > 0) {
-          const accessibleAgence = agencesAvecAcces.find(a => a.hasAccess);
+          const accessibleAgence = agencesAvecAcces.find(a => a.hasAccess)
           if (accessibleAgence) {
-            currentAgence = accessibleAgence;
-            localStorage.setItem('AgenceCourante', JSON.stringify(accessibleAgence));
+            currentAgence = accessibleAgence
+            localStorage.setItem('AgenceCourante', JSON.stringify(accessibleAgence))
           } else if (agencesAvecAcces.length > 0) {
-            // Fallback : prendre la première agence (même sans accès complet)
-            currentAgence = agencesAvecAcces[0];
-            localStorage.setItem('AgenceCourante', JSON.stringify(agencesAvecAcces[0]));
+            currentAgence = agencesAvecAcces[0]
+            localStorage.setItem('AgenceCourante', JSON.stringify(agencesAvecAcces[0]))
           }
         }
         
-        setAgenceCourante(currentAgence);
+        setAgenceCourante(currentAgence)
         
-        if (userFullData) {
-          setUserData(userFullData);
-          const { role, type } = determineEffectiveRole(userFullData, currentAgence);
-          setEffectiveRole(role);
-          setRoleType(type);
+        const isComptable = isUserComptable(userRolesAgence)
+        const isPDGorDRH = user?.role_global === 'pdg' || user?.role_global === 'drh'
+        
+        if (isComptable) {
+          setEffectiveRole('comptable')
+          setRoleType('agence')
+          setOpenSections(prev => ({
+            ...prev,
+            'COMPTABILITÉ & FINANCE': true
+          }))
+        } else if (userFullData) {
+          const { role, type } = determineEffectiveRole(userFullData, currentAgence)
+          setEffectiveRole(role)
+          setRoleType(type)
         } else {
-          setEffectiveRole(userRole);
-          setRoleType('global');
+          setEffectiveRole(userRole)
+          setRoleType('global')
         }
         
-        // Charger les compteurs pour les badges
-        const isPDGorDRH = user?.role_global === 'pdg' || user?.role_global === 'drh';
-        const agenceId = currentAgence?.id;
+        const isComptableOrAdmin = isComptable || isPDGorDRH
+        const agenceId = currentAgence?.id
+        const params = (!isPDGorDRH && agenceId && isComptable) ? `?agence_id=${agenceId}` : ''
         
-        // Compteurs avec filtrage par agence si nécessaire
-        if (isPDGorDRH || agenceId) {
-          const params = (!isPDGorDRH && agenceId) ? `?agence_id=${agenceId}` : '';
-          
-          const [achatsRes, alertsRes, fournisseursRes, stocksRes, ventesRes] = await Promise.all([
-            AxiosInstance.get(`/purchase-orders/?status=confirmed${params}`).catch(() => ({ data: [] })),
-            AxiosInstance.get(`/purchase-alerts/?is_active=true${params}`).catch(() => ({ data: [] })),
-            AxiosInstance.get(`/suppliers/${params}`).catch(() => ({ data: [] })),
-            AxiosInstance.get(`/stock-movements/?low_stock=true${params}`).catch(() => ({ data: [] })),
-            AxiosInstance.get(`/sale-orders/?payment_status=pending${params}`).catch(() => ({ data: [] }))
-          ]);
-          
-          setAchatsALivrer(achatsRes.data?.length || 0);
-          setAlertsCount(alertsRes.data?.length || 0);
-          setFournisseursCount(fournisseursRes.data?.length || 0);
-          setStocksFaibles(stocksRes.data?.length || 0);
-          setVentesImpayees(ventesRes.data?.length || 0);
-          
-          // Construire les notifications
-          const notifs = [];
-          if (stocksRes.data?.length) {
-            notifs.push({ id: 'stocks', title: 'Stock faible', message: `${stocksRes.data.length} produit(s) en rupture`, link: '/stocks', type: 'warning', time: 'maintenant' });
+        if (isComptableOrAdmin) {
+          try {
+            const ecrituresRes = await AxiosInstance.get(`/ecritures/?status=brouillon${params}`).catch(() => ({ data: [] }))
+            setEcrituresEnAttente(ecrituresRes.data?.length || 0)
+            
+            const facturesRes = await AxiosInstance.get(`/factures-comptables/?status=impayee${params}`).catch(() => ({ data: [] }))
+            setFacturesImpayees(facturesRes.data?.length || 0)
+            
+            const tresorerieRes = await AxiosInstance.get(`/tresorerie/${params}`).catch(() => ({ data: { solde_final: 0 } }))
+            setTresorerie(tresorerieRes.data?.solde_final || 0)
+            
+            const clotureRes = await AxiosInstance.get(`/clotures/?status=en_cours${params}`).catch(() => ({ data: [] }))
+            setClotureEnCours((clotureRes.data?.length || 0) > 0)
+            
+            const balancesRes = await AxiosInstance.get(`/balances/${params}`).catch(() => ({ data: [] }))
+            setBalancesDisponibles(balancesRes.data?.length || 0)
+            
+          } catch (e) {
+            console.log('⚠️ Erreur chargement données comptables:', e)
           }
-          if (ventesRes.data?.length) {
-            notifs.push({ id: 'ventes', title: 'Paiements en attente', message: `${ventesRes.data.length} vente(s) impayée(s)`, link: '/ventes', type: 'error', time: "aujourd'hui" });
-          }
-          if (achatsRes.data?.length) {
-            notifs.push({ id: 'achats', title: 'Commandes à livrer', message: `${achatsRes.data.length} commande(s) en attente`, link: '/commandes-fournisseurs', type: 'info', time: "aujourd'hui" });
-          }
-          if (alertsRes.data?.length) {
-            notifs.push({ id: 'alerts', title: 'Alertes fournisseurs', message: `${alertsRes.data.length} alerte(s) à traiter`, link: '/purchase-alerts', type: 'warning', time: "aujourd'hui" });
-          }
-          
-          setNotifications(notifs);
-          setNotificationCount(notifs.length);
         }
+        
+        const [achatsRes, alertsRes, fournisseursRes, stocksRes, ventesRes] = await Promise.all([
+          AxiosInstance.get(`/purchase-orders/?status=confirmed${params}`).catch(() => ({ data: [] })),
+          AxiosInstance.get(`/purchase-alerts/?is_active=true${params}`).catch(() => ({ data: [] })),
+          AxiosInstance.get(`/suppliers/${params}`).catch(() => ({ data: [] })),
+          AxiosInstance.get(`/stock-movements/?low_stock=true${params}`).catch(() => ({ data: [] })),
+          AxiosInstance.get(`/sale-orders/?payment_status=pending${params}`).catch(() => ({ data: [] }))
+        ])
+        
+        setAchatsALivrer(achatsRes.data?.length || 0)
+        setAlertsCount(alertsRes.data?.length || 0)
+        setFournisseursCount(fournisseursRes.data?.length || 0)
+        setStocksFaibles(stocksRes.data?.length || 0)
+        setVentesImpayees(ventesRes.data?.length || 0)
+        
+        const notifs = []
+        if (stocksRes.data?.length) {
+          notifs.push({ id: 'stocks', title: 'Stock faible', message: `${stocksRes.data.length} produit(s) en rupture`, link: '/stocks', type: 'warning', time: 'maintenant' })
+        }
+        if (ventesRes.data?.length) {
+          notifs.push({ id: 'ventes', title: 'Paiements en attente', message: `${ventesRes.data.length} vente(s) impayée(s)`, link: '/ventes', type: 'error', time: "aujourd'hui" })
+        }
+        if (achatsRes.data?.length) {
+          notifs.push({ id: 'achats', title: 'Commandes à livrer', message: `${achatsRes.data.length} commande(s) en attente`, link: '/commandes-fournisseurs', type: 'info', time: "aujourd'hui" })
+        }
+        if (alertsRes.data?.length) {
+          notifs.push({ id: 'alerts', title: 'Alertes fournisseurs', message: `${alertsRes.data.length} alerte(s) à traiter`, link: '/purchase-alerts', type: 'warning', time: "aujourd'hui" })
+        }
+        if (ecrituresEnAttente > 0) {
+          notifs.push({ id: 'ecritures', title: 'Écritures en attente', message: `${ecrituresEnAttente} écriture(s) à valider`, link: '/ecritures', type: 'info', time: "aujourd'hui" })
+        }
+        if (facturesImpayees > 0) {
+          notifs.push({ id: 'factures', title: 'Factures impayées', message: `${facturesImpayees} facture(s) impayée(s)`, link: '/factures-comptables', type: 'error', time: "aujourd'hui" })
+        }
+        
+        setNotifications(notifs)
+        setNotificationCount(notifs.length)
         
       } catch (error) {
-        console.error('Erreur chargement:', error);
-        setEffectiveRole(userRole);
-        setRoleType('global');
+        console.error('❌ Erreur chargement:', error)
+        setEffectiveRole(userRole)
+        setRoleType('global')
       } finally {
-        setIsLoading(false);
+        setIsLoading(false)
       }
-    };
+    }
     
-    loadData();
-  }, []);
+    loadData()
+  }, [])
 
   // Initiale utilisateur
   useEffect(() => {
     if (firstName && lastName) {
-      setUserInitial(`${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase());
-      setUserFullName(`${firstName} ${lastName}`);
+      setUserInitial(`${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase())
+      setUserFullName(`${firstName} ${lastName}`)
     } else if (userName) {
-      setUserInitial(userName.charAt(0).toUpperCase());
-      setUserFullName(userName);
+      setUserInitial(userName.charAt(0).toUpperCase())
+      setUserFullName(userName)
     }
-  }, [firstName, lastName, userName]);
+  }, [firstName, lastName, userName])
 
   // Permissions
-  const isPDG = effectiveRole === 'pdg' && roleType === 'global';
-  const isDRH = effectiveRole === 'drh' && roleType === 'global';
-  const isChefAgence = effectiveRole === 'chef_agence';
-  const isGestionnaireStock = effectiveRole === 'gestionnaire_stock';
-  const isCommercial = effectiveRole === 'commercial';
+  const isPDG = effectiveRole === 'pdg' && roleType === 'global'
+  const isDRH = effectiveRole === 'drh' && roleType === 'global'
+  const isChefAgence = effectiveRole === 'chef_agence'
+  const isGestionnaireStock = effectiveRole === 'gestionnaire_stock'
+  const isCommercial = effectiveRole === 'commercial'
+  const isComptable = effectiveRole === 'comptable'
 
-  const canViewAgences = () => isPDG;
-  const canViewUsers = () => isPDG || isDRH;
-  const canViewSales = () => isPDG || isChefAgence || isCommercial;
-  const canViewPurchases = () => isPDG;
-  const canViewSuppliers = () => isPDG;
-  const canViewInventory = () => isPDG || isChefAgence || isGestionnaireStock;
-  const canViewDeliveries = () => isPDG || isChefAgence || isGestionnaireStock;
-  const canViewHR = () => isPDG || isDRH;
-  const canViewAdmin = () => isPDG;
-  
-  // Peut-il changer d'agence ? Seulement s'il a accès à plusieurs agences
-  const canSwitchAgence = () => {
-    if (isPDG || isDRH) return agences.length > 1;
-    // Pour les chefs d'agence, ils ne peuvent changer que si l'API leur donne plusieurs agences
-    const accessibleAgences = agences.filter(a => a.hasAccess);
-    return accessibleAgences.length > 1;
-  };
+  const canViewAgences = () => isPDG
+  const canViewUsers = () => isPDG || isDRH
+  const canViewSales = () => isPDG || isChefAgence || isCommercial
+  const canViewPurchases = () => isPDG
+  const canViewSuppliers = () => isPDG
+  const canViewInventory = () => isPDG || isChefAgence || isGestionnaireStock
+  const canViewDeliveries = () => isPDG || isChefAgence || isGestionnaireStock
+  const canViewHR = () => isPDG || isDRH
+  const canViewAdmin = () => isPDG
+  const canViewComptabilite = () => isPDG || isDRH || isComptable || isChefAgence
+  const canManageAccounting = () => isPDG || isDRH || isComptable
+  const canViewAccountingReports = () => isPDG || isDRH || isComptable || isChefAgence
 
   const getRoleConfig = () => {
-    if (roleType === 'global') return ROLE_GLOBAL_CONFIG[effectiveRole] || ROLE_GLOBAL_CONFIG.autre;
-    return ROLE_AGENCE_CONFIG[effectiveRole] || ROLE_GLOBAL_CONFIG.autre;
-  };
+    if (roleType === 'global') return ROLE_GLOBAL_CONFIG[effectiveRole] || ROLE_GLOBAL_CONFIG.autre
+    return ROLE_AGENCE_CONFIG[effectiveRole] || ROLE_GLOBAL_CONFIG.autre
+  }
 
-  const roleConfig = getRoleConfig();
-  const RoleIcon = roleConfig.icon;
+  const roleConfig = getRoleConfig()
+  const RoleIcon = roleConfig.icon
 
   const handleSectionToggle = (section) => {
-    setOpenSections(prev => ({ ...prev, [section]: !prev[section] }));
-  };
+    setOpenSections(prev => ({ ...prev, [section]: !prev[section] }))
+  }
 
   const changerAgence = (agence) => {
     if (!agence.hasAccess && !isPDG && !isDRH) {
-      // L'utilisateur n'a pas accès à cette agence
-      alert(`Vous n'avez pas accès à l'agence ${agence.nom}`);
-      return;
+      alert(`Vous n'avez pas accès à l'agence ${agence.nom}`)
+      return
     }
     
-    setAgenceCourante(agence);
-    localStorage.setItem('AgenceCourante', JSON.stringify(agence));
+    setAgenceCourante(agence)
+    localStorage.setItem('AgenceCourante', JSON.stringify(agence))
     
     if (userData) {
-      const { role, type } = determineEffectiveRole(userData, agence);
-      setEffectiveRole(role);
-      setRoleType(type);
+      const { role, type } = determineEffectiveRole(userData, agence)
+      setEffectiveRole(role)
+      setRoleType(type)
     }
     
-    setIsAgencesMenuOpen(false);
-    // Recharger la page pour appliquer les nouveaux droits
-    window.location.reload();
-  };
+    setIsAgencesMenuOpen(false)
+    window.location.reload()
+  }
 
   const logoutUser = () => {
-    setIsUserMenuOpen(false);
-    localStorage.removeItem('Token');
-    localStorage.removeItem('User');
-    localStorage.removeItem('AgenceCourante');
-    navigate('/');
-  };
+    setIsUserMenuOpen(false)
+    localStorage.removeItem('Token')
+    localStorage.removeItem('User')
+    localStorage.removeItem('AgenceCourante')
+    navigate('/')
+  }
 
-  // Menu sections COMPLÈTES
   const menuSections = [
     {
       name: 'TABLEAU DE BORD',
@@ -374,147 +439,77 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       items: [
         { id: 'dashboard', text: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', permission: true },
         { id: 'statistiques', text: 'Statistiques', icon: TrendingUp, path: '/statistiques', permission: true },
-        { id: 'analyses', text: 'Analyses', icon: LineChart, path: '/analyses', permission: isPDG }
+        { id: 'analyses', text: 'Analyses', icon: LineChart, path: '/analyses', permission: isPDG || isComptable }
       ]
     },
-   // Menu principal - Dans votre fichier de configuration du menu
-{
-  name: 'COMMERCIAL',
-  icon: ShoppingCart,
-  permission: canViewSales(),
-  items: [
-    { 
-      id: 'dashboard-commercial', 
-      text: 'Tableau de bord', 
-      icon: LayoutDashboard, 
-      path: 'dashboard/ventes', 
-      permission: canViewSales() 
+    {
+      name: 'COMMERCIAL',
+      icon: ShoppingCart,
+      permission: canViewSales(),
+      items: [
+        { id: 'dashboard-commercial', text: 'Tableau de bord', icon: LayoutDashboard, path: '/dashboard/ventes', permission: canViewSales() },
+        { id: 'pos', text: 'Point de Vente', icon: ShoppingBag, path: '/point-de-vente', permission: canViewSales() },
+        { id: 'ventes', text: 'Ventes', icon: ShoppingCart, path: '/ventes', permission: canViewSales(), badge: ventesImpayees },
+        { id: 'clients', text: 'Clients', icon: Users, path: '/clients', permission: canViewSales() },
+        { id: 'devis', text: 'Devis', icon: FileText, path: '/devis', permission: canViewSales() },
+        { id: 'factures', text: 'Factures', icon: Receipt, path: '/factures', permission: canViewSales() },
+        { id: 'paiements', text: 'Paiements', icon: CreditCard, path: '/paiements', permission: canViewSales() }
+      ]
     },
-    { 
-      id: 'pos', 
-      text: 'Point de Vente', 
-      icon: ShoppingBag, 
-      path: '/point-de-vente', 
-      permission: canViewSales() 
+    {
+      name: 'ACHATS',
+      icon: ShoppingBag,
+      permission: canViewPurchases() || canViewSuppliers(),
+      items: [
+        { id: 'fournisseurs', text: 'Fournisseurs', icon: Building2, path: '/fournisseurs', permission: canViewSuppliers(), badge: fournisseursCount },
+        { id: 'commandes', text: 'Commandes', icon: FileText, path: '/commandes-fournisseurs', permission: canViewPurchases(), badge: achatsALivrer },
+        { id: 'receptions', text: 'Réceptions', icon: Truck, path: '/receptions', permission: canViewPurchases() },
+        { id: 'frais', text: 'Frais de réception', icon: DollarSign, path: '/frais', permission: canViewPurchases() },
+        { id: 'catalogue', text: 'Catalogue', icon: ClipboardList, path: '/supplier-catalogs', permission: canViewPurchases() },
+        { id: 'prix', text: 'Historique prix', icon: History, path: '/price-history', permission: canViewPurchases() },
+        { id: 'alertes', text: 'Alertes', icon: AlertTriangle, path: '/purchase-alerts', permission: canViewPurchases(), badge: alertsCount }
+      ]
     },
-    { 
-      id: 'ventes', 
-      text: 'Ventes', 
-      icon: ShoppingCart, 
-      path: '/ventes', 
-      permission: canViewSales(), 
-      badge: ventesImpayees 
+    {
+      name: 'STOCK & LOGISTIQUE',
+      icon: Package,
+      permission: canViewInventory() || canViewDeliveries(),
+      items: [
+        { id: 'categories', text: 'Catégories', icon: Tags, path: '/categories', permission: canViewInventory() },
+        { id: 'produits', text: 'Produits', icon: Package, path: '/produits', permission: canViewInventory() },
+        { id: 'variants', text: 'Variantes', icon: Grid3x3, path: '/variants', permission: canViewInventory() },
+        { id: 'marques', text: 'Marques', icon: Award, path: '/brands', permission: canViewInventory() },
+        { id: 'unites', text: 'Unités', icon: Ruler, path: '/units', permission: canViewInventory() },
+        { id: 'reception', text: 'Réception stock', icon: Truck, path: '/stock-receipt', permission: canViewInventory() },
+        { id: 'stocks', text: 'Stocks', icon: Boxes, path: '/stocks', permission: canViewInventory() },
+        { id: 'add-stock', text: 'Ajouter du stock', icon: Package, path: '/stocks/ajouter', permission: canViewInventory() },
+        { id: 'entrepots', text: 'Entrepôts', icon: Warehouse, path: '/entrepots', permission: canViewInventory() },
+        { id: 'mouvements', text: 'Mouvements', icon: TrendingUp, path: '/mouvements-stock', permission: canViewInventory() },
+        { id: 'transferts', text: 'Transferts', icon: MoveHorizontal, path: '/transferts', permission: canViewInventory() },
+        { id: 'inventaire', text: 'Inventaire', icon: ClipboardCheck, path: '/inventaire', permission: canViewInventory() },
+        { id: 'livraisons', text: 'Livraisons', icon: Truck, path: '/livraisons', permission: canViewDeliveries() }
+      ]
     },
-    { 
-      id: 'clients', 
-      text: 'Clients', 
-      icon: Users, 
-      path: '/clients', 
-      permission: canViewSales() 
+    {
+      name: 'COMPTABILITÉ & FINANCE',
+      icon: Calculator,
+      permission: canViewComptabilite(),
+      items: [
+        { id: 'dashboard-compta', text: 'Tableau de bord', icon: LayoutDashboard, path: '/dashboard/comptabilite', permission: canViewComptabilite() },
+        { id: 'ecritures', text: 'Écritures comptables', icon: Notebook, path: '/ecritures', permission: canManageAccounting(), badge: ecrituresEnAttente },
+        { id: 'journaux', text: 'Journaux', icon: BookOpen, path: '/journaux', permission: canManageAccounting() },
+        { id: 'plan-comptable', text: 'Plan comptable', icon: FileSpreadsheet, path: '/plan-comptable', permission: canManageAccounting() },
+        { id: 'balances', text: 'Balances', icon: Scale, path: '/balances', permission: canViewAccountingReports(), badge: balancesDisponibles },
+        { id: 'factures-comptables', text: 'Factures comptables', icon: ReceiptText, path: '/factures-comptables', permission: canViewAccountingReports(), badge: facturesImpayees },
+        { id: 'reglements', text: 'Règlements', icon: Banknote, path: '/reglements', permission: canViewAccountingReports() },
+        { id: 'tresorerie', text: 'Trésorerie', icon: Wallet, path: '/tresorerie', permission: canViewAccountingReports() },
+        { id: 'compte-resultat', text: 'Compte de résultat', icon: ChartNoAxesColumn, path: '/compte-resultat', permission: canViewAccountingReports() },
+        { id: 'bilan', text: 'Bilan comptable', icon: Landmark, path: '/bilan', permission: canViewAccountingReports() },
+        { id: 'indicateurs', text: 'Indicateurs KPI', icon: PieChart, path: '/indicateurs', permission: canViewAccountingReports() },
+        { id: 'cloture', text: 'Clôture comptable', icon: ClipboardCheck, path: '/cloture', permission: canManageAccounting(), badge: clotureEnCours ? 1 : 0 },
+        { id: 'analyses', text: 'Analyses financières', icon: LineChart, path: '/analyses-financieres', permission: canViewAccountingReports() }
+      ]
     },
-    { 
-      id: 'devis', 
-      text: 'Devis', 
-      icon: FileText, 
-      path: '/devis', 
-      permission: canViewSales() 
-    },
-    { 
-      id: 'factures', 
-      text: 'Factures', 
-      icon: Receipt, 
-      path: '/factures', 
-      permission: canViewSales() 
-    },
-    { 
-      id: 'paiements', 
-      text: 'Paiements', 
-      icon: CreditCard, 
-      path: '/paiements', 
-      permission: canViewSales() 
-    }
-  ]
-},
-{
-  name: 'ACHATS',
-  icon: ShoppingBag,
-  permission: canViewPurchases() || canViewSuppliers(),
-  items: [
-    { 
-      id: 'fournisseurs', 
-      text: 'Fournisseurs', 
-      icon: Building2, 
-      path: '/fournisseurs', 
-      permission: canViewSuppliers(), 
-      badge: fournisseursCount 
-    },
-    { 
-      id: 'commandes', 
-      text: 'Commandes', 
-      icon: FileText, 
-      path: '/commandes-fournisseurs', 
-      permission: canViewPurchases(), 
-      badge: achatsALivrer 
-    },
-    { 
-      id: 'receptions', 
-      text: 'Réceptions', 
-      icon: Truck, 
-      path: '/receptions', 
-      permission: canViewPurchases() 
-    },
-    // 👇 NOUVEAU : Lien vers les frais de réception
-    { 
-      id: 'frais', 
-      text: 'Frais de réception', 
-      icon: DollarSign, 
-      path: '/frais', 
-      permission: canViewPurchases() 
-    },
-    { 
-      id: 'catalogue', 
-      text: 'Catalogue', 
-      icon: ClipboardList, 
-      path: '/supplier-catalogs', 
-      permission: canViewPurchases() 
-    },
-    { 
-      id: 'prix', 
-      text: 'Historique prix', 
-      icon: History, 
-      path: '/price-history', 
-      permission: canViewPurchases() 
-    },
-    { 
-      id: 'alertes', 
-      text: 'Alertes', 
-      icon: AlertTriangle, 
-      path: '/purchase-alerts', 
-      permission: canViewPurchases(), 
-      badge: alertsCount 
-    }
-  ]
-},
-   {
-  name: 'STOCK & LOGISTIQUE',
-  icon: Package,
-  permission: canViewInventory() || canViewDeliveries(),
-  items: [
-    { id: 'categories', text: 'Catégories', icon: Tags, path: '/categories', permission: canViewInventory() },
-    { id: 'produits', text: 'Produits', icon: Package, path: '/produits', permission: canViewInventory() },
-    { id: 'variants', text: 'Variantes', icon: Grid3x3, path: '/variants', permission: canViewInventory() },
-    { id: 'marques', text: 'Marques', icon: Award, path: '/brands', permission: canViewInventory() },
-    { id: 'unites', text: 'Unités', icon: Ruler, path: '/units', permission: canViewInventory() },
-    { id: 'reception', text: 'Réception stock', icon: Truck, path: '/stock-receipt', permission: canViewInventory() },
-    { id: 'stocks', text: 'Stocks', icon: Boxes, path: '/stocks', permission: canViewInventory() },
-    { id: 'add-stock', text: 'Ajouter du stock', icon: Package, path: '/stocks/ajouter', permission: canViewInventory() }, // ← Utilise Package au lieu de Plus si Plus n'est pas disponible
-    { id: 'entrepots', text: 'Entrepôts', icon: Warehouse, path: '/entrepots', permission: canViewInventory() },
-    { id: 'mouvements', text: 'Mouvements', icon: TrendingUp, path: '/mouvements-stock', permission: canViewInventory() },
-    { id: 'transferts', text: 'Transferts', icon: MoveHorizontal, path: '/transferts', permission: canViewInventory() },
-    { id: 'inventaire', text: 'Inventaire', icon: ClipboardCheck, path: '/inventaire', permission: canViewInventory() },
-    { id: 'livraisons', text: 'Livraisons', icon: Truck, path: '/livraisons', permission: canViewDeliveries() }
-  ]
-},
     ...(canViewHR() ? [{
       name: 'RESSOURCES HUMAINES',
       icon: Users,
@@ -524,7 +519,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         { id: 'postes', text: 'Postes', icon: Briefcase, path: '/positions', permission: true },
         { id: 'employes', text: 'Employés', icon: Users, path: '/employees', permission: true },
         { id: 'conges', text: 'Congés', icon: Calendar, path: '/leaves', permission: true, badge: absencesEnAttente },
-        { id: 'pointage', text: 'Pointage', icon: Clock, path: '/attendance', permission: true },
+        { id: 'pointage', text: 'Pointage', icon: ClockIcon, path: '/attendance', permission: true },
         { id: 'paie', text: 'Paie', icon: DollarSign, path: '/payroll', permission: isPDG },
         { id: 'recrutement', text: 'Recrutements', icon: UserPlus, path: '/recruitments', permission: true },
         { id: 'candidats', text: 'Candidats', icon: UserPlus, path: '/candidates', permission: true },
@@ -554,23 +549,23 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         { id: 'support', text: 'Support', icon: HelpCircle, path: '/support', permission: true }
       ]
     }
-  ];
+  ]
 
   // Raccourci clavier recherche
   useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-        e.preventDefault();
-        setIsSearchOpen(true);
+        e.preventDefault()
+        setIsSearchOpen(true)
       }
       if (e.key === 'Escape') {
-        setIsSearchOpen(false);
-        setSearchQuery('');
+        setIsSearchOpen(false)
+        setSearchQuery('')
       }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, []);
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   const searchResults = searchQuery.length > 1 ? 
     menuSections.flatMap(section => 
@@ -579,10 +574,16 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         (item.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
         section.name.toLowerCase().includes(searchQuery.toLowerCase()))
       ).map(item => ({ ...item, section: section.name }))
-    ) : [];
+    ) : []
+
+  const canSwitchAgence = () => {
+    if (isPDG || isDRH) return agences.length > 1
+    const accessibleAgences = agences.filter(a => a.hasAccess)
+    return accessibleAgences.length > 1
+  }
 
   return (
-    <div className="min-h-screen bg-base-200">
+    <div className="min-h-screen bg-gradient-to-br from-base-200 to-base-100">
       
       {/* Overlay recherche */}
       {isSearchOpen && (
@@ -636,8 +637,8 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         </div>
       )}
 
-      {/* Barre de navigation supérieure */}
-      <nav className="fixed top-0 left-0 right-0 z-40 bg-gradient-to-r from-primary to-primary/90 shadow-lg border-b-2 border-accent">
+      {/* Barre de navigation supérieure - style Clients.jsx */}
+      <nav className="fixed top-0 left-0 right-0 z-40 bg-gradient-to-r from-primary to-primary/90 shadow-xl border-b-2 border-accent">
         <div className="px-4 sm:px-6 lg:pl-72">
           <div className="flex items-center justify-between h-16">
             
@@ -658,7 +659,6 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                 {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
               </button>
 
-              {/* Logo - Version Desktop */}
               <Link to="/dashboard" className="hidden lg:flex items-center gap-3 group">
                 <div className="relative">
                   <div className="absolute inset-0 bg-primary-content/20 rounded-xl blur-md group-hover:blur-lg transition-all"></div>
@@ -672,7 +672,6 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                 </div>
               </Link>
 
-              {/* Logo - Version Mobile */}
               <div className="lg:hidden flex items-center gap-2">
                 <div className="w-8 h-8 bg-base-100 rounded-lg flex items-center justify-center border-2 border-accent">
                   <img src={logo} alt="Logo" className="w-6 h-6 object-contain" />
@@ -687,7 +686,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                 <Calendar className="w-4 h-4 text-primary-content/80" />
                 <span className="text-sm font-medium text-primary-content">{formattedDate}</span>
                 <div className="w-px h-4 bg-primary-content/30 mx-1"></div>
-                <Clock className="w-4 h-4 text-primary-content/80" />
+                <ClockIcon className="w-4 h-4 text-primary-content/80" />
                 <span className="text-sm font-medium text-primary-content">{formattedTime}</span>
               </div>
             </div>
@@ -704,7 +703,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                 <Search className="w-5 h-5" />
               </button>
 
-              {/* Sélecteur d'agence - CORRIGÉ pour Code B */}
+              {/* Sélecteur d'agence */}
               {agences.length > 0 && agenceCourante && (
                 <div className="relative">
                   <button
@@ -732,8 +731,8 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                         </div>
                         <div className="max-h-96 overflow-y-auto">
                           {agences.map((agence) => {
-                            const isCurrent = agenceCourante?.id === agence.id;
-                            const hasAccess = agence.hasAccess || isPDG || isDRH;
+                            const isCurrent = agenceCourante?.id === agence.id
+                            const hasAccess = agence.hasAccess || isPDG || isDRH
                             
                             return (
                               <button
@@ -767,7 +766,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                                   <AlertTriangle className="w-4 h-4 text-warning" />
                                 )}
                               </button>
-                            );
+                            )
                           })}
                         </div>
                       </div>
@@ -780,7 +779,20 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
               <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary-content/10">
                 <RoleIcon className="w-4 h-4 text-primary-content" />
                 <span className="text-primary-content text-xs font-medium">{roleConfig.label}</span>
+                {isComptable && (
+                  <span className="badge badge-success badge-xs ml-1">Comptable</span>
+                )}
               </div>
+
+              {/* Badge Trésorerie pour le comptable */}
+              {isComptable && (
+                <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-success/20 border border-success/30">
+                  <Wallet className="w-3.5 h-3.5 text-success" />
+                  <span className={`text-xs font-medium ${tresorerie >= 0 ? 'text-success' : 'text-error'}`}>
+                    {tresorerie >= 0 ? '+' : ''}{tresorerie.toLocaleString()} FCFA
+                  </span>
+                </div>
+              )}
 
               {/* Notifications */}
               <div className="relative">
@@ -813,8 +825,8 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                           <button
                             key={notif.id}
                             onClick={() => {
-                              setIsNotificationsOpen(false);
-                              navigate(notif.link);
+                              setIsNotificationsOpen(false)
+                              navigate(notif.link)
                             }}
                             className="w-full flex items-start gap-3 px-4 py-3 hover:bg-primary/5 transition-colors text-left"
                           >
@@ -886,6 +898,9 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                               {agenceCourante && !isPDG && !isDRH && (
                                 <span className="badge badge-primary badge-sm">{agenceCourante.nom}</span>
                               )}
+                              {isComptable && (
+                                <span className="badge badge-success badge-sm">Comptable</span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -926,7 +941,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         </div>
       </nav>
 
-      {/* Sidebar Desktop - (identique à l'original, gardée intacte) */}
+      {/* Sidebar Desktop - style Clients.jsx */}
       <aside className={`
         fixed left-0 top-16 bottom-0 z-30
         bg-base-100 shadow-xl border-r border-primary/20
@@ -967,6 +982,12 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                     <RoleIcon className="w-3 h-3 mr-1" />
                     {roleConfig.label}
                   </div>
+                  {isComptable && (
+                    <div className="badge badge-success badge-sm mt-1 ml-1">
+                      <Calculator className="w-3 h-3 mr-1" />
+                      Comptable
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -975,10 +996,11 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
           {/* Menu de navigation */}
           <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
             {menuSections.map((section, idx) => {
-              const visibleItems = section.items.filter(item => item.permission);
-              if (visibleItems.length === 0) return null;
-              const SectionIcon = section.icon;
-              const isOpen = openSections[section.name];
+              const visibleItems = section.items.filter(item => item.permission)
+              if (visibleItems.length === 0) return null
+              const SectionIcon = section.icon
+              const isOpen = openSections[section.name]
+              const isComptaSection = section.name === 'COMPTABILITÉ & FINANCE'
               
               return (
                 <div key={idx} className="mb-1">
@@ -988,12 +1010,12 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                       w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200
                       ${!sidebarOpen && 'justify-center'}
                       ${isOpen 
-                        ? 'bg-primary/10 text-primary' 
+                        ? isComptaSection ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'
                         : 'text-base-content/70 hover:bg-primary/5 hover:text-primary'
                       }
                     `}
                   >
-                    <SectionIcon className={`w-5 h-5 ${isOpen ? 'text-primary' : ''}`} />
+                    <SectionIcon className={`w-5 h-5 ${isOpen && isComptaSection ? 'text-success' : isOpen ? 'text-primary' : ''}`} />
                     {sidebarOpen && (
                       <>
                         <span className="flex-1 text-left text-xs font-semibold tracking-wide uppercase">
@@ -1005,10 +1027,10 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                   </button>
                   
                   {sidebarOpen && isOpen && (
-                    <div className="ml-6 mt-2 space-y-1 border-l-2 border-primary pl-4">
+                    <div className={`ml-6 mt-2 space-y-1 ${isComptaSection ? 'border-l-2 border-success' : 'border-l-2 border-primary'} pl-4`}>
                       {visibleItems.map((item) => {
-                        const ItemIcon = item.icon;
-                        const isActive = path === item.path;
+                        const ItemIcon = item.icon
+                        const isActive = path === item.path
                         return (
                           <Link
                             key={item.id}
@@ -1016,25 +1038,25 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                             className={`
                               flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200
                               ${isActive 
-                                ? 'bg-primary text-primary-content shadow-md' 
+                                ? isComptaSection ? 'bg-success text-success-content shadow-md' : 'bg-primary text-primary-content shadow-md'
                                 : 'text-base-content/60 hover:bg-primary/10 hover:text-primary'
                               }
                             `}
                           >
-                            <ItemIcon className={`w-4 h-4 ${isActive ? 'text-primary-content' : ''}`} />
+                            <ItemIcon className={`w-4 h-4 ${isActive ? (isComptaSection ? 'text-success-content' : 'text-primary-content') : ''}`} />
                             <span className="flex-1">{item.text}</span>
                             {item.badge > 0 && (
-                              <span className={`badge badge-error badge-xs ${isActive ? 'badge-outline' : ''}`}>
+                              <span className={`badge ${isComptaSection && isActive ? 'badge-outline badge-error' : 'badge-error'} badge-xs`}>
                                 {item.badge > 99 ? '99+' : item.badge}
                               </span>
                             )}
                           </Link>
-                        );
+                        )
                       })}
                     </div>
                   )}
                 </div>
-              );
+              )
             })}
           </nav>
 
@@ -1062,7 +1084,12 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         <div className="p-4 sm:p-6">
           {isLoading ? (
             <div className="flex items-center justify-center h-64">
-              <span className="loading loading-spinner loading-lg text-primary"></span>
+              <div className="text-center space-y-6">
+                <div className="loading loading-spinner loading-lg text-primary w-16 h-16"></div>
+                <p className="text-xl font-semibold text-base-content/70 animate-pulse">
+                  Chargement de l'application...
+                </p>
+              </div>
             </div>
           ) : (
             content
@@ -1104,29 +1131,32 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
 
             <div className="py-4 px-3 space-y-1">
               {menuSections.map((section, idx) => {
-                const visibleItems = section.items.filter(item => item.permission);
-                if (visibleItems.length === 0) return null;
-                const SectionIcon = section.icon;
-                const isOpen = openSections[section.name];
+                const visibleItems = section.items.filter(item => item.permission)
+                if (visibleItems.length === 0) return null
+                const SectionIcon = section.icon
+                const isOpen = openSections[section.name]
+                const isComptaSection = section.name === 'COMPTABILITÉ & FINANCE'
                 
                 return (
                   <div key={idx} className="mb-2">
                     <button
                       onClick={() => handleSectionToggle(section.name)}
-                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-primary/10 transition-all"
+                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all ${
+                        isComptaSection ? 'hover:bg-success/10' : 'hover:bg-primary/10'
+                      }`}
                     >
                       <div className="flex items-center gap-3">
-                        <SectionIcon className="w-5 h-5 text-primary" />
+                        <SectionIcon className={`w-5 h-5 ${isComptaSection ? 'text-success' : 'text-primary'}`} />
                         <span className="text-xs font-bold uppercase">{section.name}</span>
                       </div>
                       {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </button>
                     
                     {isOpen && (
-                      <div className="ml-6 mt-2 space-y-1 border-l-2 border-primary pl-4">
+                      <div className={`ml-6 mt-2 space-y-1 ${isComptaSection ? 'border-l-2 border-success' : 'border-l-2 border-primary'} pl-4`}>
                         {visibleItems.map((item) => {
-                          const ItemIcon = item.icon;
-                          const isActive = path === item.path;
+                          const ItemIcon = item.icon
+                          const isActive = path === item.path
                           return (
                             <Link
                               key={item.id}
@@ -1134,7 +1164,10 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                               onClick={() => setIsMobileMenuOpen(false)}
                               className={`
                                 flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all
-                                ${isActive ? 'bg-primary text-primary-content' : 'hover:bg-primary/10'}
+                                ${isActive 
+                                  ? isComptaSection ? 'bg-success text-success-content' : 'bg-primary text-primary-content'
+                                  : 'hover:bg-primary/10'
+                                }
                               `}
                             >
                               <ItemIcon className="w-4 h-4" />
@@ -1143,19 +1176,36 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                                 <span className="badge badge-error badge-xs ml-auto">{item.badge > 99 ? '99+' : item.badge}</span>
                               )}
                             </Link>
-                          );
+                          )
                         })}
                       </div>
                     )}
                   </div>
-                );
+                )
               })}
             </div>
           </div>
         </>
       )}
-    </div>
-  );
-};
 
-export default Navbar;
+      <style>{`
+        @keyframes slideDown {
+          from { transform: translateY(-20px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        .animate-slideDown {
+          animation: slideDown 0.3s ease-out;
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+        .animate-pulse {
+          animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+      `}</style>
+    </div>
+  )
+}
+
+export default Navbar
