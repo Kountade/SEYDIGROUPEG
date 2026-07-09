@@ -1,25 +1,30 @@
 // src/components/users/UtilisateurDetail.jsx
-import React, { useEffect, useState } from 'react'
-import { useNavigate, useParams, Link } from 'react-router-dom'
-import AxiosInstance from '../AxiosInstance'
+import React, { useEffect, useState } from 'react';
+import { useNavigate, useParams, Link } from 'react-router-dom';
+import AxiosInstance from '../AxiosInstance';
 import { 
   User, Mail, Phone, MapPin, Calendar, Building2, Shield, 
   Edit, ArrowLeft, CheckCircle, XCircle, Briefcase, 
   CreditCard, IdCard, Store, Crown, AlertCircle, 
   UserCheck, UserX, Package, ShoppingCart, Clock, X,
-  Users, HardDrive, Award, Sparkles, Trophy
-} from 'lucide-react'
+  Users, HardDrive, Award, Sparkles, Trophy, RefreshCw
+} from 'lucide-react';
 
 const UtilisateurDetail = () => {
-  const navigate = useNavigate()
-  const { id } = useParams()
+  const navigate = useNavigate();
+  const { id } = useParams();
   
-  const [utilisateur, setUtilisateur] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [openStatusDialog, setOpenStatusDialog] = useState(false)
-  const [statusLoading, setStatusLoading] = useState(false)
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', type: 'success' })
+  const [utilisateur, setUtilisateur] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [notification, setNotification] = useState({ show: false, message: '', type: 'success', details: null });
+  const [openStatusDialog, setOpenStatusDialog] = useState(false);
+  const [statusLoading, setStatusLoading] = useState(false);
+
+  const showNotification = (message, type = 'success', details = null) => {
+    setNotification({ show: true, message, type, details });
+    setTimeout(() => setNotification({ show: false, message: '', type: 'success', details: null }), 8000);
+  };
 
   // Configuration des rôles
   const roleConfig = {
@@ -29,23 +34,23 @@ const UtilisateurDetail = () => {
     gestionnaire_stock: { label: 'Gestionnaire stock', icon: HardDrive, color: 'info', bgColor: 'bg-info/10', textColor: 'text-info', description: 'Gestion des stocks et logistique' },
     commercial: { label: 'Commercial', icon: ShoppingCart, color: 'warning', bgColor: 'bg-warning/10', textColor: 'text-warning', description: 'Force de vente' },
     autre: { label: 'Utilisateur', icon: User, color: 'neutral', bgColor: 'bg-base-200', textColor: 'text-base-content/70', description: 'Compte standard' }
-  }
+  };
 
   const formatDate = (dateString) => {
-    if (!dateString) return 'Non renseigné'
+    if (!dateString) return 'Non renseigné';
     try {
       return new Date(dateString).toLocaleDateString('fr-FR', {
         day: '2-digit',
         month: 'long',
         year: 'numeric'
-      })
+      });
     } catch {
-      return 'Non renseigné'
+      return 'Non renseigné';
     }
-  }
+  };
 
   const formatDateTime = (dateString) => {
-    if (!dateString) return 'Non renseigné'
+    if (!dateString) return 'Non renseigné';
     try {
       return new Date(dateString).toLocaleDateString('fr-FR', {
         day: '2-digit',
@@ -53,199 +58,194 @@ const UtilisateurDetail = () => {
         year: 'numeric',
         hour: '2-digit',
         minute: '2-digit'
-      })
+      });
     } catch {
-      return 'Non renseigné'
+      return 'Non renseigné';
     }
-  }
+  };
 
   const fetchUserData = async () => {
-    setLoading(true)
-    setError(null)
+    setLoading(true);
+    setError(null);
     try {
-      const response = await AxiosInstance.get(`/users/${id}/`)
-      setUtilisateur(response.data)
+      const response = await AxiosInstance.get(`/users/${id}/`);
+      setUtilisateur(response.data);
     } catch (error) {
-      console.error('Erreur chargement utilisateur:', error)
+      console.error('Erreur chargement utilisateur:', error);
       if (error.response?.status === 404) {
-        setError('Utilisateur non trouvé')
+        setError('Utilisateur non trouvé');
       } else {
-        setError('Erreur lors du chargement des données')
+        setError('Erreur lors du chargement des données');
       }
+      showNotification(error.message || 'Erreur de chargement', 'error');
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   useEffect(() => {
     if (id) {
-      fetchUserData()
+      fetchUserData();
     }
-  }, [id])
+  }, [id]);
 
   const handleToggleStatus = async () => {
-    if (!utilisateur) return
-    setStatusLoading(true)
+    if (!utilisateur) return;
+    setStatusLoading(true);
     try {
       await AxiosInstance.patch(`/users/${utilisateur.id}/`, {
         is_active: !utilisateur.is_active
-      })
-      setSnackbar({ 
-        open: true, 
-        message: `Utilisateur ${utilisateur.is_active ? 'désactivé' : 'activé'} avec succès`, 
-        type: 'success' 
-      })
-      fetchUserData()
-      setOpenStatusDialog(false)
+      });
+      showNotification(`Utilisateur ${utilisateur.is_active ? 'désactivé' : 'activé'} avec succès`, 'success');
+      fetchUserData();
+      setOpenStatusDialog(false);
     } catch (error) {
-      console.error('Erreur:', error)
-      setSnackbar({ open: true, message: 'Erreur lors de la modification', type: 'error' })
+      console.error('Erreur:', error);
+      showNotification('Erreur lors de la modification du statut', 'error');
     } finally {
-      setStatusLoading(false)
+      setStatusLoading(false);
     }
-  }
+  };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-base-200">
-        <div className="text-center">
-          <div className="loading loading-spinner loading-lg text-primary"></div>
-          <p className="mt-4 text-base-content/60">Chargement des informations...</p>
+      <div className="flex items-center justify-center h-[calc(100vh-200px)]">
+        <div className="text-center space-y-6">
+          <div className="loading loading-spinner loading-lg text-primary w-16 h-16"></div>
+          <p className="text-xl font-semibold text-base-content/70 animate-pulse">
+            Chargement des informations...
+          </p>
         </div>
       </div>
-    )
+    );
   }
 
   if (error || !utilisateur) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-base-200">
+      <div className="flex items-center justify-center h-[calc(100vh-200px)]">
         <div className="text-center">
-          <AlertCircle className="h-16 w-16 text-error mx-auto mb-4" />
+          <AlertCircle className="w-16 h-16 text-error mx-auto mb-4" />
           <h2 className="text-xl font-bold text-base-content mb-2">{error || 'Utilisateur non trouvé'}</h2>
           <p className="text-base-content/60 mb-4">L'utilisateur que vous recherchez n'existe pas ou a été supprimé.</p>
           <button onClick={() => navigate('/utilisateurs')} className="btn btn-primary gap-2">
-            <ArrowLeft className="w-4 h-4" />
-            Retour à la liste
+            <ArrowLeft className="w-4 h-4" /> Retour à la liste
           </button>
         </div>
       </div>
-    )
+    );
   }
 
-  const roleInfo = roleConfig[utilisateur.role_global] || roleConfig.autre
-  const RoleIcon = roleInfo.icon
-  const nomComplet = `${utilisateur.first_name || ''} ${utilisateur.last_name || ''}`.trim() || utilisateur.email?.split('@')[0] || 'Utilisateur'
+  const roleInfo = roleConfig[utilisateur.role_global] || roleConfig.autre;
+  const RoleIcon = roleInfo.icon;
+  const nomComplet = `${utilisateur.first_name || ''} ${utilisateur.last_name || ''}`.trim() || utilisateur.email?.split('@')[0] || 'Utilisateur';
 
   return (
-    <div className="min-h-screen bg-base-200 py-6 px-4">
-      <div className="w-full max-w-6xl mx-auto">
-        
-        {/* Snackbar */}
-        {snackbar.open && (
-          <div className="fixed bottom-4 right-4 z-50 animate-slide-in">
-            <div className={`alert shadow-xl ${snackbar.type === 'success' ? 'alert-success' : 'alert-error'}`}>
-              <div className="flex items-center gap-2">
-                {snackbar.type === 'success' ? <CheckCircle className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
-                <span>{snackbar.message}</span>
-              </div>
-              <button onClick={() => setSnackbar({ ...snackbar, open: false })} className="btn btn-sm btn-ghost">✕</button>
-            </div>
+    <div className="space-y-6 p-4 lg:p-6">
+      {/* Notification */}
+      {notification.show && (
+        <div className="fixed top-20 right-6 z-50 animate-slideDown max-w-md">
+          <div className={`alert ${notification.type === 'success' ? 'alert-success' : notification.type === 'warning' ? 'alert-warning' : 'alert-error'} shadow-lg`}>
+            {notification.type === 'success' ? (
+              <CheckCircle className="w-5 h-5 flex-shrink-0" />
+            ) : (
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+            )}
+            <span className="font-semibold whitespace-pre-line">{notification.message}</span>
+            {notification.details && (
+              <details className="text-xs">
+                <summary className="cursor-pointer">Détails</summary>
+                <pre className="mt-1 p-1 bg-black/5 rounded">{JSON.stringify(notification.details, null, 2)}</pre>
+              </details>
+            )}
+            <button 
+              className="btn btn-ghost btn-xs btn-circle"
+              onClick={() => setNotification({ ...notification, show: false })}
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Bouton retour */}
-        <div className="mb-4">
-          <Link
-            to="/utilisateurs"
-            className="btn btn-ghost btn-sm gap-2 text-base-content/70 hover:text-primary transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Retour à la liste
+      {/* En-tête */}
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div>
+          <h1 className="text-4xl font-black text-base-content mb-2 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+            {nomComplet}
+          </h1>
+          <p className="text-base text-base-content/60">
+            {utilisateur.email}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <button onClick={fetchUserData} className="btn btn-outline gap-2">
+            <RefreshCw className="w-4 h-4" /> Actualiser
+          </button>
+          <Link to="/utilisateurs" className="btn btn-outline gap-2">
+            <ArrowLeft className="w-4 h-4" /> Retour
           </Link>
+          <Link to={`/utilisateurs/${id}/edit`} className="btn btn-secondary gap-2">
+            <Edit className="w-4 h-4" /> Modifier
+          </Link>
+          <button 
+            onClick={() => setOpenStatusDialog(true)}
+            className={`btn gap-2 ${utilisateur.is_active ? 'btn-warning' : 'btn-success'} text-white`}
+          >
+            {utilisateur.is_active ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
+            {utilisateur.is_active ? 'Désactiver' : 'Activer'}
+          </button>
         </div>
+      </div>
 
-        {/* En-tête */}
-        <div className="bg-gradient-to-r from-primary to-primary/80 rounded-2xl shadow-lg mb-6 overflow-hidden">
-          <div className="p-6 md:p-8">
-            <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
-              {/* Avatar */}
-              <div className="relative">
-                <div className="w-24 h-24 rounded-2xl bg-white/10 flex items-center justify-center shadow-lg border-2 border-white/20">
-                  <span className="text-4xl font-bold text-white">
-                    {nomComplet.charAt(0).toUpperCase()}
-                  </span>
-                </div>
-                <div className={`absolute -bottom-2 -right-2 w-6 h-6 rounded-full ${utilisateur.is_active ? 'bg-success' : 'bg-error'} border-2 border-white`}></div>
-              </div>
-              
-              {/* Infos principales */}
-              <div className="flex-1">
-                <div className="flex flex-wrap items-center gap-2 mb-2">
-                  <h1 className="text-2xl md:text-3xl font-bold text-white">{nomComplet}</h1>
-                  <div className={`badge ${roleInfo.bgColor} ${roleInfo.textColor} gap-1`}>
-                    <RoleIcon className="w-3 h-3" />
-                    {roleInfo.label}
-                  </div>
-                  <div className={`badge ${utilisateur.is_active ? 'badge-success' : 'badge-error'} gap-1`}>
-                    {utilisateur.is_active ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                    {utilisateur.is_active ? 'Actif' : 'Inactif'}
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-4 text-white/80 text-sm">
-                  <div className="flex items-center gap-1">
-                    <Mail className="w-4 h-4" />
-                    {utilisateur.email}
-                  </div>
-                  {utilisateur.phone && (
-                    <div className="flex items-center gap-1">
-                      <Phone className="w-4 h-4" />
-                      {utilisateur.phone}
-                    </div>
-                  )}
-                  {utilisateur.employee_id && (
-                    <div className="flex items-center gap-1">
-                      <IdCard className="w-4 h-4" />
-                      Matricule: {utilisateur.employee_id}
-                    </div>
-                  )}
-                </div>
-              </div>
-              
-              {/* Actions */}
-              <div className="flex gap-2">
-                <Link 
-                  to={`/utilisateurs/${id}/edit`}
-                  className="btn btn-accent gap-2"
-                >
-                  <Edit className="w-4 h-4" />
-                  Modifier
-                </Link>
-                <button 
-                  onClick={() => setOpenStatusDialog(true)}
-                  className={`btn gap-2 ${utilisateur.is_active ? 'btn-warning' : 'btn-success'} text-white`}
-                >
-                  {utilisateur.is_active ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
-                  {utilisateur.is_active ? 'Désactiver' : 'Activer'}
-                </button>
-              </div>
-            </div>
+      {/* Statistiques / Résumé */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300 p-4">
+          <div className="stat-figure text-primary"><User className="w-6 h-6" /></div>
+          <div className="stat-title text-sm font-semibold">Rôle</div>
+          <div className="stat-value text-2xl font-black flex items-center gap-2">
+            <span className={`badge ${roleInfo.bgColor} ${roleInfo.textColor} gap-1 py-2 px-3`}>
+              <RoleIcon className="w-4 h-4" /> {roleInfo.label}
+            </span>
           </div>
         </div>
+        <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300 p-4">
+          <div className="stat-figure text-success"><CheckCircle className="w-6 h-6" /></div>
+          <div className="stat-title text-sm font-semibold">Statut</div>
+          <div className="stat-value text-2xl font-black flex items-center gap-2">
+            <span className={`badge ${utilisateur.is_active ? 'badge-success' : 'badge-error'} gap-1 py-2 px-3`}>
+              {utilisateur.is_active ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+              {utilisateur.is_active ? 'Actif' : 'Inactif'}
+            </span>
+          </div>
+        </div>
+        <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300 p-4">
+          <div className="stat-figure text-info"><Building2 className="w-6 h-6" /></div>
+          <div className="stat-title text-sm font-semibold">Agences</div>
+          <div className="stat-value text-2xl font-black">{utilisateur.roles_agence?.length || 0}</div>
+        </div>
+        <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300 p-4">
+          <div className="stat-figure text-warning"><Clock className="w-6 h-6" /></div>
+          <div className="stat-title text-sm font-semibold">Dernière connexion</div>
+          <div className="stat-value text-lg font-black truncate">
+            {utilisateur.last_login ? formatDate(utilisateur.last_login) : 'Jamais'}
+          </div>
+        </div>
+      </div>
 
-        {/* Grille des informations */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* Colonne gauche - Informations personnelles */}
-          <div className="lg:col-span-2 space-y-6">
+      {/* Carte principale */}
+      <div className="bg-base-100 rounded-xl shadow-xl border border-base-300 overflow-hidden">
+        <div className="p-4 lg:p-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
-            {/* Carte informations personnelles */}
-            <div className="card bg-base-100 shadow-xl border border-base-200">
-              <div className="card-body">
-                <h2 className="card-title text-base-content flex items-center gap-2">
-                  <User className="h-5 w-5 text-primary" />
+            {/* Colonne gauche - Informations personnelles (2/3) */}
+            <div className="lg:col-span-2 space-y-6">
+              
+              {/* Carte informations personnelles */}
+              <div className="bg-base-200/50 rounded-xl p-6 border border-base-300">
+                <h2 className="text-lg font-semibold text-primary mb-4 flex items-center gap-2">
+                  <User className="h-5 w-5" />
                   Informations personnelles
                 </h2>
-                <div className="divider my-2"></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Prénom</label>
@@ -269,16 +269,13 @@ const UtilisateurDetail = () => {
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Carte adresse */}
-            <div className="card bg-base-100 shadow-xl border border-base-200">
-              <div className="card-body">
-                <h2 className="card-title text-base-content flex items-center gap-2">
-                  <MapPin className="h-5 w-5 text-primary" />
+              {/* Carte adresse */}
+              <div className="bg-base-200/50 rounded-xl p-6 border border-base-300">
+                <h2 className="text-lg font-semibold text-primary mb-4 flex items-center gap-2">
+                  <MapPin className="h-5 w-5" />
                   Adresse
                 </h2>
-                <div className="divider my-2"></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="md:col-span-2">
                     <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Adresse</label>
@@ -290,16 +287,13 @@ const UtilisateurDetail = () => {
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Carte informations professionnelles */}
-            <div className="card bg-base-100 shadow-xl border border-base-200">
-              <div className="card-body">
-                <h2 className="card-title text-base-content flex items-center gap-2">
-                  <Briefcase className="h-5 w-5 text-primary" />
+              {/* Carte informations professionnelles */}
+              <div className="bg-base-200/50 rounded-xl p-6 border border-base-300">
+                <h2 className="text-lg font-semibold text-primary mb-4 flex items-center gap-2">
+                  <Briefcase className="h-5 w-5" />
                   Informations professionnelles
                 </h2>
-                <div className="divider my-2"></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Date d'embauche</label>
@@ -312,19 +306,16 @@ const UtilisateurDetail = () => {
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* Colonne droite - Rôles et métadonnées */}
-          <div className="space-y-6">
-            
-            {/* Carte rôle global */}
-            <div className="card bg-base-100 shadow-xl border border-base-200">
-              <div className="card-body">
-                <h2 className="card-title text-base-content flex items-center gap-2">
-                  <Shield className="h-5 w-5 text-primary" />
+            {/* Colonne droite - Rôles et métadonnées (1/3) */}
+            <div className="space-y-6">
+              
+              {/* Carte rôle global */}
+              <div className="bg-base-200/50 rounded-xl p-6 border border-base-300">
+                <h2 className="text-lg font-semibold text-primary mb-4 flex items-center gap-2">
+                  <Shield className="h-5 w-5" />
                   Rôle global
                 </h2>
-                <div className="divider my-2"></div>
                 <div className={`p-4 rounded-xl ${roleInfo.bgColor} border border-${roleInfo.color}/20`}>
                   <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-lg bg-${roleInfo.color}/20`}>
@@ -337,21 +328,19 @@ const UtilisateurDetail = () => {
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Carte rôles par agence */}
-            {utilisateur.roles_agence && utilisateur.roles_agence.length > 0 && (
-              <div className="card bg-base-100 shadow-xl border border-base-200">
-                <div className="card-body">
-                  <h2 className="card-title text-base-content flex items-center gap-2">
-                    <Building2 className="h-5 w-5 text-primary" />
+              {/* Carte rôles par agence */}
+              {utilisateur.roles_agence && utilisateur.roles_agence.length > 0 && (
+                <div className="bg-base-200/50 rounded-xl p-6 border border-base-300">
+                  <h2 className="text-lg font-semibold text-primary mb-4 flex items-center gap-2">
+                    <Building2 className="h-5 w-5" />
                     Rôles par agence
+                    <span className="badge badge-primary badge-sm">{utilisateur.roles_agence.length}</span>
                   </h2>
-                  <div className="divider my-2"></div>
                   <div className="space-y-3">
                     {utilisateur.roles_agence.map((role, idx) => {
-                      const roleInfoAgence = roleConfig[role.role] || roleConfig.autre
-                      const RoleAgenceIcon = roleInfoAgence.icon
+                      const roleInfoAgence = roleConfig[role.role] || roleConfig.autre;
+                      const RoleAgenceIcon = roleInfoAgence.icon;
                       return (
                         <div key={idx} className={`p-3 rounded-lg ${roleInfoAgence.bgColor} border border-${roleInfoAgence.color}/20`}>
                           <div className="flex items-start gap-3">
@@ -365,21 +354,18 @@ const UtilisateurDetail = () => {
                             </div>
                           </div>
                         </div>
-                      )
+                      );
                     })}
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Carte métadonnées */}
-            <div className="card bg-base-100 shadow-xl border border-base-200">
-              <div className="card-body">
-                <h2 className="card-title text-base-content flex items-center gap-2">
-                  <Clock className="h-5 w-5 text-primary" />
+              {/* Carte métadonnées */}
+              <div className="bg-base-200/50 rounded-xl p-6 border border-base-300">
+                <h2 className="text-lg font-semibold text-primary mb-4 flex items-center gap-2">
+                  <Clock className="h-5 w-5" />
                   Métadonnées
                 </h2>
-                <div className="divider my-2"></div>
                 <div className="space-y-3">
                   <div>
                     <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Date de création</label>
@@ -398,19 +384,36 @@ const UtilisateurDetail = () => {
             </div>
           </div>
         </div>
+
+        {/* Actions */}
+        <div className="flex flex-col sm:flex-row justify-end gap-3 p-4 lg:p-6 bg-base-200/50 border-t border-base-300">
+          <Link to="/utilisateurs" className="btn btn-ghost gap-2">
+            Retour à la liste
+          </Link>
+          <Link to={`/utilisateurs/${id}/edit`} className="btn btn-secondary gap-2">
+            <Edit className="w-4 h-4" /> Modifier
+          </Link>
+          <button 
+            onClick={() => setOpenStatusDialog(true)}
+            className={`btn gap-2 ${utilisateur.is_active ? 'btn-warning' : 'btn-success'} text-white`}
+          >
+            {utilisateur.is_active ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
+            {utilisateur.is_active ? 'Désactiver' : 'Activer'}
+          </button>
+        </div>
       </div>
 
       {/* Modal confirmation changement de statut */}
       {openStatusDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-base-100 rounded-2xl shadow-xl max-w-md w-full mx-4 overflow-hidden">
-            <div className={`p-4 text-center ${utilisateur.is_active ? 'bg-warning' : 'bg-success'}`}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-base-100 rounded-2xl shadow-xl max-w-md w-full overflow-hidden animate-slideDown">
+            <div className={`p-6 text-center ${utilisateur.is_active ? 'bg-warning/10' : 'bg-success/10'}`}>
               {utilisateur.is_active ? (
-                <UserX className="h-12 w-12 text-white mx-auto mb-2" />
+                <UserX className="h-12 w-12 text-warning mx-auto mb-2" />
               ) : (
-                <UserCheck className="h-12 w-12 text-white mx-auto mb-2" />
+                <UserCheck className="h-12 w-12 text-success mx-auto mb-2" />
               )}
-              <h3 className="text-xl font-bold text-white">
+              <h3 className="text-xl font-bold text-base-content">
                 {utilisateur.is_active ? 'Désactiver' : 'Activer'} l'utilisateur
               </h3>
             </div>
@@ -428,14 +431,14 @@ const UtilisateurDetail = () => {
                   : 'L\'utilisateur pourra à nouveau se connecter.'}
               </p>
             </div>
-            <div className="flex gap-3 p-4 bg-base-200">
+            <div className="flex gap-3 p-4 bg-base-200 border-t border-base-300">
               <button onClick={() => setOpenStatusDialog(false)} className="btn btn-ghost flex-1">
                 Annuler
               </button>
               <button 
                 onClick={handleToggleStatus} 
                 disabled={statusLoading}
-                className={`btn flex-1 text-white ${utilisateur.is_active ? 'btn-warning' : 'btn-success'}`}
+                className={`btn flex-1 gap-2 ${utilisateur.is_active ? 'btn-warning' : 'btn-success'} text-white`}
               >
                 {statusLoading ? <span className="loading loading-spinner loading-sm"></span> : (utilisateur.is_active ? 'Désactiver' : 'Activer')}
               </button>
@@ -443,8 +446,18 @@ const UtilisateurDetail = () => {
           </div>
         </div>
       )}
-    </div>
-  )
-}
 
-export default UtilisateurDetail
+      <style>{`
+        @keyframes slideDown {
+          from { transform: translateY(-20px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        .animate-slideDown {
+          animation: slideDown 0.3s ease-out;
+        }
+      `}</style>
+    </div>
+  );
+};
+
+export default UtilisateurDetail;
