@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
+import TicketPOS from './TicketPOS'  // ✅ Import du ticket POS
 import {
   Plus,
   Minus,
@@ -56,10 +57,11 @@ const PointDeVente = () => {
   const cartRef = useRef(null)
 
   // ============================================================
-  // ÉTATS - LOGIQUE DU CODE 1
+  // ÉTATS
   // ============================================================
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [printing, setPrinting] = useState(false)  // ✅ État pour l'impression
   const [products, setProducts] = useState([])
   const [clients, setClients] = useState([])
   const [selectedClient, setSelectedClient] = useState(null)
@@ -70,8 +72,9 @@ const PointDeVente = () => {
   const [currentUser, setCurrentUser] = useState(null)
   const [loadingUser, setLoadingUser] = useState(true)
   const [notes, setNotes] = useState('')
+  const [lastVente, setLastVente] = useState(null)  // ✅ Stocker la dernière vente
   
-  // Panier (items) - MÊME LOGIQUE QUE VenteForm
+  // Panier (items)
   const [items, setItems] = useState([])
   const [totals, setTotals] = useState({ subtotal: 0, tax_amount: 0, total: 0 })
 
@@ -80,7 +83,7 @@ const PointDeVente = () => {
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [categories, setCategories] = useState([])
 
-  // Design additions (CODE 2)
+  // Design additions
   const [viewMode, setViewMode] = useState('grid')
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(12)
@@ -88,7 +91,7 @@ const PointDeVente = () => {
   const [sortDirection, setSortDirection] = useState('asc')
 
   // ============================================================
-  // 1. Chargement de l'utilisateur, agence, entrepôt (CODE 1)
+  // 1. Chargement de l'utilisateur, agence, entrepôt
   // ============================================================
   useEffect(() => {
     const fetchCurrentUser = async () => {
@@ -138,7 +141,7 @@ const PointDeVente = () => {
   };
 
   // ============================================================
-  // 2. Chargement des produits (CODE 1)
+  // 2. Chargement des produits
   // ============================================================
   useEffect(() => {
     if (!entrepot || !entrepot.id) return;
@@ -180,7 +183,7 @@ const PointDeVente = () => {
   }, [entrepot]);
 
   // ============================================================
-  // 3. Chargement des clients (CODE 1)
+  // 3. Chargement des clients
   // ============================================================
   useEffect(() => {
     const fetchClients = async () => {
@@ -195,7 +198,7 @@ const PointDeVente = () => {
   }, []);
 
   // ============================================================
-  // 4. Gestion du panier (items) - CODE 1
+  // 4. Gestion du panier (items)
   // ============================================================
   const isProductAlreadyAdded = (productId) => {
     return items.some(item => item.product_id === productId);
@@ -291,7 +294,7 @@ const PointDeVente = () => {
   };
 
   // ============================================================
-  // 5. Calcul des totaux (CODE 1)
+  // 5. Calcul des totaux
   // ============================================================
   useEffect(() => {
     const subtotal = items.reduce((sum, item) => sum + (item.total || 0), 0);
@@ -301,7 +304,7 @@ const PointDeVente = () => {
   }, [items]);
 
   // ============================================================
-  // 6. Soumission de la vente (CODE 1)
+  // 6. Soumission de la vente + Impression du ticket
   // ============================================================
   const handleSubmit = async () => {
     const emptyItems = items.filter(item => !item.product_id);
@@ -354,11 +357,41 @@ const PointDeVente = () => {
     };
 
     try {
-      await AxiosInstance.post('/ventes/', payload);
+      const response = await AxiosInstance.post('/ventes/', payload);
+      const venteData = response.data;
+      
       showNotification('Vente créée avec succès !', 'success');
+      
+      // Stocker la vente pour l'impression
+      setLastVente(venteData);
+      
+      // Vider le panier
       setItems([]);
       setSelectedClient(null);
       setNotes('');
+      
+      // ✅ IMPRESSION DU TICKET POS
+      try {
+        setPrinting(true);
+        const ticketData = {
+          ...venteData,
+          items_data: venteData.items || [],
+          client: selectedClient || {},
+          payment_method: 'Especes',
+          paid_amount: parseFloat(venteData.montant_paye) || 0,
+          remaining_amount: parseFloat(venteData.reste_a_payer) || 0
+        };
+        
+        await TicketPOS(ticketData);
+        showNotification('Ticket POS généré avec succès !', 'success');
+        
+      } catch (printError) {
+        console.error('Erreur impression ticket:', printError);
+        showNotification('Vente créée mais erreur lors de l\'impression du ticket', 'warning');
+      } finally {
+        setPrinting(false);
+      }
+      
     } catch (error) {
       console.error(error);
       let errorMessage = 'Erreur lors de la création';
@@ -372,7 +405,7 @@ const PointDeVente = () => {
   };
 
   // ============================================================
-  // 7. Notification (CODE 1)
+  // 7. Notification
   // ============================================================
   const showNotification = (message, type = 'success', details = null) => {
     setNotification({ show: true, message, type, details });
@@ -417,7 +450,7 @@ const PointDeVente = () => {
   }
 
   // ============================================================
-  // 9. Filtrage et tri (CODE 2 design)
+  // 9. Filtrage et tri
   // ============================================================
   const filteredProducts = React.useMemo(() => {
     let filtered = products
@@ -481,11 +514,11 @@ const PointDeVente = () => {
   }
 
   // ============================================================
-  // 10. RENDU - DESIGN DU CODE 2
+  // 10. RENDU
   // ============================================================
   return (
     <div className="space-y-6 p-4 lg:p-6">
-      {/* Notification - STYLE CODE 2 */}
+      {/* Notification */}
       {notification.show && (
         <div className="fixed top-20 right-6 z-50 animate-slideDown max-w-md">
           <div className={`alert ${notification.type === 'success' ? 'alert-success' : notification.type === 'warning' ? 'alert-warning' : 'alert-error'} shadow-lg`}>
@@ -504,7 +537,7 @@ const PointDeVente = () => {
         </div>
       )}
 
-      {/* En-tête - STYLE CODE 2 */}
+      {/* En-tête */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <h1 className="text-4xl font-black text-base-content mb-2 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
@@ -533,7 +566,7 @@ const PointDeVente = () => {
         </div>
       </div>
 
-      {/* Sélecteur d'entrepôt et client - STYLE CODE 2 */}
+      {/* Sélecteur d'entrepôt et client */}
       <div className="bg-base-100 rounded-xl shadow-md border border-base-300 p-4 lg:p-6">
         <div className="flex flex-col lg:flex-row gap-4">
           <div className="flex-1 flex items-center gap-3">
@@ -567,7 +600,7 @@ const PointDeVente = () => {
         </div>
       </div>
 
-      {/* Filtres et recherche - STYLE CODE 2 */}
+      {/* Filtres et recherche */}
       <div className="bg-base-100 rounded-xl shadow-md border border-base-300 p-4 lg:p-6">
         <div className="flex flex-col lg:flex-row gap-4">
           <div className="flex-1">
@@ -649,7 +682,7 @@ const PointDeVente = () => {
         </div>
       </div>
 
-      {/* Contenu principal - Panier et produits - STYLE CODE 2 */}
+      {/* Contenu principal - Panier et produits */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Produits */}
         <div className="lg:col-span-3 bg-base-100 rounded-xl shadow-xl border border-base-300 overflow-hidden">
@@ -675,7 +708,7 @@ const PointDeVente = () => {
                         isInCart ? 'border-primary' : 'border-base-300 hover:border-primary/50'
                       } group relative`}
                       onClick={() => handleAddItem(product)}
-                      disabled={product.stock_quantity <= 0 || submitting}
+                      disabled={product.stock_quantity <= 0 || submitting || printing}
                     >
                       <div className="relative h-40 bg-base-300">
                         {product.image_url && product.image_url !== '/placeholder-product.png' ? (
@@ -800,7 +833,7 @@ const PointDeVente = () => {
                         <button
                           className="btn btn-primary btn-sm gap-1"
                           onClick={() => handleAddItem(product)}
-                          disabled={product.stock_quantity <= 0 || submitting}
+                          disabled={product.stock_quantity <= 0 || submitting || printing}
                         >
                           <Plus className="w-4 h-4" /> Ajouter
                         </button>
@@ -812,7 +845,7 @@ const PointDeVente = () => {
             </div>
           )}
 
-          {/* Pagination - STYLE CODE 2 */}
+          {/* Pagination */}
           {sortedProducts.length > 0 && (
             <div className="p-4 border-t border-base-300">
               <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -883,7 +916,7 @@ const PointDeVente = () => {
           )}
         </div>
 
-        {/* Panier - STYLE CODE 2 */}
+        {/* Panier */}
         <div className="lg:col-span-1 bg-base-100 rounded-xl shadow-xl border border-base-300 overflow-hidden flex flex-col">
           <div className="p-4 border-b border-base-300 bg-base-200/50">
             <div className="flex items-center justify-between">
@@ -896,6 +929,7 @@ const PointDeVente = () => {
                 <button
                   className="btn btn-ghost btn-sm text-error hover:bg-error/10"
                   onClick={() => setItems([])}
+                  disabled={submitting || printing}
                 >
                   <Trash2 className="w-4 h-4" /> Vider
                 </button>
@@ -937,7 +971,7 @@ const PointDeVente = () => {
                       <button
                         className="btn btn-ghost btn-xs btn-square"
                         onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
-                        disabled={item.quantity <= 1 || submitting}
+                        disabled={item.quantity <= 1 || submitting || printing}
                       >
                         <Minus className="w-3 h-3" />
                       </button>
@@ -945,13 +979,14 @@ const PointDeVente = () => {
                       <button
                         className="btn btn-ghost btn-xs btn-square"
                         onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
-                        disabled={item.quantity >= item.stock_max || submitting}
+                        disabled={item.quantity >= item.stock_max || submitting || printing}
                       >
                         <Plus className="w-3 h-3" />
                       </button>
                       <button
                         className="btn btn-ghost btn-xs btn-square text-error"
                         onClick={() => handleRemoveItem(item.id)}
+                        disabled={submitting || printing}
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
@@ -988,22 +1023,29 @@ const PointDeVente = () => {
                     placeholder="Notes (optionnel)"
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
+                    disabled={submitting || printing}
                   />
                 </div>
 
                 <button
                   className="btn btn-primary w-full gap-2 shadow-md hover:shadow-lg transition-all"
                   onClick={handleSubmit}
-                  disabled={items.length === 0 || submitting || !entrepot}
+                  disabled={items.length === 0 || submitting || printing || !entrepot}
                 >
-                  {submitting ? (
-                    <><Loader className="w-4 h-4 animate-spin" /> Traitement...</>
+                  {submitting || printing ? (
+                    <><Loader className="w-4 h-4 animate-spin" /> {printing ? 'Impression...' : 'Traitement...'}</>
                   ) : (
                     <><Receipt className="w-4 h-4" /> Valider la vente {formatPrice(totals.total)}</>
                   )}
                 </button>
                 {!entrepot && (
                   <p className="text-xs text-error text-center mt-2">⚠️ Entrepôt non trouvé</p>
+                )}
+                {printing && (
+                  <p className="text-xs text-center text-gray-500 mt-2">
+                    <Loader className="w-3 h-3 inline animate-spin mr-1" />
+                    Génération du ticket en cours...
+                  </p>
                 )}
               </>
             ) : (
@@ -1013,7 +1055,7 @@ const PointDeVente = () => {
         </div>
       </div>
 
-      {/* Modal de sélection client - STYLE CODE 2 */}
+      {/* Modal de sélection client */}
       {showClientModal && (
         <div className="modal modal-open">
           <div className="modal-box max-w-2xl">

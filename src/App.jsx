@@ -97,7 +97,7 @@ import Analyses from './components/dashboard/Analyses'
 import FraisList from './components/achats/FraisList'
 import FraisForm from './components/achats/FraisForm'
 import FraisDetail from './components/achats/FraisDetail'
-import PointDeVente from './components/ventes/PintDeVente'
+import PointDeVente from './components/ventes/PointDeVente'
 
 
 
