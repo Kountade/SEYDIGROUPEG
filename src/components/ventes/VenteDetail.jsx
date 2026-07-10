@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
 import Livraison from './Livraison'
+import TicketPOS from './TicketPOS' 
 import {
   ArrowLeft,
   ShoppingCart,
@@ -55,6 +56,7 @@ const VenteDetail = () => {
   const [vente, setVente] = useState(null)
   const [loading, setLoading] = useState(true)
   const [generatingBl, setGeneratingBl] = useState(false)
+  const [generatingTicket, setGeneratingTicket] = useState(false)
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' })
   const [currentUser, setCurrentUser] = useState(null)
   const [userRoles, setUserRoles] = useState({ est_pdg: false, est_chef_agence: false, est_commercial: false })
@@ -138,6 +140,80 @@ const VenteDetail = () => {
     }
   }
 
+  // ============================================================
+  // ✅ NOUVEAU : Générer le ticket POS
+  // ============================================================
+  const handleGenerateTicket = async () => {
+    if (!vente) {
+      showNotification('Aucune donnée de vente disponible', 'error')
+      return
+    }
+
+    setGeneratingTicket(true)
+    try {
+      // Préparer les données pour le ticket
+      const ticketData = {
+        ...vente,
+        items_data: vente.items || [],
+        client: vente.client || {},
+        payment_method: vente.paiements?.[0]?.methode || 'Espèces',
+        paid_amount: vente.montant_paye || 0,
+        remaining_amount: vente.reste_a_payer || 0
+      }
+
+      await TicketPOS(ticketData)
+      showNotification(`Ticket POS généré pour ${vente.reference}`, 'success')
+    } catch (error) {
+      console.error('❌ Erreur génération ticket:', error)
+      showNotification('Erreur lors de la génération du ticket', 'error')
+    } finally {
+      setGeneratingTicket(false)
+    }
+  }
+
+  // ✅ NOUVEAU : Imprimer directement le ticket
+  const handlePrintTicket = async () => {
+    if (!vente) {
+      showNotification('Aucune donnée de vente disponible', 'error')
+      return
+    }
+
+    setGeneratingTicket(true)
+    try {
+      const ticketData = {
+        ...vente,
+        items_data: vente.items || [],
+        client: vente.client || {},
+        payment_method: vente.paiements?.[0]?.methode || 'Espèces',
+        paid_amount: vente.montant_paye || 0,
+        remaining_amount: vente.reste_a_payer || 0
+      }
+
+      // Générer le PDF et l'ouvrir dans une nouvelle fenêtre pour impression
+      const doc = await TicketPOS(ticketData)
+      
+      // Alternative : ouvrir le PDF dans une nouvelle fenêtre pour impression directe
+      const pdfBlob = doc.output('blob')
+      const pdfUrl = URL.createObjectURL(pdfBlob)
+      const printWindow = window.open(pdfUrl, '_blank')
+      
+      if (printWindow) {
+        printWindow.onload = () => {
+          setTimeout(() => {
+            printWindow.print()
+          }, 500)
+        }
+      }
+      
+      showNotification(`Ticket POS prêt pour impression`, 'success')
+    } catch (error) {
+      console.error('❌ Erreur impression ticket:', error)
+      showNotification('Erreur lors de l\'impression du ticket', 'error')
+    } finally {
+      setGeneratingTicket(false)
+    }
+  }
+
   useEffect(() => {
     fetchCurrentUser()
     fetchVente()
@@ -151,6 +227,7 @@ const VenteDetail = () => {
   const canEdit = () => vente?.status === 'draft' && (userRoles.est_commercial || userRoles.est_pdg || userRoles.est_chef_agence)
   const canCancel = () => vente?.status !== 'completed' && vente?.status !== 'cancelled'
   const canGenerateBonLivraison = () => vente && (vente.status === 'approved' || vente.status === 'completed')
+  const canGenerateTicket = () => vente && (vente.status === 'approved' || vente.status === 'completed')
 
   // Actions
   const handleSubmit = async () => {
@@ -390,6 +467,38 @@ const VenteDetail = () => {
             <RefreshCw className="w-4 h-4" />
             Actualiser
           </button>
+          
+          {/* ✅ NOUVEAU : Bouton Ticket POS */}
+          {canGenerateTicket() && (
+            <div className="dropdown dropdown-end">
+              <button 
+                className="btn btn-secondary gap-2"
+                disabled={generatingTicket}
+              >
+                {generatingTicket ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Receipt className="w-4 h-4" />
+                )}
+                Ticket POS
+              </button>
+              <ul className="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52 border border-base-300">
+                <li>
+                  <button onClick={handleGenerateTicket}>
+                    <Download className="w-4 h-4" />
+                    Télécharger le ticket
+                  </button>
+                </li>
+                <li>
+                  <button onClick={handlePrintTicket}>
+                    <Printer className="w-4 h-4" />
+                    Imprimer le ticket
+                  </button>
+                </li>
+              </ul>
+            </div>
+          )}
+
           {canGenerateBonLivraison() && (
             <button
               onClick={handleGenerateBonLivraison}
@@ -1011,6 +1120,16 @@ const VenteDetail = () => {
           </div>
         </div>
       )}
+
+      <style>{`
+        @keyframes slideDown {
+          from { transform: translateY(-20px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        .animate-slideDown {
+          animation: slideDown 0.3s ease-out;
+        }
+      `}</style>
     </div>
   )
 }

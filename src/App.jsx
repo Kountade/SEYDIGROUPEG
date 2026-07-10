@@ -97,7 +97,7 @@ import Analyses from './components/dashboard/Analyses'
 import FraisList from './components/achats/FraisList'
 import FraisForm from './components/achats/FraisForm'
 import FraisDetail from './components/achats/FraisDetail'
-
+import PointDeVente from './components/ventes/PintDeVente'
 
 
 
@@ -291,7 +291,7 @@ function App() {
 <Route path="/ventes" element={<VentesList />} />
 <Route path="/ventes/nouveau" element={<VenteForm />} />
 <Route path="/ventes/:id" element={<VenteDetail />} />
-
+<Route path="/point-de-vente" element={<PointDeVente />} />
 
           <Route path="/factures" element={<FacturesList />} />
           <Route path="/factures/nouveau" element={<FactureForm />} />
