@@ -3,6 +3,7 @@ import React, { useEffect, useState, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
 import Livraison from './Livraison'
+import TicketPOS from './TicketPOS'
 import {
   ShoppingCart,
   Eye,
@@ -66,6 +67,7 @@ const VentesList = () => {
   const [ventes, setVentes] = useState([])
   const [loading, setLoading] = useState(true)
   const [generatingBl, setGeneratingBl] = useState(null)
+  const [generatingTicket, setGeneratingTicket] = useState(null)  // ✅ État pour le ticket
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterType, setFilterType] = useState('')
@@ -169,6 +171,40 @@ const VentesList = () => {
   // ============================================================
   // 3. Actions
   // ============================================================
+  
+  // ✅ Générer le ticket POS
+  const handleGenerateTicket = async (vente) => {
+    if (!vente || (vente.status !== 'approved' && vente.status !== 'completed')) {
+      showNotification('Seules les ventes approuvées ou complétées peuvent générer un ticket', 'error')
+      return
+    }
+    
+    setGeneratingTicket(vente.id)
+    try {
+      // Récupérer les détails complets de la vente
+      const response = await AxiosInstance.get(`/ventes/${vente.id}/`)
+      const venteData = response.data
+      
+      // Préparer les données pour le ticket
+      const ticketData = {
+        ...venteData,
+        items_data: venteData.items || [],
+        client: venteData.client || {},
+        payment_method: 'Especes',
+        paid_amount: parseFloat(venteData.montant_paye) || 0,
+        remaining_amount: parseFloat(venteData.reste_a_payer) || 0
+      }
+      
+      await TicketPOS(ticketData)
+      showNotification(`Ticket POS généré pour ${vente.reference}`, 'success')
+    } catch (error) {
+      console.error('Erreur génération ticket:', error)
+      showNotification('Erreur lors de la génération du ticket', 'error')
+    } finally {
+      setGeneratingTicket(null)
+    }
+  }
+
   const handleGenerateBonLivraison = async (vente) => {
     if (!vente || (vente.status !== 'approved' && vente.status !== 'completed')) {
       showNotification('Seules les ventes approuvées ou complétées peuvent générer un bon de livraison', 'error')
@@ -243,6 +279,7 @@ const VentesList = () => {
   // ============================================================
   const canApprove = () => userRoles.est_pdg || userRoles.est_chef_agence
   const canGenerateBonLivraison = (vente) => vente.status === 'approved' || vente.status === 'completed'
+  const canGenerateTicket = (vente) => vente.status === 'approved' || vente.status === 'completed'
   const canDelete = (vente) => vente.status === 'draft' || vente.status === 'cancelled'
 
   // ============================================================
@@ -587,6 +624,21 @@ const VentesList = () => {
             </div>
 
             <div className="modal-action flex-wrap gap-2">
+              {/* ✅ Bouton Ticket POS */}
+              {canGenerateTicket(selectedVente) && (
+                <button
+                  className="btn btn-secondary gap-2"
+                  onClick={() => { setShowDetailsModal(false); handleGenerateTicket(selectedVente) }}
+                  disabled={generatingTicket === selectedVente.id}
+                >
+                  {generatingTicket === selectedVente.id ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Receipt className="w-4 h-4" />
+                  )}
+                  Ticket POS
+                </button>
+              )}
               {canGenerateBonLivraison(selectedVente) && (
                 <button
                   className="btn btn-info gap-2"
@@ -861,6 +913,22 @@ const VentesList = () => {
                       <td>{getPaymentStatusBadge(vente)}</td>
                       <td>
                         <div className="flex justify-end gap-1 flex-wrap">
+                          {/* ✅ Ticket POS */}
+                          {canGenerateTicket(vente) && (
+                            <button
+                              className="btn btn-ghost btn-xs text-secondary"
+                              onClick={() => handleGenerateTicket(vente)}
+                              disabled={generatingTicket === vente.id}
+                              title="Ticket POS"
+                            >
+                              {generatingTicket === vente.id ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Receipt className="w-3 h-3" />
+                              )}
+                            </button>
+                          )}
+
                           {/* Bon de livraison */}
                           {canGenerateBonLivraison(vente) && (
                             <button
@@ -977,6 +1045,21 @@ const VentesList = () => {
                       {vente.items?.length || 0} article{(vente.items?.length || 0) > 1 ? 's' : ''}
                     </span>
                     <div className="flex gap-1">
+                      {/* ✅ Ticket POS */}
+                      {canGenerateTicket(vente) && (
+                        <button
+                          className="btn btn-ghost btn-xs text-secondary"
+                          onClick={() => handleGenerateTicket(vente)}
+                          disabled={generatingTicket === vente.id}
+                          title="Ticket POS"
+                        >
+                          {generatingTicket === vente.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Receipt className="w-3 h-3" />
+                          )}
+                        </button>
+                      )}
                       {canGenerateBonLivraison(vente) && (
                         <button
                           className="btn btn-ghost btn-xs text-info"
