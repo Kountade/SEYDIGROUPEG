@@ -102,7 +102,18 @@ import ExpenseList from './components/grh/ExpenseList'
 import ExpenseDetail from './components/grh/ExpenseDetail'
 import ExpenseForm from './components/grh/ExpenseForm'
 
+import Journaux from './components/comptabilite/Journaux'
+import JournalForm from './components/comptabilite/JournalForm'
 
+import DashboardComptable from './components/comptabilite/DashboardComptable'
+import PlanComptable from './components/comptabilite/PlanComptable'
+import PlanComptableForm from './components/comptabilite/PlanComptableForm'
+import EcritureForm from './components/comptabilite/EcritureForm'
+import Ecritures from './components/comptabilite/Ecritures'
+
+
+import Balances from './components/comptabilite/Balances'
+import BalanceForm from './components/comptabilite/BalanceForm'
 
 import AuditLog from './components/audit/AuditLog'
 
@@ -135,6 +146,32 @@ function App() {
                 <Route path="/dashboard" element={<Dashboard />} />
 <Route path="/statistiques" element={<Statistiques />} />
 <Route path="/analyses" element={<Analyses />} />
+
+
+
+
+<Route path="dashboard/comptabilite" element={<DashboardComptable />} />
+
+<Route path="/plan-comptable" element={<PlanComptable />} />
+<Route path="/plan-comptable/nouveau" element={<PlanComptableForm />} />
+<Route path="/plan-comptable/:id/modifier" element={<PlanComptableForm />} />
+
+<Route path="/journaux" element={<Journaux />} />
+<Route path="/journaux/nouveau" element={<JournalForm />} />
+<Route path="/journaux/:id/modifier" element={<JournalForm />} />
+
+
+<Route path="/ecritures" element={<Ecritures />} />
+<Route path="/ecritures/nouveau" element={<EcritureForm />} />
+<Route path="/ecritures/:id/modifier" element={<EcritureForm />} />
+<Route path="/ecritures/:id" element={<EcritureForm />} />
+
+
+
+<Route path="/balances" element={<Balances />} />
+<Route path="/balances/nouveau" element={<BalanceForm />} />
+<Route path="/balances/:id/modifier" element={<BalanceForm />} />
+<Route path="/balances/:id" element={<Balances />} /> {/* Détail */}
             
                 <Route path="/home" element={<Home/>}/>
                <Route path="/agences" element={<Agences/>}/>
@@ -144,6 +181,7 @@ function App() {
               <Route path="/units" element={<Units/>}/>
                <Route path="/units/nouveau" element={<UnitForm />} />
               <Route path="/units/:id/modifier" element={<UnitForm />} />
+
 
                {/* Marques */}
                 <Route path="/brands" element={<Brands />} />
