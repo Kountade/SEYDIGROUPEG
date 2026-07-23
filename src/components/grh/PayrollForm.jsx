@@ -21,7 +21,8 @@ import {
   CheckCircle,
   Briefcase,
   FileText,
-  Percent
+  Percent,
+  Lock
 } from 'lucide-react';
 
 const PayrollForm = () => {
@@ -30,6 +31,7 @@ const PayrollForm = () => {
   const isEdit = !!id;
 
   const [employees, setEmployees] = useState([]);
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(isEdit);
   const [formData, setFormData] = useState({
@@ -68,6 +70,7 @@ const PayrollForm = () => {
     setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 4000);
   };
 
+  // Récupérer la liste des employés
   useEffect(() => {
     AxiosInstance.get('/employees/')
       .then(res => setEmployees(res.data))
@@ -95,6 +98,12 @@ const PayrollForm = () => {
             unpaid_leave: p.unpaid_leave || 0,
             other_deductions: p.other_deductions || 0
           });
+          // Récupérer les infos de l'employé pour affichage
+          if (p.employee) {
+            AxiosInstance.get(`/employees/${p.employee}/`)
+              .then(res => setSelectedEmployee(res.data))
+              .catch(err => console.error(err));
+          }
           const gross = calculateGross(p);
           const deductions = calculateDeductions(p);
           setCalculated({ 
@@ -109,6 +118,33 @@ const PayrollForm = () => {
       setInitialLoading(false);
     }
   }, [id, isEdit]);
+
+  // Fonction pour récupérer le salaire de base d'un employé
+  const fetchEmployeeSalary = async (employeeId) => {
+    if (!employeeId) {
+      setSelectedEmployee(null);
+      setFormData(prev => ({ ...prev, base_salary: '' }));
+      return;
+    }
+
+    try {
+      const response = await AxiosInstance.get(`/employees/${employeeId}/`);
+      const employee = response.data;
+      setSelectedEmployee(employee);
+      
+      // Mettre à jour le salaire de base avec celui de l'employé
+      setFormData(prev => ({ 
+        ...prev, 
+        base_salary: employee.base_salary || 0 
+      }));
+      
+      // Recalculer après mise à jour
+      setTimeout(calculate, 50);
+    } catch (err) {
+      console.error('Erreur lors de la récupération du salaire:', err);
+      showNotification('Erreur lors de la récupération du salaire de l\'employé', 'error');
+    }
+  };
 
   const calculateGross = (data) => {
     return Number(data.base_salary || 0) +
@@ -138,6 +174,16 @@ const PayrollForm = () => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
+    
+    // Si c'est le champ employee, récupérer le salaire automatiquement
+    if (name === 'employee') {
+      setFormData(prev => ({ ...prev, [name]: value }));
+      fetchEmployeeSalary(value);
+      if (errors[name]) setErrors(prev => ({ ...prev, [name]: '' }));
+      return;
+    }
+    
+    // Pour les autres champs, mise à jour normale
     setFormData(prev => ({ ...prev, [name]: value }));
     setTimeout(calculate, 10);
     if (errors[name]) setErrors(prev => ({ ...prev, [name]: '' }));
@@ -193,6 +239,20 @@ const PayrollForm = () => {
   const getEmployeeName = (employeeId) => {
     const employee = employees.find(e => e.id === employeeId);
     return employee ? employee.full_name : '';
+  };
+
+  const getEmployeeInfo = (employeeId) => {
+    return employees.find(e => e.id === employeeId);
+  };
+
+  // Fonction pour formater les nombres en Franc Guinéen
+  const formatGNF = (amount) => {
+    return new Intl.NumberFormat('fr-GN', {
+      style: 'currency',
+      currency: 'GNF',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(amount);
   };
 
   if (initialLoading) {
@@ -281,12 +341,20 @@ const PayrollForm = () => {
                     >
                       <option value="">Sélectionner un employé</option>
                       {employees.map(emp => (
-                        <option key={emp.id} value={emp.id}>{emp.full_name}</option>
+                        <option key={emp.id} value={emp.id}>
+                          {emp.full_name} - {emp.employee_number}
+                        </option>
                       ))}
                     </select>
                   </div>
                   {errors.employee && (
                     <span className="text-error text-xs mt-1">{errors.employee}</span>
+                  )}
+                  {selectedEmployee && (
+                    <div className="mt-2 text-xs bg-base-200 p-2 rounded-lg">
+                      <span className="font-medium">Salaire enregistré: </span>
+                      <span className="text-primary font-bold">{formatGNF(selectedEmployee.base_salary || 0)}</span>
+                    </div>
                   )}
                 </div>
                 
@@ -344,7 +412,13 @@ const PayrollForm = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="form-control w-full md:col-span-2">
                   <label className="label">
-                    <span className="label-text font-semibold">Salaire de base <span className="text-error">*</span></span>
+                    <span className="label-text font-semibold">
+                      Salaire de base 
+                      <span className="text-error">*</span>
+                      <span className="ml-2 text-xs text-base-content/60">
+                        (Récupéré automatiquement)
+                      </span>
+                    </span>
                   </label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -355,16 +429,25 @@ const PayrollForm = () => {
                       name="base_salary"
                       value={formData.base_salary}
                       onChange={handleChange}
-                      className={`input input-bordered w-full pl-9 focus:border-primary focus:ring-1 focus:ring-primary ${errors.base_salary ? 'input-error' : ''}`}
-                      placeholder="0.00"
+                      className={`input input-bordered w-full pl-9 pr-12 bg-base-200/50 ${errors.base_salary ? 'input-error' : ''}`}
+                      placeholder="0"
+                      disabled={true}
+                      readOnly={true}
                     />
                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                      <span className="text-base-content/40">€</span>
+                      <Lock className="w-4 h-4 text-base-content/30" />
+                    </div>
+                    <div className="absolute inset-y-0 right-8 pr-3 flex items-center pointer-events-none">
+                      <span className="text-base-content/40 text-xs font-semibold">GNF</span>
                     </div>
                   </div>
                   {errors.base_salary && (
                     <span className="text-error text-xs mt-1">{errors.base_salary}</span>
                   )}
+                  <div className="text-xs text-base-content/50 mt-1 flex items-center gap-1">
+                    <Lock className="w-3 h-3" />
+                    Ce champ est automatiquement rempli depuis le salaire de l'employé
+                  </div>
                 </div>
                 
                 <div className="form-control w-full">
@@ -380,11 +463,11 @@ const PayrollForm = () => {
                       name="performance_bonus"
                       value={formData.performance_bonus}
                       onChange={handleChange}
-                      className="input input-bordered w-full pl-9"
-                      placeholder="0.00"
+                      className="input input-bordered w-full pl-9 pr-12"
+                      placeholder="0"
                     />
                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                      <span className="text-base-content/40">€</span>
+                      <span className="text-base-content/40 text-xs font-semibold">GNF</span>
                     </div>
                   </div>
                 </div>
@@ -402,11 +485,11 @@ const PayrollForm = () => {
                       name="seniority_bonus"
                       value={formData.seniority_bonus}
                       onChange={handleChange}
-                      className="input input-bordered w-full pl-9"
-                      placeholder="0.00"
+                      className="input input-bordered w-full pl-9 pr-12"
+                      placeholder="0"
                     />
                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                      <span className="text-base-content/40">€</span>
+                      <span className="text-base-content/40 text-xs font-semibold">GNF</span>
                     </div>
                   </div>
                 </div>
@@ -424,11 +507,11 @@ const PayrollForm = () => {
                       name="overtime_amount"
                       value={formData.overtime_amount}
                       onChange={handleChange}
-                      className="input input-bordered w-full pl-9"
-                      placeholder="0.00"
+                      className="input input-bordered w-full pl-9 pr-12"
+                      placeholder="0"
                     />
                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                      <span className="text-base-content/40">€</span>
+                      <span className="text-base-content/40 text-xs font-semibold">GNF</span>
                     </div>
                   </div>
                 </div>
@@ -446,11 +529,11 @@ const PayrollForm = () => {
                       name="transport_bonus"
                       value={formData.transport_bonus}
                       onChange={handleChange}
-                      className="input input-bordered w-full pl-9"
-                      placeholder="0.00"
+                      className="input input-bordered w-full pl-9 pr-12"
+                      placeholder="0"
                     />
                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                      <span className="text-base-content/40">€</span>
+                      <span className="text-base-content/40 text-xs font-semibold">GNF</span>
                     </div>
                   </div>
                 </div>
@@ -468,11 +551,11 @@ const PayrollForm = () => {
                       name="phone_bonus"
                       value={formData.phone_bonus}
                       onChange={handleChange}
-                      className="input input-bordered w-full pl-9"
-                      placeholder="0.00"
+                      className="input input-bordered w-full pl-9 pr-12"
+                      placeholder="0"
                     />
                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                      <span className="text-base-content/40">€</span>
+                      <span className="text-base-content/40 text-xs font-semibold">GNF</span>
                     </div>
                   </div>
                 </div>
@@ -490,11 +573,11 @@ const PayrollForm = () => {
                       name="other_bonus"
                       value={formData.other_bonus}
                       onChange={handleChange}
-                      className="input input-bordered w-full pl-9"
-                      placeholder="0.00"
+                      className="input input-bordered w-full pl-9 pr-12"
+                      placeholder="0"
                     />
                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                      <span className="text-base-content/40">€</span>
+                      <span className="text-base-content/40 text-xs font-semibold">GNF</span>
                     </div>
                   </div>
                 </div>
@@ -525,11 +608,11 @@ const PayrollForm = () => {
                       name="social_security"
                       value={formData.social_security}
                       onChange={handleChange}
-                      className="input input-bordered w-full pl-9"
-                      placeholder="0.00"
+                      className="input input-bordered w-full pl-9 pr-12"
+                      placeholder="0"
                     />
                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                      <span className="text-base-content/40">€</span>
+                      <span className="text-base-content/40 text-xs font-semibold">GNF</span>
                     </div>
                   </div>
                 </div>
@@ -547,11 +630,11 @@ const PayrollForm = () => {
                       name="income_tax"
                       value={formData.income_tax}
                       onChange={handleChange}
-                      className="input input-bordered w-full pl-9"
-                      placeholder="0.00"
+                      className="input input-bordered w-full pl-9 pr-12"
+                      placeholder="0"
                     />
                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                      <span className="text-base-content/40">€</span>
+                      <span className="text-base-content/40 text-xs font-semibold">GNF</span>
                     </div>
                   </div>
                 </div>
@@ -569,11 +652,11 @@ const PayrollForm = () => {
                       name="pension_fund"
                       value={formData.pension_fund}
                       onChange={handleChange}
-                      className="input input-bordered w-full pl-9"
-                      placeholder="0.00"
+                      className="input input-bordered w-full pl-9 pr-12"
+                      placeholder="0"
                     />
                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                      <span className="text-base-content/40">€</span>
+                      <span className="text-base-content/40 text-xs font-semibold">GNF</span>
                     </div>
                   </div>
                 </div>
@@ -591,11 +674,11 @@ const PayrollForm = () => {
                       name="health_insurance"
                       value={formData.health_insurance}
                       onChange={handleChange}
-                      className="input input-bordered w-full pl-9"
-                      placeholder="0.00"
+                      className="input input-bordered w-full pl-9 pr-12"
+                      placeholder="0"
                     />
                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                      <span className="text-base-content/40">€</span>
+                      <span className="text-base-content/40 text-xs font-semibold">GNF</span>
                     </div>
                   </div>
                 </div>
@@ -613,11 +696,11 @@ const PayrollForm = () => {
                       name="unpaid_leave"
                       value={formData.unpaid_leave}
                       onChange={handleChange}
-                      className="input input-bordered w-full pl-9"
-                      placeholder="0.00"
+                      className="input input-bordered w-full pl-9 pr-12"
+                      placeholder="0"
                     />
                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                      <span className="text-base-content/40">€</span>
+                      <span className="text-base-content/40 text-xs font-semibold">GNF</span>
                     </div>
                   </div>
                 </div>
@@ -635,11 +718,11 @@ const PayrollForm = () => {
                       name="other_deductions"
                       value={formData.other_deductions}
                       onChange={handleChange}
-                      className="input input-bordered w-full pl-9"
-                      placeholder="0.00"
+                      className="input input-bordered w-full pl-9 pr-12"
+                      placeholder="0"
                     />
                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                      <span className="text-base-content/40">€</span>
+                      <span className="text-base-content/40 text-xs font-semibold">GNF</span>
                     </div>
                   </div>
                 </div>
@@ -658,18 +741,29 @@ const PayrollForm = () => {
               </h2>
             </div>
             <div className="p-5 space-y-4">
+              {selectedEmployee && (
+                <div className="bg-base-200/50 rounded-lg p-3 text-sm">
+                  <p className="font-medium text-base-content">{selectedEmployee.full_name}</p>
+                  <p className="text-xs text-base-content/60">{selectedEmployee.employee_number}</p>
+                  <p className="text-xs text-base-content/60 mt-1">
+                    {selectedEmployee.position_title || 'Pas de poste'} 
+                    {selectedEmployee.department_name && ` - ${selectedEmployee.department_name}`}
+                  </p>
+                </div>
+              )}
+              
               <div className="flex justify-between items-center">
                 <span className="text-base-content/70">Salaire brut</span>
-                <span className="font-bold text-lg text-primary">{calculated.gross.toLocaleString()} €</span>
+                <span className="font-bold text-lg text-primary">{formatGNF(calculated.gross)}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-base-content/70">Total déductions</span>
-                <span className="font-medium text-error">{calculated.deductions.toLocaleString()} €</span>
+                <span className="font-medium text-error">{formatGNF(calculated.deductions)}</span>
               </div>
               <div className="divider my-2"></div>
               <div className="flex justify-between items-center pt-2">
                 <span className="text-lg font-semibold text-base-content">Net à payer</span>
-                <span className="text-2xl font-bold text-primary">{calculated.net.toLocaleString()} €</span>
+                <span className="text-2xl font-bold text-primary">{formatGNF(calculated.net)}</span>
               </div>
               
               <div className="flex gap-3 mt-4">
@@ -684,7 +778,7 @@ const PayrollForm = () => {
               
               <button
                 onClick={handleSubmit}
-                disabled={loading}
+                disabled={loading || !formData.employee}
                 className="btn btn-primary w-full gap-2 mt-2"
               >
                 {loading ? (

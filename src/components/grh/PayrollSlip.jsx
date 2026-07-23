@@ -1,4 +1,4 @@
-// src/components/drh/PayrollSlip.jsx
+// src/components/drh/PayrollSlip.jsx - Version avec débogage
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { PDFViewer, PDFDownloadLink } from '@react-pdf/renderer';
@@ -10,7 +10,11 @@ import {
   AlertCircle,
   CheckCircle,
   FileText,
-  Printer
+  Printer,
+  Eye,
+  User,
+  Calendar,
+  Hash
 } from 'lucide-react';
 
 const PayrollSlip = () => {
@@ -20,19 +24,43 @@ const PayrollSlip = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [pdfError, setPdfError] = useState(false);
-  const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
+  const [notification, setNotification] = useState({ 
+    show: false, 
+    message: '', 
+    type: 'success' 
+  });
 
   useEffect(() => {
-    AxiosInstance.get(`/payroll/${id}/`)
-      .then(res => {
-        setPayroll(res.data);
+    const fetchPayroll = async () => {
+      try {
+        setLoading(true);
+        console.log('🔍 Fetching payroll for ID:', id);
+        const response = await AxiosInstance.get(`/payroll/${id}/`);
+        console.log('✅ Données reçues de l\'API:', response.data);
+        console.log('📋 Structure des données:', Object.keys(response.data));
+        
+        // Vérifier les champs importants
+        console.log('💰 Salaire brut:', response.data.base_salary || response.data.gross_salary || 'NON TROUVÉ');
+        console.log('💰 Primes:', response.data.bonuses || response.data.primes || 'NON TROUVÉ');
+        console.log('💰 Retenues:', response.data.deductions || response.data.retenues || 'NON TROUVÉ');
+        
+        setPayroll(response.data);
         setError(null);
-      })
-      .catch(err => {
-        console.error(err);
+      } catch (err) {
+        console.error('❌ Erreur de chargement:', err);
+        console.error('Détails:', err.response?.data);
         setError(err.response?.data?.detail || 'Erreur de chargement du bulletin');
-      })
-      .finally(() => setLoading(false));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (id) {
+      fetchPayroll();
+    } else {
+      setError('ID du bulletin manquant');
+      setLoading(false);
+    }
   }, [id]);
 
   const showNotification = (message, type = 'success') => {
@@ -101,11 +129,11 @@ const PayrollSlip = () => {
     );
   }
 
-  const fileName = `bulletin_${payroll.payroll_number || id}.pdf`;
+  const fileName = `bulletin_paie_${payroll.payroll_number || id}_${payroll.month || ''}_${payroll.year || ''}.pdf`;
 
   return (
     <div className="space-y-4 sm:space-y-6 p-3 sm:p-4 lg:p-6 bg-base-200 min-h-screen">
-      {/* Notification */}
+      {/* Notification Toast */}
       {notification.show && (
         <div className="fixed top-16 right-3 sm:right-6 z-50 animate-slideDown">
           <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-lg text-sm sm:text-base`}>
@@ -154,20 +182,14 @@ const PayrollSlip = () => {
               if (pdfGenError) {
                 console.error('PDF generation error:', pdfGenError);
                 return (
-                  <button 
-                    className="btn btn-error gap-2" 
-                    disabled
-                  >
+                  <button className="btn btn-error gap-2" disabled>
                     <AlertCircle className="w-4 h-4" />
                     Erreur génération
                   </button>
                 );
               }
               return (
-                <button
-                  className="btn btn-primary gap-2"
-                  disabled={pdfLoading}
-                >
+                <button className="btn btn-primary gap-2" disabled={pdfLoading}>
                   {pdfLoading ? (
                     <>
                       <span className="loading loading-spinner loading-sm"></span>
@@ -188,22 +210,43 @@ const PayrollSlip = () => {
 
       {/* Informations du bulletin */}
       <div className="bg-base-100 rounded-xl shadow-lg border border-base-200 p-4 sm:p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
             <h1 className="text-xl sm:text-2xl font-bold text-primary">
               Bulletin de paie
             </h1>
             <p className="text-sm text-base-content/60 mt-1">
-              N° {payroll.payroll_number} - {payroll.employee_name}
+              N° {payroll.payroll_number || 'N/A'}
             </p>
           </div>
-          <div className="text-right">
-            <p className="text-sm font-medium text-base-content">
-              Période: {payroll.month}/{payroll.year}
-            </p>
-            <p className="text-xs text-base-content/50">
-              Généré le {new Date().toLocaleDateString('fr-FR')}
-            </p>
+          <div className="flex items-center gap-3">
+            <div className="bg-primary/10 rounded-full p-2">
+              <User className="w-4 h-4 text-primary" />
+            </div>
+            <div>
+              <p className="text-xs text-base-content/50">Employé</p>
+              <p className="text-sm font-semibold">{payroll.employee_name || 'Non spécifié'}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="bg-primary/10 rounded-full p-2">
+              <Calendar className="w-4 h-4 text-primary" />
+            </div>
+            <div>
+              <p className="text-xs text-base-content/50">Période</p>
+              <p className="text-sm font-semibold">
+                {payroll.month || 'MM'}/{payroll.year || 'YYYY'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="bg-primary/10 rounded-full p-2">
+              <Hash className="w-4 h-4 text-primary" />
+            </div>
+            <div>
+              <p className="text-xs text-base-content/50">Matricule</p>
+              <p className="text-sm font-semibold">{payroll.employee_id || 'N/A'}</p>
+            </div>
           </div>
         </div>
       </div>
@@ -230,9 +273,10 @@ const PayrollSlip = () => {
       {/* Actions supplémentaires */}
       <div className="flex flex-col sm:flex-row justify-center gap-3 pt-4">
         <button
-          onClick={() => navigate(`/payroll/${id}`)}
+          onClick={() => navigate(`/payroll/${id}/details`)}
           className="btn btn-outline gap-2"
         >
+          <Eye className="w-4 h-4" />
           Voir les détails
         </button>
         <PDFDownloadLink
@@ -240,10 +284,7 @@ const PayrollSlip = () => {
           fileName={fileName}
         >
           {({ loading: pdfLoading }) => (
-            <button
-              className="btn btn-success gap-2"
-              disabled={pdfLoading}
-            >
+            <button className="btn btn-success gap-2" disabled={pdfLoading}>
               {pdfLoading ? (
                 <>
                   <span className="loading loading-spinner loading-sm"></span>
@@ -269,23 +310,14 @@ const PayrollSlip = () => {
           <div>
             <h4 className="font-semibold text-sm text-info">Information</h4>
             <p className="text-xs text-base-content/70 mt-1">
-              Le bulletin de paie est généré au format PDF. Vous pouvez le télécharger, l'imprimer ou le consulter directement dans l'aperçu ci-dessus.
+              Le bulletin de paie est généré au format PDF. Vous pouvez le télécharger, 
+              l'imprimer ou le consulter directement dans l'aperçu ci-dessus.
+              <br />
+              <span className="font-medium">Devise :</span> Franc Guinéen (GNF) - Séparateur de milliers : espace
             </p>
           </div>
         </div>
       </div>
-
-      {/* Styles d'impression */}
-      <style jsx>{`
-        @media print {
-          body * {
-            visibility: hidden;
-          }
-          .print\\:visible {
-            visibility: visible;
-          }
-        }
-      `}</style>
     </div>
   );
 };

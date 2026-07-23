@@ -48,7 +48,7 @@ import LeaveForm from './components/grh/LeaveForm'
 import LeaveCalendar from './components/grh/LeaveCalendar'
 import Payroll from './components/grh/Payroll'
 import PayrollForm from './components/grh/PayrollForm'
-import PayrollDetail from './components/grh/PositionDetail'
+import PayrollDetail from './components/grh/PayrollDetail'
 import PayrollSlip from './components/grh/PayrollSlip'
 import Attendance from './components/grh/Attendance'
 import AttendanceForm from './components/grh/AttendanceForm'
@@ -98,7 +98,9 @@ import FraisList from './components/achats/FraisList'
 import FraisForm from './components/achats/FraisForm'
 import FraisDetail from './components/achats/FraisDetail'
 import PointDeVente from './components/ventes/PointDeVente'
-
+import ExpenseList from './components/grh/ExpenseList'
+import ExpenseDetail from './components/grh/ExpenseDetail'
+import ExpenseForm from './components/grh/ExpenseForm'
 
 
 
@@ -267,6 +269,9 @@ function App() {
         <Route path="/payroll/:id/edit" element={<PayrollForm />} />
         <Route path="/payroll/:id/slip" element={<PayrollSlip />} />
 
+<Route path="/expenses" element={<ExpenseList />} />
+<Route path="/expenses/new" element={<ExpenseForm />} />
+<Route path="/expenses/:id" element={<ExpenseDetail />} />
 
 
         // Routes
