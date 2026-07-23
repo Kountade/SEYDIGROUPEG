@@ -1,4 +1,4 @@
-// src/components/expenses/ExpenseForm.jsx - Version corrigée avec logs
+// src/components/expenses/ExpenseForm.jsx - Version pleine largeur
 
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -21,7 +21,10 @@ import {
   Hotel,
   Package,
   Handshake,
-  ClipboardList
+  ClipboardList,
+  Plus,
+  Image,
+  Paperclip
 } from 'lucide-react';
 
 const ExpenseForm = () => {
@@ -60,7 +63,6 @@ const ExpenseForm = () => {
         setReceiptPreview(null);
       }
     } else if (name === 'amount') {
-      // ✅ Accepter uniquement les nombres
       const cleanedValue = value.replace(/[^0-9.]/g, '');
       setFormData({ ...formData, amount: cleanedValue });
       setAmountError('');
@@ -92,7 +94,6 @@ const ExpenseForm = () => {
     setLoading(true);
     setError(null);
 
-    // ✅ Validation
     if (!validateAmount(formData.amount)) {
       setLoading(false);
       return;
@@ -104,10 +105,7 @@ const ExpenseForm = () => {
       return;
     }
 
-    // ✅ Construction du FormData
     const data = new FormData();
-    
-    // Ajouter les champs
     data.append('expense_type', formData.expense_type);
     data.append('amount', parseFloat(formData.amount).toString());
     data.append('date', formData.date);
@@ -117,7 +115,6 @@ const ExpenseForm = () => {
       data.append('receipt', formData.receipt);
     }
 
-    // 🔍 LOG DÉTAILLÉ
     console.log('📤 Envoi des données:');
     for (let [key, value] of data.entries()) {
       if (key === 'receipt') {
@@ -140,7 +137,6 @@ const ExpenseForm = () => {
     } catch (error) {
       console.error('❌ Erreur complète:', error);
       
-      // ✅ Afficher les erreurs du backend
       if (error.response) {
         console.error('📋 Réponse du serveur:', error.response.data);
         console.error('📋 Status:', error.response.status);
@@ -149,7 +145,6 @@ const ExpenseForm = () => {
         let errorMessage = '';
         
         if (typeof errors === 'object') {
-          // Parcourir toutes les erreurs
           for (const [field, messages] of Object.entries(errors)) {
             if (Array.isArray(messages)) {
               errorMessage += `${field}: ${messages.join(', ')}\n`;
@@ -175,28 +170,35 @@ const ExpenseForm = () => {
   };
 
   const expenseTypes = [
-    { value: 'transport', label: 'Transport', icon: Car, color: 'text-blue-500' },
-    { value: 'meal', label: 'Repas', icon: Utensils, color: 'text-orange-500' },
-    { value: 'accommodation', label: 'Hébergement', icon: Hotel, color: 'text-purple-500' },
-    { value: 'supplies', label: 'Fournitures', icon: Package, color: 'text-green-500' },
-    { value: 'client', label: 'Client', icon: Handshake, color: 'text-indigo-500' },
-    { value: 'other', label: 'Autre', icon: ClipboardList, color: 'text-gray-500' }
+    { value: 'transport', label: 'Transport', icon: Car, color: 'text-blue-500', bg: 'bg-blue-50' },
+    { value: 'meal', label: 'Repas', icon: Utensils, color: 'text-orange-500', bg: 'bg-orange-50' },
+    { value: 'accommodation', label: 'Hébergement', icon: Hotel, color: 'text-purple-500', bg: 'bg-purple-50' },
+    { value: 'supplies', label: 'Fournitures', icon: Package, color: 'text-green-500', bg: 'bg-green-50' },
+    { value: 'client', label: 'Client', icon: Handshake, color: 'text-indigo-500', bg: 'bg-indigo-50' },
+    { value: 'other', label: 'Autre', icon: ClipboardList, color: 'text-gray-500', bg: 'bg-gray-50' }
   ];
 
   return (
-    <div className="max-w-3xl mx-auto p-4 sm:p-6">
+    <div className="w-full h-full px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
       {/* En-tête */}
-      <div className="flex items-center gap-4 mb-6">
-        <button
-          onClick={() => navigate('/expenses')}
-          className="btn btn-ghost btn-sm gap-2 hover:bg-base-200 transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Retour
-        </button>
-        <div>
-          <h1 className="text-2xl font-bold text-primary">Nouvelle note de frais</h1>
-          <p className="text-sm text-base-content/60">Saisissez les détails de votre dépense</p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => navigate('/expenses')}
+            className="btn btn-ghost btn-sm gap-2 hover:bg-base-200 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Retour
+          </button>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-primary flex items-center gap-2">
+              <Receipt className="w-6 h-6 sm:w-8 sm:h-8" />
+              Nouvelle note de frais
+            </h1>
+            <p className="text-sm text-base-content/60 mt-1">
+              Saisissez les détails de votre dépense
+            </p>
+          </div>
         </div>
       </div>
 
@@ -204,21 +206,33 @@ const ExpenseForm = () => {
       {success && (
         <div className="alert alert-success mb-6 shadow-lg animate-slideDown">
           <CheckCircle className="w-5 h-5" />
-          <div>
+          <div className="flex-1">
             <span className="font-bold">Note soumise avec succès !</span>
             <p className="text-sm opacity-80">Vous serez redirigé vers la liste...</p>
           </div>
+          <button 
+            className="btn btn-ghost btn-sm btn-circle"
+            onClick={() => setSuccess(false)}
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
       {/* Erreur */}
       {error && (
         <div className="alert alert-error mb-6 shadow-lg animate-slideDown">
-          <AlertCircle className="w-5 h-5" />
-          <div>
+          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          <div className="flex-1">
             <span className="font-bold">Erreur</span>
             <p className="text-sm whitespace-pre-wrap">{error}</p>
           </div>
+          <button 
+            className="btn btn-ghost btn-sm btn-circle"
+            onClick={() => setError(null)}
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
@@ -226,19 +240,19 @@ const ExpenseForm = () => {
       <form 
         onSubmit={handleSubmit} 
         encType="multipart/form-data"
-        className="bg-base-100 rounded-xl shadow-lg border border-base-200 overflow-hidden"
+        className="bg-base-100 rounded-xl shadow-lg border border-base-200 overflow-hidden w-full"
       >
-        <div className="p-6 space-y-6">
+        <div className="p-4 sm:p-6 space-y-6">
           
           {/* Type de dépense */}
           <div className="form-control">
             <label className="label">
-              <span className="label-text font-medium flex items-center gap-2">
+              <span className="label-text font-medium flex items-center gap-2 text-base">
                 <Tag className="w-4 h-4 text-primary" />
                 Type de dépense
               </span>
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               {expenseTypes.map((type) => {
                 const Icon = type.icon;
                 const isSelected = formData.expense_type === type.value;
@@ -248,20 +262,20 @@ const ExpenseForm = () => {
                     type="button"
                     onClick={() => setFormData({ ...formData, expense_type: type.value })}
                     className={`
-                      flex items-center gap-3 p-3 rounded-xl border-2 transition-all duration-200
+                      flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all duration-200
                       ${isSelected 
-                        ? 'border-primary bg-primary/5 shadow-md' 
-                        : 'border-base-200 hover:border-primary/50 hover:bg-base-200/50'
+                        ? 'border-primary bg-primary/5 shadow-md scale-[1.02]' 
+                        : 'border-base-200 hover:border-primary/50 hover:bg-base-200/50 hover:scale-[1.01]'
                       }
                     `}
                   >
-                    <div className={`p-2 rounded-lg ${isSelected ? 'bg-primary/10' : 'bg-base-200'}`}>
-                      <Icon className={`w-5 h-5 ${isSelected ? 'text-primary' : type.color}`} />
+                    <div className={`p-3 rounded-full ${isSelected ? 'bg-primary/10' : type.bg}`}>
+                      <Icon className={`w-6 h-6 ${isSelected ? 'text-primary' : type.color}`} />
                     </div>
-                    <span className={`text-sm font-medium ${isSelected ? 'text-primary' : 'text-base-content'}`}>
+                    <span className={`text-xs font-medium ${isSelected ? 'text-primary' : 'text-base-content'}`}>
                       {type.label}
                     </span>
-                    {isSelected && <CheckCircle className="w-4 h-4 text-primary ml-auto" />}
+                    {isSelected && <CheckCircle className="w-3 h-3 text-primary" />}
                   </button>
                 );
               })}
@@ -289,7 +303,7 @@ const ExpenseForm = () => {
                   value={formData.amount}
                   onChange={handleChange}
                   className={`
-                    input w-full pl-12 pr-4 transition-all
+                    input w-full pl-12 pr-4 py-3 transition-all
                     ${amountError ? 'input-error' : 'input-bordered focus:input-primary'}
                   `}
                   required
@@ -309,7 +323,7 @@ const ExpenseForm = () => {
                 name="date"
                 value={formData.date}
                 onChange={handleChange}
-                className="input input-bordered w-full focus:input-primary transition-all"
+                className="input input-bordered w-full py-3 focus:input-primary transition-all"
                 max={new Date().toISOString().split('T')[0]}
                 required
               />
@@ -338,7 +352,7 @@ const ExpenseForm = () => {
           <div className="form-control">
             <label className="label">
               <span className="label-text font-medium flex items-center gap-2">
-                <Receipt className="w-4 h-4 text-primary" />
+                <Paperclip className="w-4 h-4 text-primary" />
                 Reçu / Justificatif
               </span>
               <span className="label-text-alt text-base-content/40">Optionnel</span>
@@ -368,11 +382,17 @@ const ExpenseForm = () => {
                 {receiptPreview ? (
                   <div className="relative inline-block">
                     {receiptPreview.startsWith('data:image') ? (
-                      <img
-                        src={receiptPreview}
-                        alt="Reçu"
-                        className="max-h-48 mx-auto rounded-lg shadow-md"
-                      />
+                      <div className="relative">
+                        <img
+                          src={receiptPreview}
+                          alt="Reçu"
+                          className="max-h-48 mx-auto rounded-lg shadow-md"
+                        />
+                        <div className="absolute bottom-2 right-2 bg-success text-white text-xs px-2 py-1 rounded-full">
+                          <CheckCircle className="w-3 h-3 inline mr-1" />
+                          Chargé
+                        </div>
+                      </div>
                     ) : (
                       <div className="flex items-center gap-3 p-4 bg-base-200 rounded-lg">
                         <FileText className="w-8 h-8 text-primary" />
@@ -394,13 +414,21 @@ const ExpenseForm = () => {
                     </button>
                   </div>
                 ) : (
-                  <div className="py-6">
-                    <Upload className="w-12 h-12 mx-auto text-base-content/30" />
-                    <p className="mt-2 text-sm text-base-content/60">
+                  <div className="py-8">
+                    <div className="w-16 h-16 mx-auto bg-base-200 rounded-full flex items-center justify-center">
+                      <Upload className="w-8 h-8 text-base-content/40" />
+                    </div>
+                    <p className="mt-3 text-sm font-medium text-base-content/70">
                       Cliquez pour télécharger un reçu
                     </p>
-                    <p className="text-xs text-base-content/40 mt-1">
-                      PDF, JPG, PNG, DOC (max 5MB)
+                    <p className="text-xs text-base-content/40 mt-1 flex items-center justify-center gap-2">
+                      <span>PDF</span>
+                      <span className="w-1 h-1 rounded-full bg-base-content/20" />
+                      <span>JPG</span>
+                      <span className="w-1 h-1 rounded-full bg-base-content/20" />
+                      <span>PNG</span>
+                      <span className="w-1 h-1 rounded-full bg-base-content/20" />
+                      <span>DOC</span>
                     </p>
                   </div>
                 )}
@@ -410,12 +438,13 @@ const ExpenseForm = () => {
         </div>
 
         {/* Actions */}
-        <div className="px-6 py-4 bg-base-200/50 border-t border-base-200 flex flex-col sm:flex-row gap-3">
+        <div className="px-4 sm:px-6 py-4 bg-base-200/50 border-t border-base-200 flex flex-col sm:flex-row gap-3">
           <button
             type="button"
             onClick={() => navigate('/expenses')}
-            className="btn btn-ghost flex-1"
+            className="btn btn-ghost flex-1 gap-2"
           >
+            <X className="w-4 h-4" />
             Annuler
           </button>
           <button
