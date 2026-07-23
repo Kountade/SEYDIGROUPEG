@@ -1,8 +1,10 @@
-// src/components/expenses/ExpenseList.jsx - Version avec icône Car
+// src/components/expenses/ExpenseList.jsx - Version avec téléchargement PDF
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
+import { pdf } from '@react-pdf/renderer';
+import ExpensePDF from './ExpensePDF';
 import {
   Plus,
   Search,
@@ -34,7 +36,9 @@ import {
   Building2,
   User,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  File,
+  Printer
 } from 'lucide-react';
 
 const ExpenseList = () => {
@@ -52,6 +56,7 @@ const ExpenseList = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [expenseToDelete, setExpenseToDelete] = useState(null);
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
+  const [pdfLoading, setPdfLoading] = useState({});
 
   // Récupérer le rôle de l'utilisateur
   useEffect(() => {
@@ -114,7 +119,7 @@ const ExpenseList = () => {
     return badges[status] || badges.pending;
   };
 
-  // Types de frais avec icônes - Transport changé en Car
+  // Types de frais avec icônes
   const getTypeConfig = (type) => {
     const configs = {
       transport: { icon: Car, label: 'Transport', color: 'text-blue-500' },
@@ -131,7 +136,6 @@ const ExpenseList = () => {
   const filteredAndSortedExpenses = useMemo(() => {
     let result = [...expenses];
     
-    // Filtrage
     if (searchTerm) {
       result = result.filter(expense => {
         const searchLower = searchTerm.toLowerCase();
@@ -143,7 +147,6 @@ const ExpenseList = () => {
       });
     }
 
-    // Tri
     if (sortField) {
       result.sort((a, b) => {
         let aVal = a[sortField];
@@ -242,6 +245,36 @@ const ExpenseList = () => {
     } catch (err) {
       console.error('Erreur suppression:', err);
       showNotification('Erreur lors de la suppression', 'error');
+    }
+  };
+
+  // Téléchargement PDF optimisé
+  const handlePDFDownload = async (expense) => {
+    setPdfLoading(prev => ({ ...prev, [expense.id]: true }));
+    try {
+      // Récupérer les données complètes
+      const response = await AxiosInstance.get(`/expenses/${expense.id}/`);
+      const expenseData = response.data;
+      
+      // Générer le PDF
+      const blob = await pdf(<ExpensePDF expense={expenseData} />).toBlob();
+      
+      // Télécharger le fichier
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `note_frais_${expense.id}_${(expense.employee_name || 'employe').replace(/\s/g, '_')}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      showNotification('PDF téléchargé avec succès', 'success');
+    } catch (error) {
+      console.error('Erreur téléchargement PDF:', error);
+      showNotification('Erreur lors du téléchargement du PDF', 'error');
+    } finally {
+      setPdfLoading(prev => ({ ...prev, [expense.id]: false }));
     }
   };
 
@@ -394,11 +427,11 @@ const ExpenseList = () => {
             <thead>
               <tr className="bg-base-200/50">
                 <th className="w-[10%]">Type</th>
-                <SortableHeader field="description" label="Description" className="w-[25%]" />
+                <SortableHeader field="description" label="Description" className="w-[20%]" />
                 <SortableHeader field="amount" label="Montant" className="w-[15%]" />
-                <SortableHeader field="date" label="Date" className="w-[15%]" />
-                <th className="w-[20%]">Statut</th>
-                <th className="w-[15%] text-center">Actions</th>
+                <SortableHeader field="date" label="Date" className="w-[12%]" />
+                <th className="w-[15%]">Statut</th>
+                <th className="w-[28%] text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -422,6 +455,7 @@ const ExpenseList = () => {
                   const StatusIcon = statusInfo.icon;
                   const typeConfig = getTypeConfig(expense.expense_type);
                   const TypeIcon = typeConfig.icon;
+                  const isPdfLoading = pdfLoading[expense.id];
                   
                   return (
                     <tr key={expense.id} className="hover:bg-base-200/50 transition-colors group">
@@ -434,7 +468,7 @@ const ExpenseList = () => {
                         </div>
                       </td>
                       <td>
-                        <div className="max-w-[200px]">
+                        <div className="max-w-[180px]">
                           <p className="font-medium truncate" title={expense.description}>
                             {expense.description || 'Sans description'}
                           </p>
@@ -472,6 +506,20 @@ const ExpenseList = () => {
                             onClick={() => navigate(`/expenses/${expense.id}`)}
                           >
                             <Eye className="w-4 h-4" />
+                          </button>
+                          
+                          {/* PDF Download */}
+                          <button
+                            className="btn btn-ghost btn-xs tooltip"
+                            data-tip="Télécharger PDF"
+                            onClick={() => handlePDFDownload(expense)}
+                            disabled={isPdfLoading}
+                          >
+                            {isPdfLoading ? (
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <File className="w-4 h-4" />
+                            )}
                           </button>
                           
                           {expense.receipt && (

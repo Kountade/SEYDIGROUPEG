@@ -1,4 +1,5 @@
-// src/components/expenses/ExpenseDetail.jsx
+// src/components/expenses/ExpenseDetail.jsx - Version pleine largeur
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
@@ -17,7 +18,24 @@ import {
   Printer,
   AlertCircle,
   Trash2,
-  Edit
+  Edit,
+  Receipt,
+  Car,
+  Utensils,
+  Hotel,
+  Briefcase,
+  Users,
+  MoreHorizontal,
+  Building2,
+  Mail,
+  Phone,
+  MapPin,
+  CreditCard,
+  Eye,
+  Share2,
+  Copy,
+  Check,
+  Loader2
 } from 'lucide-react';
 
 const ExpenseDetail = () => {
@@ -27,10 +45,15 @@ const ExpenseDetail = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [user, setUser] = useState(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    const userData = JSON.parse(localStorage.getItem('User') || '{}');
-    setUser(userData);
+    try {
+      const userData = JSON.parse(localStorage.getItem('User') || '{}');
+      setUser(userData);
+    } catch (error) {
+      console.error('Erreur lecture localStorage:', error);
+    }
     fetchExpense();
   }, [id]);
 
@@ -56,33 +79,81 @@ const ExpenseDetail = () => {
 
   const getStatusBadge = (status) => {
     const badges = {
-      pending: { class: 'badge-warning', icon: Clock, label: 'En attente' },
-      approved: { class: 'badge-success', icon: CheckCircle, label: 'Approuvé' },
-      rejected: { class: 'badge-error', icon: XCircle, label: 'Rejeté' },
-      paid: { class: 'badge-info', icon: Wallet, label: 'Remboursé' },
-      cancelled: { class: 'badge-ghost', icon: XCircle, label: 'Annulé' }
+      pending: { 
+        class: 'badge-warning', 
+        icon: Clock, 
+        label: 'En attente RH',
+        color: 'text-warning',
+        bg: 'bg-warning/10'
+      },
+      approved: { 
+        class: 'badge-success', 
+        icon: CheckCircle, 
+        label: 'Validé',
+        color: 'text-success',
+        bg: 'bg-success/10'
+      },
+      rejected: { 
+        class: 'badge-error', 
+        icon: XCircle, 
+        label: 'Rejeté',
+        color: 'text-error',
+        bg: 'bg-error/10'
+      },
+      paid: { 
+        class: 'badge-info', 
+        icon: Wallet, 
+        label: 'Payé',
+        color: 'text-info',
+        bg: 'bg-info/10'
+      },
+      cancelled: { 
+        class: 'badge-ghost', 
+        icon: XCircle, 
+        label: 'Annulé',
+        color: 'text-base-content/50',
+        bg: 'bg-base-content/5'
+      }
     };
     return badges[status] || badges.pending;
   };
 
-  const getTypeLabel = (type) => {
-    const labels = {
-      transport: '🚗 Transport',
-      meal: '🍽️ Repas',
-      accommodation: '🏨 Hébergement',
-      supplies: '📎 Fournitures',
-      client: '🤝 Client',
-      other: '📋 Autre'
+  const getTypeConfig = (type) => {
+    const configs = {
+      transport: { icon: Car, label: 'Transport', color: 'text-blue-500', bg: 'bg-blue-50' },
+      meal: { icon: Utensils, label: 'Repas', color: 'text-orange-500', bg: 'bg-orange-50' },
+      accommodation: { icon: Hotel, label: 'Hébergement', color: 'text-purple-500', bg: 'bg-purple-50' },
+      supplies: { icon: Briefcase, label: 'Fournitures', color: 'text-green-500', bg: 'bg-green-50' },
+      client: { icon: Users, label: 'Client', color: 'text-pink-500', bg: 'bg-pink-50' },
+      other: { icon: MoreHorizontal, label: 'Autre', color: 'text-gray-500', bg: 'bg-gray-50' }
     };
-    return labels[type] || type;
+    return configs[type] || configs.other;
   };
+
+  const handleCopyId = () => {
+    navigator.clipboard.writeText(`#${expense.id}`);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const InfoCard = ({ icon: Icon, label, value, color = 'text-primary', bg = 'bg-primary/10' }) => (
+    <div className="flex items-center gap-3 p-4 bg-base-200/50 rounded-xl hover:bg-base-200 transition-colors group">
+      <div className={`${bg} rounded-full p-2.5 flex-shrink-0`}>
+        <Icon className={`w-5 h-5 ${color}`} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs text-base-content/50 font-medium">{label}</p>
+        <p className="font-semibold truncate">{value || '-'}</p>
+      </div>
+    </div>
+  );
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <div className="flex items-center justify-center min-h-[400px] w-full">
         <div className="text-center">
-          <div className="loading loading-spinner loading-lg text-primary"></div>
-          <p className="mt-4 text-base-content/70">Chargement...</p>
+          <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto" />
+          <p className="mt-4 text-base-content/70 font-medium">Chargement du détail...</p>
         </div>
       </div>
     );
@@ -90,15 +161,18 @@ const ExpenseDetail = () => {
 
   if (error || !expense) {
     return (
-      <div className="p-6 text-center">
-        <div className="max-w-md mx-auto">
-          <AlertCircle className="w-16 h-16 text-error mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-error">Erreur</h2>
-          <p className="text-base-content/70 mt-2">{error || 'Note non trouvée'}</p>
+      <div className="flex items-center justify-center min-h-[400px] w-full px-4">
+        <div className="max-w-md w-full text-center">
+          <div className="bg-error/10 rounded-full w-24 h-24 flex items-center justify-center mx-auto mb-6">
+            <AlertCircle className="w-12 h-12 text-error" />
+          </div>
+          <h2 className="text-2xl font-bold text-error mb-2">Erreur</h2>
+          <p className="text-base-content/70">{error || 'Note non trouvée'}</p>
           <button
             onClick={() => navigate('/expenses')}
-            className="btn btn-primary mt-6"
+            className="btn btn-primary mt-6 gap-2"
           >
+            <ArrowLeft className="w-4 h-4" />
             Retour à la liste
           </button>
         </div>
@@ -108,129 +182,159 @@ const ExpenseDetail = () => {
 
   const statusInfo = getStatusBadge(expense.status);
   const StatusIcon = statusInfo.icon;
+  const typeConfig = getTypeConfig(expense.expense_type);
+  const TypeIcon = typeConfig.icon;
 
   return (
-    <div className="max-w-4xl mx-auto p-4 sm:p-6">
+    <div className="w-full h-full px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
       {/* En-tête */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div className="flex items-center gap-4">
           <button
             onClick={() => navigate('/expenses')}
-            className="btn btn-ghost btn-sm gap-2"
+            className="btn btn-ghost btn-sm gap-2 hover:bg-base-200 transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
             Retour
           </button>
-          <h1 className="text-2xl font-bold text-primary">Détail de la note</h1>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-primary flex items-center gap-2">
+              <Receipt className="w-6 h-6 sm:w-8 sm:h-8" />
+              Détail de la note
+            </h1>
+            <p className="text-sm text-base-content/60 mt-1">
+              Consultez les informations de votre demande
+            </p>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <button className="btn btn-ghost btn-sm gap-2">
+        
+        <div className="flex flex-wrap gap-2">
+          <button 
+            className="btn btn-outline btn-sm gap-2"
+            onClick={() => window.print()}
+          >
             <Printer className="w-4 h-4" />
-            Imprimer
+            <span className="hidden sm:inline">Imprimer</span>
           </button>
           {expense.receipt && (
             <a
               href={expense.receipt}
               target="_blank"
               rel="noopener noreferrer"
-              className="btn btn-ghost btn-sm gap-2"
+              className="btn btn-outline btn-sm gap-2"
             >
               <Download className="w-4 h-4" />
-              Reçu
+              <span className="hidden sm:inline">Reçu</span>
             </a>
+          )}
+          {expense.status === 'pending' && (
+            <button
+              onClick={() => navigate(`/expenses/${expense.id}/edit`)}
+              className="btn btn-primary btn-sm gap-2"
+            >
+              <Edit className="w-4 h-4" />
+              Modifier
+            </button>
           )}
         </div>
       </div>
 
       {/* Carte principale */}
-      <div className="bg-base-100 rounded-xl shadow-lg border border-base-200 overflow-hidden">
+      <div className="bg-base-100 rounded-xl shadow-lg border border-base-200 overflow-hidden w-full">
         {/* Entête avec statut */}
         <div className="bg-gradient-to-r from-primary to-primary/80 p-6 text-primary-content">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <p className="text-sm opacity-80">Note de frais #{expense.id}</p>
-              <p className="text-lg font-bold">{expense.description || 'Sans description'}</p>
+            <div className="flex items-center gap-4">
+              <div className="bg-white/20 rounded-full p-3">
+                <TypeIcon className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm opacity-80">Note #{expense.id}</p>
+                  <button
+                    onClick={handleCopyId}
+                    className="btn btn-ghost btn-xs text-white/70 hover:text-white hover:bg-white/10"
+                    title="Copier l'ID"
+                  >
+                    {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                </div>
+                <p className="text-lg font-bold">{expense.description || 'Sans description'}</p>
+              </div>
             </div>
-            <span className={`badge ${statusInfo.class} badge-lg gap-2 border-0 text-white`}>
-              <StatusIcon className="w-4 h-4" />
-              {statusInfo.label}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className={`badge ${statusInfo.class} badge-lg gap-2 border-0 text-white`}>
+                <StatusIcon className="w-4 h-4" />
+                {statusInfo.label}
+              </span>
+            </div>
           </div>
         </div>
 
         {/* Informations */}
-        <div className="p-6 space-y-6">
+        <div className="p-4 sm:p-6 space-y-6">
           {/* Grille info */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div className="flex items-center gap-3 p-3 bg-base-200/50 rounded-lg">
-              <div className="bg-primary/10 rounded-full p-2">
-                <User className="w-4 h-4 text-primary" />
-              </div>
-              <div>
-                <p className="text-xs text-base-content/50">Employé</p>
-                <p className="font-medium">{expense.employee_name}</p>
-              </div>
-            </div>
+            <InfoCard
+              icon={User}
+              label="Employé"
+              value={expense.employee_name}
+              color="text-primary"
+              bg="bg-primary/10"
+            />
 
-            <div className="flex items-center gap-3 p-3 bg-base-200/50 rounded-lg">
-              <div className="bg-primary/10 rounded-full p-2">
-                <Tag className="w-4 h-4 text-primary" />
-              </div>
-              <div>
-                <p className="text-xs text-base-content/50">Type</p>
-                <p className="font-medium">{getTypeLabel(expense.expense_type)}</p>
-              </div>
-            </div>
+            <InfoCard
+              icon={Tag}
+              label="Type de dépense"
+              value={typeConfig.label}
+              color={typeConfig.color}
+              bg={typeConfig.bg}
+            />
 
-            <div className="flex items-center gap-3 p-3 bg-base-200/50 rounded-lg">
-              <div className="bg-primary/10 rounded-full p-2">
-                <Calendar className="w-4 h-4 text-primary" />
-              </div>
-              <div>
-                <p className="text-xs text-base-content/50">Date</p>
-                <p className="font-medium">{expense.date}</p>
-              </div>
-            </div>
+            <InfoCard
+              icon={Calendar}
+              label="Date de la dépense"
+              value={expense.date}
+              color="text-indigo-500"
+              bg="bg-indigo-50"
+            />
 
-            <div className="flex items-center gap-3 p-3 bg-base-200/50 rounded-lg">
-              <div className="bg-primary/10 rounded-full p-2">
-                <DollarSign className="w-4 h-4 text-primary" />
-              </div>
-              <div>
-                <p className="text-xs text-base-content/50">Montant</p>
-                <p className="font-bold text-lg">{formatGNF(expense.amount)}</p>
-              </div>
-            </div>
+            <InfoCard
+              icon={DollarSign}
+              label="Montant"
+              value={formatGNF(expense.amount)}
+              color="text-emerald-500"
+              bg="bg-emerald-50"
+            />
 
             {expense.approved_by_name && (
-              <div className="flex items-center gap-3 p-3 bg-base-200/50 rounded-lg">
-                <div className="bg-success/10 rounded-full p-2">
-                  <CheckCircle className="w-4 h-4 text-success" />
-                </div>
-                <div>
-                  <p className="text-xs text-base-content/50">Approuvé par</p>
-                  <p className="font-medium">{expense.approved_by_name}</p>
-                </div>
-              </div>
+              <InfoCard
+                icon={CheckCircle}
+                label="Approuvé par"
+                value={expense.approved_by_name}
+                color="text-success"
+                bg="bg-success/10"
+              />
             )}
 
             {expense.payment_date && (
-              <div className="flex items-center gap-3 p-3 bg-base-200/50 rounded-lg">
-                <div className="bg-info/10 rounded-full p-2">
-                  <Wallet className="w-4 h-4 text-info" />
-                </div>
-                <div>
-                  <p className="text-xs text-base-content/50">Remboursé le</p>
-                  <p className="font-medium">{new Date(expense.payment_date).toLocaleDateString('fr-FR')}</p>
-                </div>
-              </div>
+              <InfoCard
+                icon={Wallet}
+                label="Remboursé le"
+                value={new Date(expense.payment_date).toLocaleDateString('fr-FR')}
+                color="text-info"
+                bg="bg-info/10"
+              />
             )}
           </div>
 
-          {/* Description */}
+          {/* Description détaillée */}
           {expense.description && (
-            <div className="p-4 bg-base-200/30 rounded-lg">
-              <p className="text-xs text-base-content/50 mb-1">Description</p>
+            <div className="p-4 bg-base-200/30 rounded-xl border border-base-200/50">
+              <div className="flex items-center gap-2 mb-2">
+                <FileText className="w-4 h-4 text-primary" />
+                <p className="text-xs text-base-content/50 font-medium">Description détaillée</p>
+              </div>
               <p className="text-base">{expense.description}</p>
             </div>
           )}
@@ -238,7 +342,7 @@ const ExpenseDetail = () => {
           {/* Rejet */}
           {expense.status === 'rejected' && expense.rejection_reason && (
             <div className="alert alert-error shadow-lg">
-              <XCircle className="w-5 h-5" />
+              <XCircle className="w-5 h-5 flex-shrink-0" />
               <div>
                 <p className="font-bold">Motif du rejet</p>
                 <p className="text-sm">{expense.rejection_reason}</p>
@@ -248,28 +352,99 @@ const ExpenseDetail = () => {
 
           {/* Reçu */}
           {expense.receipt && (
-            <div className="border border-base-200 rounded-lg p-4">
-              <p className="text-xs text-base-content/50 mb-2">Reçu joint</p>
-              <a
-                href={expense.receipt}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 text-primary hover:underline"
-              >
-                <FileText className="w-4 h-4" />
-                Télécharger le reçu
-              </a>
+            <div className="border border-base-200 rounded-xl p-4 hover:bg-base-200/30 transition-colors">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-3">
+                  <div className="bg-primary/10 rounded-full p-2">
+                    <FileText className="w-5 h-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Reçu joint</p>
+                    <p className="text-xs text-base-content/40">Téléchargez le justificatif</p>
+                  </div>
+                </div>
+                <a
+                  href={expense.receipt}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-primary btn-sm gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  Télécharger
+                </a>
+              </div>
             </div>
           )}
 
           {/* Métadonnées */}
-          <div className="text-xs text-base-content/40 border-t border-base-200 pt-4">
-            <p>Créé le {new Date(expense.created_at).toLocaleString('fr-FR')}</p>
-            {expense.updated_at !== expense.created_at && (
-              <p>Modifié le {new Date(expense.updated_at).toLocaleString('fr-FR')}</p>
+          <div className="text-xs text-base-content/40 border-t border-base-200 pt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="flex items-center gap-4 flex-wrap">
+              <span className="flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                Créé le {new Date(expense.created_at).toLocaleString('fr-FR')}
+              </span>
+              {expense.updated_at !== expense.created_at && (
+                <span className="flex items-center gap-1">
+                  <Edit className="w-3 h-3" />
+                  Modifié le {new Date(expense.updated_at).toLocaleString('fr-FR')}
+                </span>
+              )}
+            </div>
+            {expense.status === 'pending' && (
+              <span className="text-warning font-medium">
+                En attente de validation
+              </span>
             )}
           </div>
         </div>
+      </div>
+
+      {/* Actions supplémentaires */}
+      <div className="mt-6 flex flex-wrap gap-3">
+        {expense.status === 'pending' && (
+          <>
+            <button
+              className="btn btn-success gap-2"
+              onClick={() => {
+                // Action de validation
+              }}
+            >
+              <CheckCircle className="w-4 h-4" />
+              Valider
+            </button>
+            <button
+              className="btn btn-error gap-2"
+              onClick={() => {
+                // Action de rejet
+              }}
+            >
+              <XCircle className="w-4 h-4" />
+              Rejeter
+            </button>
+          </>
+        )}
+        {expense.status === 'approved' && (
+          <button
+            className="btn btn-info gap-2"
+            onClick={() => {
+              // Action de paiement
+            }}
+          >
+            <Wallet className="w-4 h-4" />
+            Marquer comme payé
+          </button>
+        )}
+        <button
+          className="btn btn-ghost gap-2 ml-auto"
+          onClick={() => {
+            if (window.confirm('Confirmer la suppression ?')) {
+              // Action de suppression
+            }
+          }}
+        >
+          <Trash2 className="w-4 h-4 text-error" />
+          Supprimer
+        </button>
       </div>
     </div>
   );
