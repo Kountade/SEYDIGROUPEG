@@ -104,6 +104,7 @@ import ExpenseForm from './components/grh/ExpenseForm'
 
 import Journaux from './components/comptabilite/Journaux'
 import JournalForm from './components/comptabilite/JournalForm'
+import JournalDetail from './components/comptabilite/JournalDetail'
 
 import DashboardComptable from './components/comptabilite/DashboardComptable'
 import PlanComptable from './components/comptabilite/PlanComptable'
@@ -114,8 +115,23 @@ import Ecritures from './components/comptabilite/Ecritures'
 
 import Balances from './components/comptabilite/Balances'
 import BalanceForm from './components/comptabilite/BalanceForm'
+import BalanceDetail from './components/comptabilite/BalanceDetail'
+
+import FacturesComptables from './components/comptabilite/FacturesComptables'
+import FactureComptableForm from './components/comptabilite/FactureComptableForm'
+import FactureComptableDetail from './components/comptabilite/FactureComptableDetail'
+
+import Reglements from './components/comptabilite/Reglements'
+import ReglementForm from './components/comptabilite/ReglementForm'
+import ReglementDetail from './components/comptabilite/ReglementDetail'
+
+import Tresorerie from './components/comptabilite/Tresorerie'
+import CompteResultat from './components/comptabilite/CompteResultat'
+
+import Bilan from './components/comptabilite/Bilan'
 
 import AuditLog from './components/audit/AuditLog'
+
 
 
 
@@ -159,6 +175,7 @@ function App() {
 <Route path="/journaux" element={<Journaux />} />
 <Route path="/journaux/nouveau" element={<JournalForm />} />
 <Route path="/journaux/:id/modifier" element={<JournalForm />} />
+<Route path="/journaux/:id" element={<JournalDetail />} />
 
 
 <Route path="/ecritures" element={<Ecritures />} />
@@ -171,7 +188,24 @@ function App() {
 <Route path="/balances" element={<Balances />} />
 <Route path="/balances/nouveau" element={<BalanceForm />} />
 <Route path="/balances/:id/modifier" element={<BalanceForm />} />
-<Route path="/balances/:id" element={<Balances />} /> {/* Détail */}
+<Route path="/balances/:id" element={<BalanceDetail />} /> 
+
+
+<Route path="/factures-comptables" element={<FacturesComptables />} />
+<Route path="/factures-comptables/nouveau" element={<FactureComptableForm />} />
+<Route path="/factures-comptables/:id/modifier" element={<FactureComptableForm />} />
+<Route path="/factures-comptables/:id" element={<FactureComptableForm />} />
+
+
+<Route path="/reglements" element={<Reglements />} />
+<Route path="/reglements/nouveau" element={<ReglementForm />} />
+<Route path="/reglements/:id/modifier" element={<ReglementForm />} />
+<Route path="/reglements/:id" element={<ReglementDetail />} />
+
+<Route path="/tresorerie" element={<Tresorerie />} />
+
+<Route path="/compte-resultat" element={<CompteResultat />} />
+<Route path="/bilan" element={<Bilan />} />
             
                 <Route path="/home" element={<Home/>}/>
                <Route path="/agences" element={<Agences/>}/>

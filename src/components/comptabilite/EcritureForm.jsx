@@ -1,4 +1,5 @@
-// src/components/comptabilite/EcritureForm.jsx
+// src/components/comptabilite/EcritureForm.jsx - Version corrigée
+
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
@@ -8,6 +9,7 @@ import {
   X,
   AlertCircle,
   CheckCircle,
+  XCircle,
   Loader2,
   Plus,
   Trash2,
@@ -31,40 +33,89 @@ const EcritureForm = () => {
   const { id } = useParams()
   const isEditing = Boolean(id)
 
+  // États
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  const [errorDetails, setErrorDetails] = useState(null)
   const [success, setSuccess] = useState(false)
   const [journaux, setJournaux] = useState([])
   const [comptes, setComptes] = useState([])
-  const [agenceId, setAgenceId] = useState(null)
+  const [agences, setAgences] = useState([])
+  const [userAgenceId, setUserAgenceId] = useState(null)
   const [totalDebit, setTotalDebit] = useState(0)
   const [totalCredit, setTotalCredit] = useState(0)
   const [estEquilibree, setEstEquilibree] = useState(true)
-  
+
+  // Données du formulaire
   const [formData, setFormData] = useState({
     journal: '',
-    agence: '',
+    agence: '', // ✅ Ce champ stocke l'ID de l'agence (nombre)
     date_ecriture: new Date().toISOString().split('T')[0],
     date_comptable: new Date().toISOString().split('T')[0],
     libelle: '',
     piece_justificative: '',
     notes: '',
     lignes: [
-      { compte: '', debit: 0, credit: 0, libelle: '' }
+      { compte: '', debit: '', credit: '', libelle: '' }
     ]
   })
 
-  // Récupérer l'agence courante
+  // ============================================================
+  // 1. RÉCUPÉRATION DE L'AGENCE DE L'UTILISATEUR
+  // ============================================================
   useEffect(() => {
-    const userData = JSON.parse(localStorage.getItem('User') || '{}')
-    if (userData.agence_principale) {
-      setAgenceId(userData.agence_principale.id)
-      setFormData(prev => ({ ...prev, agence: userData.agence_principale.id }))
+    const getUserAgence = () => {
+      try {
+        const userData = JSON.parse(localStorage.getItem('User') || '{}')
+        console.log('👤 Données utilisateur:', userData)
+
+        let agenceId = null
+
+        // Cas 1: agence_principale
+        if (userData.agence_principale) {
+          agenceId = userData.agence_principale.id || userData.agence_principale
+        }
+        // Cas 2: agence directe
+        else if (userData.agence) {
+          agenceId = userData.agence.id || userData.agence
+        }
+        // Cas 3: liste d'agences
+        else if (userData.agences && userData.agences.length > 0) {
+          agenceId = userData.agences[0].id || userData.agences[0]
+        }
+        // Cas 4: agence_id direct
+        else if (userData.agence_id) {
+          agenceId = userData.agence_id
+        }
+
+        if (agenceId) {
+          const id = parseInt(agenceId)
+          if (!isNaN(id) && id > 0) {
+            setUserAgenceId(id)
+            // ✅ Stocker l'ID (nombre) dans formData.agence
+            setFormData(prev => ({ 
+              ...prev, 
+              agence: id // ✅ C'est un nombre, pas un objet !
+            }))
+            console.log('✅ Agence définie avec ID:', id)
+          }
+        } else {
+          console.warn('⚠️ Aucune agence trouvée, chargement de la liste...')
+          fetchAgences()
+        }
+      } catch (error) {
+        console.error('❌ Erreur lecture localStorage:', error)
+        fetchAgences()
+      }
     }
+
+    getUserAgence()
   }, [])
 
-  // Charger les données
+  // ============================================================
+  // 2. CHARGEMENT DES DONNÉES
+  // ============================================================
   useEffect(() => {
     fetchJournaux()
     fetchComptes()
@@ -73,12 +124,36 @@ const EcritureForm = () => {
     }
   }, [id])
 
+  // ============================================================
+  // 3. FONCTIONS API
+  // ============================================================
+  
+  const fetchAgences = async () => {
+    try {
+      const response = await AxiosInstance.get('/agences/')
+      setAgences(response.data || [])
+      
+      if (response.data && response.data.length === 1) {
+        const agence = response.data[0]
+        setUserAgenceId(agence.id)
+        // ✅ Stocker l'ID (nombre)
+        setFormData(prev => ({ 
+          ...prev, 
+          agence: agence.id // ✅ Nombre, pas objet
+        }))
+        console.log('✅ Agence unique sélectionnée ID:', agence.id)
+      }
+    } catch (error) {
+      console.error('❌ Erreur chargement agences:', error)
+    }
+  }
+
   const fetchJournaux = async () => {
     try {
       const response = await AxiosInstance.get('/journaux/')
       setJournaux(response.data || [])
     } catch (error) {
-      console.error('Erreur chargement journaux:', error)
+      console.error('❌ Erreur chargement journaux:', error)
     }
   }
 
@@ -87,7 +162,7 @@ const EcritureForm = () => {
       const response = await AxiosInstance.get('/plan-comptable/?is_active=true')
       setComptes(response.data || [])
     } catch (error) {
-      console.error('Erreur chargement comptes:', error)
+      console.error('❌ Erreur chargement comptes:', error)
     }
   }
 
@@ -96,9 +171,13 @@ const EcritureForm = () => {
     try {
       const response = await AxiosInstance.get(`/ecritures/${id}/`)
       const data = response.data
+      
+      // ✅ Récupérer l'ID de l'agence (nombre)
+      const agenceId = data.agence || userAgenceId || null
+      
       setFormData({
         journal: data.journal || '',
-        agence: data.agence || agenceId || '',
+        agence: agenceId, // ✅ Nombre
         date_ecriture: data.date_ecriture || new Date().toISOString().split('T')[0],
         date_comptable: data.date_comptable || new Date().toISOString().split('T')[0],
         libelle: data.libelle || '',
@@ -107,21 +186,25 @@ const EcritureForm = () => {
         lignes: data.lignes && data.lignes.length > 0 
           ? data.lignes.map(l => ({ 
               compte: l.compte || '', 
-              debit: parseFloat(l.debit) || 0, 
-              credit: parseFloat(l.credit) || 0, 
+              debit: l.debit !== undefined && l.debit !== null ? l.debit.toString() : '', 
+              credit: l.credit !== undefined && l.credit !== null ? l.credit.toString() : '', 
               libelle: l.libelle || '' 
             }))
-          : [{ compte: '', debit: 0, credit: 0, libelle: '' }]
+          : [{ compte: '', debit: '', credit: '', libelle: '' }]
       })
       calculateTotals(data.lignes || [])
     } catch (error) {
-      console.error('Erreur chargement écriture:', error)
+      console.error('❌ Erreur chargement écriture:', error)
       setError('Erreur de chargement de l\'écriture')
     } finally {
       setLoading(false)
     }
   }
 
+  // ============================================================
+  // 4. CALCUL DES TOTAUX
+  // ============================================================
+  
   const calculateTotals = (lignes) => {
     let debit = 0
     let credit = 0
@@ -134,17 +217,30 @@ const EcritureForm = () => {
     setEstEquilibree(debit === credit)
   }
 
+  // ============================================================
+  // 5. GESTION DES LIGNES
+  // ============================================================
+  
   const handleLigneChange = (index, field, value) => {
     const newLignes = [...formData.lignes]
     newLignes[index][field] = value
     setFormData(prev => ({ ...prev, lignes: newLignes }))
-    calculateTotals(newLignes)
+    
+    let debit = 0
+    let credit = 0
+    newLignes.forEach(l => {
+      debit += parseFloat(l.debit) || 0
+      credit += parseFloat(l.credit) || 0
+    })
+    setTotalDebit(debit)
+    setTotalCredit(credit)
+    setEstEquilibree(debit === credit)
   }
 
   const addLigne = () => {
     setFormData(prev => ({
       ...prev,
-      lignes: [...prev.lignes, { compte: '', debit: 0, credit: 0, libelle: '' }]
+      lignes: [...prev.lignes, { compte: '', debit: '', credit: '', libelle: '' }]
     }))
   }
 
@@ -152,64 +248,153 @@ const EcritureForm = () => {
     if (formData.lignes.length <= 1) return
     const newLignes = formData.lignes.filter((_, i) => i !== index)
     setFormData(prev => ({ ...prev, lignes: newLignes }))
-    calculateTotals(newLignes)
+    
+    let debit = 0
+    let credit = 0
+    newLignes.forEach(l => {
+      debit += parseFloat(l.debit) || 0
+      credit += parseFloat(l.credit) || 0
+    })
+    setTotalDebit(debit)
+    setTotalCredit(credit)
+    setEstEquilibree(debit === credit)
   }
 
+  // ============================================================
+  // 6. SOUMISSION DU FORMULAIRE - CORRIGÉE
+  // ============================================================
+  
   const handleSubmit = async (e) => {
     e.preventDefault()
     setSaving(true)
     setError(null)
+    setErrorDetails(null)
     setSuccess(false)
 
+    // ✅ VALIDATION 1: Journal
     if (!formData.journal) {
       setError('Le journal est requis')
       setSaving(false)
       return
     }
-    if (!formData.libelle) {
+
+    // ✅ VALIDATION 2: Libellé
+    if (!formData.libelle || formData.libelle.trim() === '') {
       setError('Le libellé est requis')
       setSaving(false)
       return
     }
+
+    // ✅ VALIDATION 3: Agence (CRITIQUE - doit être un nombre)
+    if (!formData.agence) {
+      setError('L\'agence est requise. Veuillez sélectionner une agence.')
+      setSaving(false)
+      return
+    }
+
+    // ✅ S'assurer que agence est un nombre, pas un objet
+    const agenceId = typeof formData.agence === 'object' 
+      ? formData.agence.id 
+      : parseInt(formData.agence)
+    
+    if (isNaN(agenceId) || agenceId <= 0) {
+      setError('L\'agence sélectionnée n\'est pas valide.')
+      setSaving(false)
+      return
+    }
+
+    // ✅ VALIDATION 4: Au moins une ligne valide
+    const hasValidLine = formData.lignes.some(l => l.compte && (l.debit || l.credit))
+    if (!hasValidLine) {
+      setError('Au moins une ligne d\'écriture avec un compte et un montant est requise')
+      setSaving(false)
+      return
+    }
+
+    // ✅ VALIDATION 5: Chaque ligne avec montant doit avoir un compte
+    for (let i = 0; i < formData.lignes.length; i++) {
+      const ligne = formData.lignes[i]
+      if ((parseFloat(ligne.debit) > 0 || parseFloat(ligne.credit) > 0) && !ligne.compte) {
+        setError(`La ligne ${i + 1} a un montant mais pas de compte sélectionné`)
+        setSaving(false)
+        return
+      }
+    }
+
+    // ✅ VALIDATION 6: Équilibre
     if (!estEquilibree) {
       setError('L\'écriture n\'est pas équilibrée. Total débit ≠ Total crédit')
       setSaving(false)
       return
     }
 
+    if (totalDebit === 0 && totalCredit === 0) {
+      setError('L\'écriture doit avoir au moins un montant')
+      setSaving(false)
+      return
+    }
+
+    // ✅ CONSTRUCTION DES DONNÉES AVEC agence EN NOMBRE
     try {
       const dataToSend = {
-        ...formData,
-        lignes: formData.lignes.map(l => ({
-          compte: l.compte,
-          debit: parseFloat(l.debit) || 0,
-          credit: parseFloat(l.credit) || 0,
-          libelle: l.libelle || ''
-        }))
+        journal: parseInt(formData.journal),
+        agence: agenceId, // ✅ ICI c'est un nombre, pas un objet !
+        date_ecriture: formData.date_ecriture,
+        date_comptable: formData.date_comptable,
+        libelle: formData.libelle.trim(),
+        piece_justificative: formData.piece_justificative || '',
+        notes: formData.notes || '',
+        lignes: formData.lignes
+          .filter(l => l.compte || parseFloat(l.debit) > 0 || parseFloat(l.credit) > 0)
+          .map(l => ({
+            compte: parseInt(l.compte),
+            debit: parseFloat(l.debit) || 0,
+            credit: parseFloat(l.credit) || 0,
+            libelle: l.libelle || ''
+          }))
       }
 
+      console.log('📤 Données envoyées:', JSON.stringify(dataToSend, null, 2))
+      console.log('📤 Type de agence:', typeof dataToSend.agence, 'Valeur:', dataToSend.agence)
+
+      let response
       if (isEditing) {
-        await AxiosInstance.put(`/ecritures/${id}/`, dataToSend)
+        response = await AxiosInstance.put(`/ecritures/${id}/`, dataToSend)
       } else {
-        await AxiosInstance.post('/ecritures/', dataToSend)
+        response = await AxiosInstance.post('/ecritures/', dataToSend)
       }
 
+      console.log('✅ Succès:', response.data)
       setSuccess(true)
       setTimeout(() => {
         navigate('/ecritures')
       }, 1500)
+      
     } catch (error) {
-      console.error('Erreur sauvegarde:', error)
+      console.error('❌ Erreur sauvegarde:', error)
+      
       if (error.response?.data) {
         const errors = error.response.data
+        console.log('📋 Détails erreur:', errors)
+        
         if (typeof errors === 'object') {
           const messages = Object.entries(errors)
-            .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`)
+            .map(([key, value]) => {
+              if (key === 'lignes' && Array.isArray(value)) {
+                return `Lignes: ${value.join(', ')}`
+              }
+              return `${key}: ${Array.isArray(value) ? value.join(', ') : value}`
+            })
             .join('\n')
           setError(messages)
+          setErrorDetails(errors)
+        } else if (typeof errors === 'string') {
+          setError(errors)
         } else {
           setError('Erreur lors de la sauvegarde')
         }
+      } else if (error.message) {
+        setError(error.message)
       } else {
         setError('Erreur de connexion au serveur')
       }
@@ -218,16 +403,15 @@ const EcritureForm = () => {
     }
   }
 
-  const getCompteLabel = (compteId) => {
-    const compte = comptes.find(c => c.id === compteId)
-    return compte ? `${compte.code} - ${compte.nom}` : ''
-  }
-
+  // ============================================================
+  // 7. RENDU
+  // ============================================================
+  
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-base-200">
         <div className="text-center space-y-4">
-          <div className="loading loading-spinner loading-lg text-primary w-12 h-12 sm:w-16 sm:h-16"></div>
+          <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto" />
           <p className="text-base sm:text-xl font-semibold text-base-content/70 animate-pulse">
             Chargement de l'écriture...
           </p>
@@ -318,10 +502,18 @@ const EcritureForm = () => {
           <div className="flex-1">
             <span className="font-bold">Erreur</span>
             <pre className="text-sm whitespace-pre-wrap mt-1">{error}</pre>
+            {errorDetails && (
+              <details className="mt-2 text-xs">
+                <summary className="cursor-pointer text-base-content/60">Détails techniques</summary>
+                <pre className="mt-1 p-2 bg-base-200 rounded overflow-auto max-h-40">
+                  {JSON.stringify(errorDetails, null, 2)}
+                </pre>
+              </details>
+            )}
           </div>
           <button 
             className="btn btn-ghost btn-sm btn-circle"
-            onClick={() => setError(null)}
+            onClick={() => { setError(null); setErrorDetails(null) }}
           >
             <X className="w-4 h-4" />
           </button>
@@ -332,8 +524,10 @@ const EcritureForm = () => {
       <form id="ecriture-form" onSubmit={handleSubmit} className="bg-base-100 rounded-xl shadow-lg border border-base-200 overflow-hidden">
         <div className="p-4 sm:p-6 space-y-6">
           
-          {/* Journal, Date, Libellé */}
+          {/* Journal, Agence, Date */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            
+            {/* Journal */}
             <div className="form-control">
               <label className="label">
                 <span className="label-text font-medium flex items-center gap-2">
@@ -353,12 +547,62 @@ const EcritureForm = () => {
                 <option value="">Sélectionner un journal</option>
                 {journaux.map(j => (
                   <option key={j.id} value={j.id}>
-                    {j.code} - {j.nom} ({j.agence_nom})
+                    {j.code} - {j.nom} {j.agence_nom ? `(${j.agence_nom})` : ''}
                   </option>
                 ))}
               </select>
             </div>
 
+            {/* Agence - Affichage en lecture seule avec ID */}
+            <div className="form-control">
+              <label className="label">
+                <span className="label-text font-medium flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-primary" />
+                  Agence
+                  <span className="text-error">*</span>
+                </span>
+              </label>
+              
+              {userAgenceId ? (
+                <div className="flex items-center gap-2 px-4 py-2.5 bg-base-200 rounded-lg border border-base-300">
+                  <Building2 className="w-4 h-4 text-primary" />
+                  <span className="font-medium">
+                    {agences.find(a => a.id === userAgenceId)?.nom || `Agence ${userAgenceId}`}
+                  </span>
+                  <span className="text-xs text-base-content/50 ml-auto">
+                    ID: {userAgenceId}
+                  </span>
+                  <input 
+                    type="hidden" 
+                    name="agence" 
+                    value={userAgenceId} // ✅ Valeur = ID (nombre)
+                  />
+                </div>
+              ) : (
+                <select
+                  name="agence"
+                  value={formData.agence || ''}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    if (value) {
+                      setUserAgenceId(parseInt(value))
+                      setFormData(prev => ({ ...prev, agence: parseInt(value) }))
+                    }
+                  }}
+                  className="select select-bordered w-full focus:select-primary transition-all"
+                  required
+                >
+                  <option value="">Sélectionner une agence</option>
+                  {agences.map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.nom} {a.code ? `(${a.code})` : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {/* Date d'écriture */}
             <div className="form-control">
               <label className="label">
                 <span className="label-text font-medium flex items-center gap-2">
@@ -372,6 +616,28 @@ const EcritureForm = () => {
                 name="date_ecriture"
                 value={formData.date_ecriture}
                 onChange={(e) => setFormData(prev => ({ ...prev, date_ecriture: e.target.value }))}
+                className="input input-bordered w-full focus:input-primary transition-all"
+                required
+              />
+            </div>
+          </div>
+
+          {/* Libellé et Pièce justificative */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="form-control">
+              <label className="label">
+                <span className="label-text font-medium flex items-center gap-2">
+                  <Notebook className="w-4 h-4 text-primary" />
+                  Libellé
+                  <span className="text-error">*</span>
+                </span>
+              </label>
+              <input
+                type="text"
+                name="libelle"
+                placeholder="Libellé de l'écriture..."
+                value={formData.libelle}
+                onChange={(e) => setFormData(prev => ({ ...prev, libelle: e.target.value }))}
                 className="input input-bordered w-full focus:input-primary transition-all"
                 required
               />
@@ -395,42 +661,21 @@ const EcritureForm = () => {
             </div>
           </div>
 
-          {/* Libellé et Notes */}
-          <div className="grid grid-cols-1 gap-4">
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium flex items-center gap-2">
-                  <Notebook className="w-4 h-4 text-primary" />
-                  Libellé
-                  <span className="text-error">*</span>
-                </span>
-              </label>
-              <input
-                type="text"
-                name="libelle"
-                placeholder="Libellé de l'écriture..."
-                value={formData.libelle}
-                onChange={(e) => setFormData(prev => ({ ...prev, libelle: e.target.value }))}
-                className="input input-bordered w-full focus:input-primary transition-all"
-                required
-              />
-            </div>
-
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium flex items-center gap-2">
-                  <Info className="w-4 h-4 text-primary" />
-                  Notes
-                </span>
-              </label>
-              <textarea
-                name="notes"
-                placeholder="Notes supplémentaires..."
-                value={formData.notes}
-                onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-                className="textarea textarea-bordered w-full h-20 focus:textarea-primary transition-all resize-none"
-              />
-            </div>
+          {/* Notes */}
+          <div className="form-control">
+            <label className="label">
+              <span className="label-text font-medium flex items-center gap-2">
+                <Info className="w-4 h-4 text-primary" />
+                Notes
+              </span>
+            </label>
+            <textarea
+              name="notes"
+              placeholder="Notes supplémentaires..."
+              value={formData.notes}
+              onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+              className="textarea textarea-bordered w-full h-20 focus:textarea-primary transition-all resize-none"
+            />
           </div>
 
           {/* Lignes d'écriture */}
@@ -456,8 +701,9 @@ const EcritureForm = () => {
             {/* En-tête du tableau */}
             <div className="grid grid-cols-12 gap-2 mb-2 px-2">
               <div className="col-span-5 text-xs font-semibold text-base-content/60">Compte</div>
-              <div className="col-span-3 text-xs font-semibold text-base-content/60">Débit</div>
-              <div className="col-span-3 text-xs font-semibold text-base-content/60">Crédit</div>
+              <div className="col-span-2 text-xs font-semibold text-base-content/60 text-right">Débit</div>
+              <div className="col-span-2 text-xs font-semibold text-base-content/60 text-right">Crédit</div>
+              <div className="col-span-2 text-xs font-semibold text-base-content/60">Libellé</div>
               <div className="col-span-1"></div>
             </div>
 
@@ -478,25 +724,34 @@ const EcritureForm = () => {
                     ))}
                   </select>
                 </div>
-                <div className="col-span-3">
+                <div className="col-span-2">
                   <input
                     type="number"
                     step="0.01"
                     min="0"
                     placeholder="0.00"
-                    value={ligne.debit || ''}
-                    onChange={(e) => handleLigneChange(index, 'debit', parseFloat(e.target.value) || 0)}
-                    className="input input-bordered w-full input-sm focus:input-primary transition-all"
+                    value={ligne.debit}
+                    onChange={(e) => handleLigneChange(index, 'debit', e.target.value)}
+                    className="input input-bordered w-full input-sm text-right focus:input-primary transition-all"
                   />
                 </div>
-                <div className="col-span-3">
+                <div className="col-span-2">
                   <input
                     type="number"
                     step="0.01"
                     min="0"
                     placeholder="0.00"
-                    value={ligne.credit || ''}
-                    onChange={(e) => handleLigneChange(index, 'credit', parseFloat(e.target.value) || 0)}
+                    value={ligne.credit}
+                    onChange={(e) => handleLigneChange(index, 'credit', e.target.value)}
+                    className="input input-bordered w-full input-sm text-right focus:input-primary transition-all"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <input
+                    type="text"
+                    placeholder="Libellé"
+                    value={ligne.libelle}
+                    onChange={(e) => handleLigneChange(index, 'libelle', e.target.value)}
                     className="input input-bordered w-full input-sm focus:input-primary transition-all"
                   />
                 </div>
@@ -504,7 +759,7 @@ const EcritureForm = () => {
                   <button
                     type="button"
                     onClick={() => removeLigne(index)}
-                    className="btn btn-ghost btn-xs text-error"
+                    className="btn btn-ghost btn-xs text-error hover:bg-error/10"
                     disabled={formData.lignes.length <= 1}
                   >
                     <Trash2 className="w-3 h-3" />
@@ -530,7 +785,9 @@ const EcritureForm = () => {
                     {estEquilibree ? (
                       <>
                         <CheckCircle className="w-4 h-4 text-success" />
-                        <span className="text-sm font-medium text-success">Équilibrée</span>
+                        <span className="text-sm font-medium text-success">
+                          {totalDebit > 0 ? 'Équilibrée' : 'Aucun montant'}
+                        </span>
                       </>
                     ) : (
                       <>
