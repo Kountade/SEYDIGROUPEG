@@ -111,7 +111,8 @@ import PlanComptable from './components/comptabilite/PlanComptable'
 import PlanComptableForm from './components/comptabilite/PlanComptableForm'
 import EcritureForm from './components/comptabilite/EcritureForm'
 import Ecritures from './components/comptabilite/Ecritures'
-
+import EcritureDetail from './components/comptabilite/EcritureDetail'
+import EcriturePdf from './components/comptabilite/EcriturePdf'
 
 import Balances from './components/comptabilite/Balances'
 import BalanceForm from './components/comptabilite/BalanceForm'
@@ -181,7 +182,8 @@ function App() {
 <Route path="/ecritures" element={<Ecritures />} />
 <Route path="/ecritures/nouveau" element={<EcritureForm />} />
 <Route path="/ecritures/:id/modifier" element={<EcritureForm />} />
-<Route path="/ecritures/:id" element={<EcritureForm />} />
+<Route path="/ecritures/:id" element={<EcritureDetail />} />
+
 
 
 

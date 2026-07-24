@@ -2,6 +2,8 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
+import { pdf } from '@react-pdf/renderer'
+import EcriturePdf from './EcriturePdf'
 import {
   Plus,
   Edit,
@@ -32,7 +34,9 @@ import {
   Shield,
   Layers,
   User,
-  Info
+  Info,
+  Loader2,
+  Download
 } from 'lucide-react'
 
 const Ecritures = () => {
@@ -62,6 +66,7 @@ const Ecritures = () => {
     totalDebit: 0,
     totalCredit: 0
   })
+  const [pdfLoading, setPdfLoading] = useState({})
 
   // Configuration des statuts
   const statusConfig = {
@@ -174,6 +179,35 @@ const Ecritures = () => {
     }
   }
 
+  const handleDownloadPDF = async (ecriture) => {
+    setPdfLoading(prev => ({ ...prev, [ecriture.id]: true }))
+    try {
+      // Récupérer les données complètes
+      const response = await AxiosInstance.get(`/ecritures/${ecriture.id}/`)
+      const data = response.data
+      
+      // Générer le PDF
+      const blob = await pdf(<EcriturePdf ecriture={data} />).toBlob()
+      
+      // Télécharger
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `ecriture_${ecriture.reference}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      
+      showNotification('PDF téléchargé avec succès', 'success')
+    } catch (error) {
+      console.error('Erreur PDF:', error)
+      showNotification('Erreur lors du téléchargement du PDF', 'error')
+    } finally {
+      setPdfLoading(prev => ({ ...prev, [ecriture.id]: false }))
+    }
+  }
+
   const handleSort = (field) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
@@ -275,7 +309,7 @@ const Ecritures = () => {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-base-200">
         <div className="text-center space-y-4">
-          <div className="loading loading-spinner loading-lg text-primary w-12 h-12 sm:w-16 sm:h-16"></div>
+          <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto" />
           <p className="text-base sm:text-xl font-semibold text-base-content/70 animate-pulse">
             Chargement des écritures...
           </p>
@@ -506,79 +540,93 @@ const Ecritures = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedEcritures.map((ecriture) => (
-                    <tr key={ecriture.id} className="hover">
-                      <td className="font-mono text-xs text-success">{ecriture.reference}</td>
-                      <td>
-                        <div className="font-medium text-sm truncate max-w-[150px]">
-                          {ecriture.libelle}
-                        </div>
-                        {ecriture.created_by_email && (
-                          <div className="text-[10px] text-base-content/40 flex items-center gap-1">
-                            <User className="w-3 h-3" />
-                            {ecriture.created_by_email}
+                  {paginatedEcritures.map((ecriture) => {
+                    const isPdfLoading = pdfLoading[ecriture.id]
+                    return (
+                      <tr key={ecriture.id} className="hover">
+                        <td className="font-mono text-xs text-success">{ecriture.reference}</td>
+                        <td>
+                          <div className="font-medium text-sm truncate max-w-[150px]">
+                            {ecriture.libelle}
                           </div>
-                        )}
-                      </td>
-                      <td>
-                        <span className="badge badge-ghost badge-xs">{ecriture.journal_code || ecriture.journal}</span>
-                      </td>
-                      <td>{formatDate(ecriture.date_ecriture)}</td>
-                      <td className="font-mono text-xs text-success">{formatCurrency(ecriture.total_debit)}</td>
-                      <td className="font-mono text-xs text-error">{formatCurrency(ecriture.total_credit)}</td>
-                      <td>{getStatusBadge(ecriture.status)}</td>
-                      <td className="text-center">
-                        <div className="flex justify-center gap-1">
-                          <button
-                            onClick={() => navigate(`/ecritures/${ecriture.id}/modifier`)}
-                            className="btn btn-ghost btn-xs text-success"
-                            title="Modifier"
-                            disabled={ecriture.status !== 'brouillon'}
-                          >
-                            <Edit className="w-3 h-3" />
-                          </button>
-                          {ecriture.status === 'brouillon' && (
-                            <>
-                              <button
-                                onClick={() => handleValiderEcriture(ecriture.id)}
-                                className="btn btn-success btn-xs"
-                                title="Valider"
-                              >
-                                <CheckCircle className="w-3 h-3" />
-                              </button>
-                              <button
-                                onClick={() => handleAnnulerEcriture(ecriture.id)}
-                                className="btn btn-warning btn-xs"
-                                title="Annuler"
-                              >
-                                <XCircle className="w-3 h-3" />
-                              </button>
-                            </>
+                          {ecriture.created_by_email && (
+                            <div className="text-[10px] text-base-content/40 flex items-center gap-1">
+                              <User className="w-3 h-3" />
+                              {ecriture.created_by_email}
+                            </div>
                           )}
-                          {ecriture.status === 'valide' && (
+                        </td>
+                        <td>
+                          <span className="badge badge-ghost badge-xs">{ecriture.journal_code || ecriture.journal}</span>
+                        </td>
+                        <td>{formatDate(ecriture.date_ecriture)}</td>
+                        <td className="font-mono text-xs text-success">{formatCurrency(ecriture.total_debit)}</td>
+                        <td className="font-mono text-xs text-error">{formatCurrency(ecriture.total_credit)}</td>
+                        <td>{getStatusBadge(ecriture.status)}</td>
+                        <td className="text-center">
+                          <div className="flex justify-center gap-1 flex-wrap">
                             <button
                               onClick={() => navigate(`/ecritures/${ecriture.id}`)}
-                              className="btn btn-ghost btn-xs text-info"
-                              title="Voir détails"
+                              className="btn btn-ghost btn-xs text-info hover:bg-info/10"
+                              title="Voir le détail"
                             >
                               <Eye className="w-3 h-3" />
                             </button>
-                          )}
-                          <button
-                            onClick={() => {
-                              setEcritureToDelete(ecriture)
-                              setShowDeleteModal(true)
-                            }}
-                            className="btn btn-ghost btn-xs text-error"
-                            title="Supprimer"
-                            disabled={ecriture.status !== 'brouillon'}
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                            <button
+                              onClick={() => navigate(`/ecritures/${ecriture.id}/modifier`)}
+                              className="btn btn-ghost btn-xs text-success hover:bg-success/10"
+                              title="Modifier"
+                              disabled={ecriture.status !== 'brouillon'}
+                            >
+                              <Edit className="w-3 h-3" />
+                            </button>
+                            {/* ✅ Bouton PDF */}
+                            <button
+                              onClick={() => handleDownloadPDF(ecriture)}
+                              className="btn btn-ghost btn-xs text-primary hover:bg-primary/10"
+                              title="Télécharger PDF"
+                              disabled={isPdfLoading}
+                            >
+                              {isPdfLoading ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Download className="w-3 h-3" />
+                              )}
+                            </button>
+                            {ecriture.status === 'brouillon' && (
+                              <>
+                                <button
+                                  onClick={() => handleValiderEcriture(ecriture.id)}
+                                  className="btn btn-success btn-xs"
+                                  title="Valider"
+                                >
+                                  <CheckCircle className="w-3 h-3" />
+                                </button>
+                                <button
+                                  onClick={() => handleAnnulerEcriture(ecriture.id)}
+                                  className="btn btn-warning btn-xs"
+                                  title="Annuler"
+                                >
+                                  <XCircle className="w-3 h-3" />
+                                </button>
+                              </>
+                            )}
+                            <button
+                              onClick={() => {
+                                setEcritureToDelete(ecriture)
+                                setShowDeleteModal(true)
+                              }}
+                              className="btn btn-ghost btn-xs text-error hover:bg-error/10"
+                              title="Supprimer"
+                              disabled={ecriture.status !== 'brouillon'}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

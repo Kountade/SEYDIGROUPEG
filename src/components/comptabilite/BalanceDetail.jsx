@@ -2,6 +2,8 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
+import { pdf } from '@react-pdf/renderer'
+import BalancePdf from './BalancePdf'
 import {
   ArrowLeft,
   RefreshCw,
@@ -28,7 +30,8 @@ import {
   Info,
   TrendingUp,
   TrendingDown,
-  Shield
+  Shield,
+  Loader2
 } from 'lucide-react'
 
 const BalanceDetail = () => {
@@ -43,6 +46,7 @@ const BalanceDetail = () => {
   const [filterType, setFilterType] = useState('')
   const [expandedRows, setExpandedRows] = useState(new Set())
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' })
+  const [pdfLoading, setPdfLoading] = useState(false)
 
   const typeConfig = {
     actif: { label: 'Actif', color: 'info', icon: TrendingUp },
@@ -159,6 +163,48 @@ const BalanceDetail = () => {
   // Vérifier l'équilibre
   const estEquilibree = totals.totalDebitFinal === totals.totalCreditFinal
 
+  // ✅ Télécharger le PDF de la balance
+  const handleDownloadPDF = async () => {
+    if (!balance) return
+    
+    setPdfLoading(true)
+    try {
+      // Récupérer les données complètes avec les lignes
+      const response = await AxiosInstance.get(`/balances/${balance.id}/`)
+      const data = response.data
+      
+      // Générer le PDF
+      const blob = await pdf(<BalancePdf balance={data} />).toBlob()
+      
+      // Télécharger
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `balance_${balance.reference}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      
+      showNotification('PDF téléchargé avec succès', 'success')
+    } catch (error) {
+      console.error('Erreur PDF:', error)
+      showNotification('Erreur lors du téléchargement du PDF', 'error')
+    } finally {
+      setPdfLoading(false)
+    }
+  }
+
+  // ✅ Fonction d'impression
+  const handlePrint = () => {
+    window.print()
+  }
+
+  // ✅ Exporter en Excel (fonctionnalité à implémenter)
+  const handleExportExcel = () => {
+    showNotification('Export Excel en cours de développement', 'info')
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-base-200">
@@ -194,9 +240,11 @@ const BalanceDetail = () => {
       {/* Notification */}
       {notification.show && (
         <div className="fixed top-16 right-3 sm:right-6 z-50 animate-slideDown">
-          <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-lg text-sm sm:text-base`}>
+          <div className={`alert ${notification.type === 'success' ? 'alert-success' : notification.type === 'info' ? 'alert-info' : 'alert-error'} shadow-lg text-sm sm:text-base`}>
             {notification.type === 'success' ? (
               <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5" />
+            ) : notification.type === 'info' ? (
+              <Info className="w-4 h-4 sm:w-5 sm:h-5" />
             ) : (
               <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5" />
             )}
@@ -225,12 +273,14 @@ const BalanceDetail = () => {
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-base-content">
               Balance {balance.reference}
             </h1>
-            <p className="text-xs sm:text-sm text-base-content/60 mt-1 flex items-center gap-2">
+            <p className="text-xs sm:text-sm text-base-content/60 mt-1 flex items-center gap-2 flex-wrap">
               <span>{balance.type_balance_display || balance.type_balance}</span>
               <span className="w-px h-3 bg-base-300"></span>
               <span>{formatDate(balance.date_debut)} → {formatDate(balance.date_fin)}</span>
               <span className="w-px h-3 bg-base-300"></span>
-              {getTypeBadge(balance.status)}
+              <span className={`badge ${balance.status === 'valide' ? 'badge-success' : balance.status === 'archive' ? 'badge-neutral' : 'badge-warning'} badge-sm`}>
+                {balance.status_display || balance.status}
+              </span>
             </p>
           </div>
         </div>
@@ -239,25 +289,40 @@ const BalanceDetail = () => {
           <button 
             onClick={fetchData}
             className="btn btn-sm sm:btn-md btn-outline gap-1"
+            title="Actualiser"
           >
             <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4" />
             <span className="hidden xs:inline">Actualiser</span>
           </button>
+          
+          {/* ✅ Bouton PDF amélioré */}
           <button 
-            onClick={() => window.print()}
+            onClick={handleDownloadPDF}
+            className="btn btn-sm sm:btn-md btn-success gap-1"
+            title="Télécharger le PDF"
+            disabled={pdfLoading}
+          >
+            {pdfLoading ? (
+              <Loader2 className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
+            ) : (
+              <Download className="w-3 h-3 sm:w-4 sm:h-4" />
+            )}
+            <span className="hidden xs:inline">{pdfLoading ? 'Génération...' : 'Exporter PDF'}</span>
+          </button>
+          
+          <button 
+            onClick={handlePrint}
             className="btn btn-sm sm:btn-md btn-outline gap-1"
+            title="Imprimer"
           >
             <Printer className="w-3 h-3 sm:w-4 sm:h-4" />
             <span className="hidden xs:inline">Imprimer</span>
           </button>
+          
           <button 
-            className="btn btn-sm sm:btn-md btn-success gap-1"
-          >
-            <Download className="w-3 h-3 sm:w-4 sm:h-4" />
-            <span className="hidden xs:inline">Exporter PDF</span>
-          </button>
-          <button 
+            onClick={handleExportExcel}
             className="btn btn-sm sm:btn-md btn-info gap-1"
+            title="Exporter en Excel"
           >
             <FileSpreadsheet className="w-3 h-3 sm:w-4 sm:h-4" />
             <span className="hidden xs:inline">Exporter Excel</span>
@@ -291,7 +356,7 @@ const BalanceDetail = () => {
 
       {/* Équilibre */}
       <div className={`alert ${estEquilibree ? 'alert-success' : 'alert-error'} shadow-lg`}>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {estEquilibree ? (
             <>
               <CheckCircle className="w-5 h-5" />
@@ -490,7 +555,7 @@ const BalanceDetail = () => {
                 {/* Équilibre */}
                 <tr className={`${estEquilibree ? 'bg-success/5' : 'bg-error/5'}`}>
                   <td colSpan="6" className="text-center py-2">
-                    <div className="flex items-center justify-center gap-2">
+                    <div className="flex items-center justify-center gap-2 flex-wrap">
                       {estEquilibree ? (
                         <>
                           <CheckCircle className="w-4 h-4 text-success" />
@@ -512,6 +577,26 @@ const BalanceDetail = () => {
               </tfoot>
             )}
           </table>
+        </div>
+      </div>
+
+      {/* Pied de page avec infos supplémentaires */}
+      <div className="bg-base-100 rounded-xl shadow-md border border-base-200 p-4 sm:p-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+          <div>
+            <p className="text-xs text-base-content/60">Créé le</p>
+            <p className="font-medium">{formatDate(balance.created_at)} {balance.created_at ? `à ${new Date(balance.created_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'})}` : ''}</p>
+          </div>
+          {balance.validated_at && (
+            <div>
+              <p className="text-xs text-base-content/60">Validé le</p>
+              <p className="font-medium text-success">{formatDate(balance.validated_at)} {`à ${new Date(balance.validated_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'})}`}</p>
+            </div>
+          )}
+          <div>
+            <p className="text-xs text-base-content/60">Nombre de lignes</p>
+            <p className="font-medium">{filteredLignes.length} compte(s) affiché(s) sur {lignes.length} total</p>
+          </div>
         </div>
       </div>
 

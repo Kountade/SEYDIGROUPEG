@@ -2,6 +2,8 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
+import { pdf } from '@react-pdf/renderer'
+import BalancePdf from './BalancePdf'
 import {
   Plus,
   Edit,
@@ -35,7 +37,8 @@ import {
   Info,
   Download,
   Printer,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Loader2
 } from 'lucide-react'
 
 const Balances = () => {
@@ -55,6 +58,7 @@ const Balances = () => {
   const [showFilters, setShowFilters] = useState(false)
   const [sortField, setSortField] = useState('created_at')
   const [sortDirection, setSortDirection] = useState('desc')
+  const [pdfLoading, setPdfLoading] = useState({})
   const [stats, setStats] = useState({
     total: 0,
     generale: 0,
@@ -167,6 +171,35 @@ const Balances = () => {
     }
   }
 
+  const handleDownloadPDF = async (balance) => {
+    setPdfLoading(prev => ({ ...prev, [balance.id]: true }))
+    try {
+      // Récupérer les données complètes avec les lignes
+      const response = await AxiosInstance.get(`/balances/${balance.id}/`)
+      const data = response.data
+      
+      // Générer le PDF
+      const blob = await pdf(<BalancePdf balance={data} />).toBlob()
+      
+      // Télécharger
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `balance_${balance.reference}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      
+      showNotification('PDF téléchargé avec succès', 'success')
+    } catch (error) {
+      console.error('Erreur PDF:', error)
+      showNotification('Erreur lors du téléchargement du PDF', 'error')
+    } finally {
+      setPdfLoading(prev => ({ ...prev, [balance.id]: false }))
+    }
+  }
+
   const getTypeBadge = (type) => {
     const config = typeConfig[type] || typeConfig.generale
     return (
@@ -254,7 +287,7 @@ const Balances = () => {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-base-200">
         <div className="text-center space-y-4">
-          <div className="loading loading-spinner loading-lg text-primary w-12 h-12 sm:w-16 sm:h-16"></div>
+          <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto" />
           <p className="text-base sm:text-xl font-semibold text-base-content/70 animate-pulse">
             Chargement des balances...
           </p>
@@ -491,55 +524,68 @@ const Balances = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedBalances.map((balance) => (
-                    <tr key={balance.id} className="hover">
-                      <td className="font-mono text-xs text-primary">{balance.reference}</td>
-                      <td>{getTypeBadge(balance.type_balance)}</td>
-                      <td>
-                        <div className="flex items-center gap-1 text-xs">
-                          <Calendar className="w-3 h-3 text-base-content/40" />
-                          {formatDate(balance.date_debut)} → {formatDate(balance.date_fin)}
-                        </div>
-                      </td>
-                      <td>{getStatusBadge(balance.status)}</td>
-                      <td className="text-xs">{formatDate(balance.created_at)}</td>
-                      <td className="text-center">
-                        <div className="flex justify-center gap-1 flex-wrap">
-                          {/* ✅ Lien vers le détail de la balance */}
-                          <button
-                            onClick={() => navigate(`/balances/${balance.id}`)}
-                            className="btn btn-ghost btn-xs text-info hover:bg-info/10"
-                            title="Voir le détail de la balance"
-                          >
-                            <Eye className="w-3 h-3" />
-                          </button>
-                          <button
-                            className="btn btn-ghost btn-xs text-primary"
-                            title="Exporter en PDF"
-                          >
-                            <Download className="w-3 h-3" />
-                          </button>
-                          <button
-                            className="btn btn-ghost btn-xs text-success"
-                            title="Exporter en Excel"
-                          >
-                            <FileSpreadsheet className="w-3 h-3" />
-                          </button>
-                          <button
-                            onClick={() => {
-                              setBalanceToDelete(balance)
-                              setShowDeleteModal(true)
-                            }}
-                            className="btn btn-ghost btn-xs text-error hover:bg-error/10"
-                            title="Supprimer"
-                            disabled={balance.status === 'valide'}
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {paginatedBalances.map((balance) => {
+                    const isPdfLoading = pdfLoading[balance.id]
+                    return (
+                      <tr key={balance.id} className="hover">
+                        <td className="font-mono text-xs text-primary">{balance.reference}</td>
+                        <td>{getTypeBadge(balance.type_balance)}</td>
+                        <td>
+                          <div className="flex items-center gap-1 text-xs">
+                            <Calendar className="w-3 h-3 text-base-content/40" />
+                            {formatDate(balance.date_debut)} → {formatDate(balance.date_fin)}
+                          </div>
+                        </td>
+                        <td>{getStatusBadge(balance.status)}</td>
+                        <td className="text-xs">{formatDate(balance.created_at)}</td>
+                        <td className="text-center">
+                          <div className="flex justify-center gap-1 flex-wrap">
+                            {/* Lien vers le détail */}
+                            <button
+                              onClick={() => navigate(`/balances/${balance.id}`)}
+                              className="btn btn-ghost btn-xs text-info hover:bg-info/10"
+                              title="Voir le détail de la balance"
+                            >
+                              <Eye className="w-3 h-3" />
+                            </button>
+                            
+                            {/* ✅ Bouton PDF */}
+                            <button
+                              onClick={() => handleDownloadPDF(balance)}
+                              className="btn btn-ghost btn-xs text-primary hover:bg-primary/10"
+                              title="Télécharger PDF"
+                              disabled={isPdfLoading}
+                            >
+                              {isPdfLoading ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Download className="w-3 h-3" />
+                              )}
+                            </button>
+                            
+                            <button
+                              className="btn btn-ghost btn-xs text-success"
+                              title="Exporter en Excel"
+                            >
+                              <FileSpreadsheet className="w-3 h-3" />
+                            </button>
+                            
+                            <button
+                              onClick={() => {
+                                setBalanceToDelete(balance)
+                                setShowDeleteModal(true)
+                              }}
+                              className="btn btn-ghost btn-xs text-error hover:bg-error/10"
+                              title="Supprimer"
+                              disabled={balance.status === 'valide'}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

@@ -1,4 +1,4 @@
-// src/components/Navbar.jsx - Version Complète Optimisée
+// src/components/Navbar.jsx - Version Complète avec Trésorerie
 import React, { useState, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { 
@@ -90,7 +90,9 @@ import {
   Clock as ClockIcon,
   Download,
   Printer,
-  FileCheck
+  FileCheck,
+  Coins, // Ajout pour trésorerie
+  PiggyBank // Ajout pour trésorerie
 } from 'lucide-react'
 
 import logo from '../assets/logo.svg'
@@ -154,6 +156,22 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const [clotureEnCours, setClotureEnCours] = useState(false)
   const [balancesDisponibles, setBalancesDisponibles] = useState(0)
   
+  // 🔥 NOUVEAUX ÉTATS TRÉSORERIE DÉTAILLÉS
+  const [tresorerieDetails, setTresorerieDetails] = useState({
+    solde_global: 0,
+    solde_caisses: 0,
+    solde_banques: 0,
+    encaissements_jour: 0,
+    decaissements_jour: 0,
+    flux_jour: 0,
+    nb_caisses: 0,
+    nb_comptes: 0,
+    dernier_mouvement: null,
+    previsions_7j: 0,
+    alertes_tresorerie: []
+  })
+  const [tresorerieLoading, setTresorerieLoading] = useState(false)
+  
   // Données pour les différentes sections
   const [achatsALivrer, setAchatsALivrer] = useState(0)
   const [alertsCount, setAlertsCount] = useState(0)
@@ -208,6 +226,68 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const isUserComptable = (rolesAgence) => {
     if (!rolesAgence || !Array.isArray(rolesAgence)) return false
     return rolesAgence.some(r => r.role === 'comptable' && r.est_actif === true)
+  }
+
+  // Charger les données de trésorerie
+  const loadTresorerieData = async (agenceId = null, isComptableOrAdmin = false) => {
+    if (!isComptableOrAdmin) return
+    
+    setTresorerieLoading(true)
+    try {
+      const params = agenceId ? `?agence_id=${agenceId}` : ''
+      
+      // 1. Récupérer le solde global
+      const tresorerieRes = await AxiosInstance.get(`/tresorerie/${params}`).catch(() => ({ data: { solde_final: 0 } }))
+      const soldeGlobal = tresorerieRes.data?.solde_final || 0
+      setTresorerie(soldeGlobal)
+      
+      // 2. Récupérer les caisses
+      const caissesRes = await AxiosInstance.get(`/caisses/${params}`).catch(() => ({ data: [] }))
+      const caisses = caissesRes.data || []
+      const soldeCaisses = caisses.reduce((sum, c) => sum + (c.solde_actuel || 0), 0)
+      
+      // 3. Récupérer les comptes bancaires
+      const comptesRes = await AxiosInstance.get(`/comptes-bancaires/${params}`).catch(() => ({ data: [] }))
+      const comptes = comptesRes.data || []
+      const soldeBanques = comptes.reduce((sum, c) => sum + (c.solde || 0), 0)
+      
+      // 4. Récupérer les mouvements du jour
+      const today = new Date().toISOString().split('T')[0]
+      const mouvementsRes = await AxiosInstance.get(`/mouvements/?date=${today}${params}`).catch(() => ({ data: [] }))
+      const mouvements = mouvementsRes.data || []
+      const encaissements = mouvements.filter(m => m.type === 'encaissement').reduce((sum, m) => sum + (m.montant || 0), 0)
+      const decaissements = mouvements.filter(m => m.type === 'decaissement').reduce((sum, m) => sum + (m.montant || 0), 0)
+      
+      // 5. Récupérer les prévisions 7 jours
+      const previsionsRes = await AxiosInstance.get(`/previsions/${params}`).catch(() => ({ data: [] }))
+      const previsions = previsionsRes.data || []
+      const previsions7j = previsions
+        .filter(p => new Date(p.date) >= new Date() && new Date(p.date) <= new Date(Date.now() + 7 * 86400000))
+        .reduce((sum, p) => sum + (p.montant_prevu || 0), 0)
+      
+      // 6. Récupérer les alertes de trésorerie
+      const alertesRes = await AxiosInstance.get(`/alertes-tresorerie/${params}`).catch(() => ({ data: [] }))
+      const alertes = alertesRes.data || []
+      
+      setTresorerieDetails({
+        solde_global: soldeGlobal,
+        solde_caisses: soldeCaisses,
+        solde_banques: soldeBanques,
+        encaissements_jour: encaissements,
+        decaissements_jour: decaissements,
+        flux_jour: encaissements - decaissements,
+        nb_caisses: caisses.length,
+        nb_comptes: comptes.length,
+        dernier_mouvement: mouvements.length > 0 ? mouvements[0] : null,
+        previsions_7j: previsions7j,
+        alertes_tresorerie: alertes.filter(a => a.est_active)
+      })
+      
+    } catch (error) {
+      console.error('❌ Erreur chargement trésorerie:', error)
+    } finally {
+      setTresorerieLoading(false)
+    }
   }
 
   // Charger les données
@@ -269,6 +349,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         
         const isComptable = isUserComptable(userRolesAgence)
         const isPDGorDRH = user?.role_global === 'pdg' || user?.role_global === 'drh'
+        const isComptableOrAdmin = isComptable || isPDGorDRH
         
         if (isComptable) {
           setEffectiveRole('comptable')
@@ -286,10 +367,10 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
           setRoleType('global')
         }
         
-        const isComptableOrAdmin = isComptable || isPDGorDRH
         const agenceId = currentAgence?.id
         const params = (!isPDGorDRH && agenceId && isComptable) ? `?agence_id=${agenceId}` : ''
         
+        // Charger les données comptables
         if (isComptableOrAdmin) {
           try {
             const ecrituresRes = await AxiosInstance.get(`/ecritures/?status=brouillon${params}`).catch(() => ({ data: [] }))
@@ -298,14 +379,14 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
             const facturesRes = await AxiosInstance.get(`/factures-comptables/?status=impayee${params}`).catch(() => ({ data: [] }))
             setFacturesImpayees(facturesRes.data?.length || 0)
             
-            const tresorerieRes = await AxiosInstance.get(`/tresorerie/${params}`).catch(() => ({ data: { solde_final: 0 } }))
-            setTresorerie(tresorerieRes.data?.solde_final || 0)
-            
             const clotureRes = await AxiosInstance.get(`/clotures/?status=en_cours${params}`).catch(() => ({ data: [] }))
             setClotureEnCours((clotureRes.data?.length || 0) > 0)
             
             const balancesRes = await AxiosInstance.get(`/balances/${params}`).catch(() => ({ data: [] }))
             setBalancesDisponibles(balancesRes.data?.length || 0)
+            
+            // 🔥 Charger la trésorerie détaillée
+            await loadTresorerieData(agenceId, isComptableOrAdmin)
             
           } catch (e) {
             console.log('⚠️ Erreur chargement données comptables:', e)
@@ -328,6 +409,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         setVentesImpayees(ventesRes.data?.length || 0)
         setAbsencesEnAttente(absencesRes.data?.length || 0)
         
+        // Construire les notifications
         const notifs = []
         if (stocksRes.data?.length) {
           notifs.push({ id: 'stocks', title: 'Stock faible', message: `${stocksRes.data.length} produit(s) en rupture`, link: '/stocks', type: 'warning', time: 'maintenant' })
@@ -351,6 +433,20 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
           notifs.push({ id: 'absences', title: 'Absences en attente', message: `${absencesRes.data.length} demande(s) de congé en attente`, link: '/leaves', type: 'info', time: "aujourd'hui" })
         }
         
+        // 🔥 Ajouter les alertes de trésorerie
+        if (tresorerieDetails.alertes_tresorerie.length > 0) {
+          tresorerieDetails.alertes_tresorerie.forEach(alerte => {
+            notifs.push({
+              id: `tresorerie_${alerte.id}`,
+              title: `⚠️ Alerte trésorerie`,
+              message: alerte.message || `Solde bas: ${alerte.seuil} FCFA`,
+              link: '/tresorerie',
+              type: alerte.type === 'critique' ? 'error' : 'warning',
+              time: "maintenant"
+            })
+          })
+        }
+        
         setNotifications(notifs)
         setNotificationCount(notifs.length)
         
@@ -366,6 +462,18 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     loadData()
   }, [])
 
+  // Rafraîchir la trésorerie périodiquement (toutes les 60 secondes)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (isComptable || isPDG) {
+        const agenceId = agenceCourante?.id
+        loadTresorerieData(agenceId, true)
+      }
+    }, 60000)
+    
+    return () => clearInterval(interval)
+  }, [agenceCourante])
+
   // Initiale utilisateur
   useEffect(() => {
     if (firstName && lastName) {
@@ -378,10 +486,9 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   }, [firstName, lastName, userName])
 
   // ============================================
-  // 🚀 PERMISSIONS - NOUVELLES FONCTIONS
+  // 🚀 PERMISSIONS
   // ============================================
   
-  // Rôles de base
   const isPDG = effectiveRole === 'pdg' && roleType === 'global'
   const isDRH = effectiveRole === 'drh' && roleType === 'global'
   const isChefAgence = effectiveRole === 'chef_agence'
@@ -389,7 +496,6 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const isCommercial = effectiveRole === 'commercial'
   const isComptable = effectiveRole === 'comptable'
 
-  // Permissions existantes
   const canViewAgences = () => isPDG
   const canViewUsers = () => isPDG || isDRH
   const canViewSales = () => isPDG || isChefAgence || isCommercial
@@ -403,55 +509,16 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const canViewComptabilite = () => isPDG || isDRH || isComptable || isChefAgence
   const canManageAccounting = () => isPDG || isDRH || isComptable
   const canViewAccountingReports = () => isPDG || isDRH || isComptable || isChefAgence
+  const canViewTresorerie = () => isPDG || isDRH || isComptable || isChefAgence
 
-  // ============================================
-  // 🔥 NOUVELLES PERMISSIONS POUR NOTES DE FRAIS
-  // ============================================
-  
-  // ✅ Tout utilisateur connecté peut voir ses propres notes
-  const canViewMyExpenses = () => {
-    return true // Tous les utilisateurs authentifiés
-  }
-
-  // ✅ Peut soumettre une note de frais
-  const canSubmitExpense = () => {
-    // Tous les utilisateurs peuvent soumettre (sauf si restreint)
-    return true
-  }
-
-  // ✅ Peut approuver les notes de son équipe
-  const canApproveExpenses = () => {
-    return isPDG || isDRH || isChefAgence
-  }
-
-  // ✅ Peut voir toutes les notes (pour gestion)
-  const canViewAllExpenses = () => {
-    return isPDG || isDRH || isComptable || isChefAgence
-  }
-
-  // ✅ Peut rembourser (comptable)
-  const canPayExpenses = () => {
-    return isPDG || isDRH || isComptable
-  }
-
-  // ✅ Peut gérer les notes de frais (admin)
-  const canManageExpenses = () => {
-    return isPDG || isDRH || isChefAgence || isComptable
-  }
-
-  // ✅ Accès à la section RH (incluant notes de frais)
-  const canAccessHR = () => {
-    return canViewHR() || canViewAllExpenses()
-  }
-
-  // ✅ Accès aux notes de frais dans le menu
-  const canAccessExpenses = () => {
-    return canViewMyExpenses() || canViewAllExpenses()
-  }
-
-  // ============================================
-  // FIN PERMISSIONS
-  // ============================================
+  const canViewMyExpenses = () => true
+  const canSubmitExpense = () => true
+  const canApproveExpenses = () => isPDG || isDRH || isChefAgence
+  const canViewAllExpenses = () => isPDG || isDRH || isComptable || isChefAgence
+  const canPayExpenses = () => isPDG || isDRH || isComptable
+  const canManageExpenses = () => isPDG || isDRH || isChefAgence || isComptable
+  const canAccessHR = () => canViewHR() || canViewAllExpenses()
+  const canAccessExpenses = () => canViewMyExpenses() || canViewAllExpenses()
 
   const getRoleConfig = () => {
     if (roleType === 'global') return ROLE_GLOBAL_CONFIG[effectiveRole] || ROLE_GLOBAL_CONFIG.autre
@@ -480,6 +547,12 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       setRoleType(type)
     }
     
+    // Recharger la trésorerie pour la nouvelle agence
+    const isComptableOrAdmin = isComptable || isPDG || isDRH
+    if (isComptableOrAdmin) {
+      loadTresorerieData(agence.id, true)
+    }
+    
     setIsAgencesMenuOpen(false)
     window.location.reload()
   }
@@ -492,8 +565,18 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     navigate('/')
   }
 
+  // Formatage des montants
+  const formatMontant = (montant) => {
+    return new Intl.NumberFormat('fr-FR', { 
+      style: 'currency', 
+      currency: 'XOF',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(montant || 0)
+  }
+
   // ============================================
-  // 📋 MENU SECTIONS - AVEC PERMISSIONS MISES À JOUR
+  // 📋 MENU SECTIONS
   // ============================================
   
   const menuSections = [
@@ -566,124 +649,41 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         { id: 'balances', text: 'Balances', icon: Scale, path: '/balances', permission: canViewAccountingReports(), badge: balancesDisponibles },
         { id: 'factures-comptables', text: 'Factures comptables', icon: ReceiptText, path: '/factures-comptables', permission: canViewAccountingReports(), badge: facturesImpayees },
         { id: 'reglements', text: 'Règlements', icon: Banknote, path: '/reglements', permission: canViewAccountingReports() },
-        { id: 'tresorerie', text: 'Trésorerie', icon: Wallet, path: '/tresorerie', permission: canViewAccountingReports() },
+        // 🔥 MENU TRÉSORERIE DÉTAILLÉ
+        { id: 'tresorerie', text: 'Trésorerie', icon: Wallet, path: '/tresorerie', permission: canViewTresorerie(), 
+          badge: tresorerieDetails.alertes_tresorerie.length > 0 ? tresorerieDetails.alertes_tresorerie.length : 0 },
+        { id: 'caisses', text: 'Caisses', icon: Coins, path: '/caisses', permission: canViewTresorerie() },
+        { id: 'comptes-bancaires', text: 'Comptes bancaires', icon: PiggyBank, path: '/comptes-bancaires', permission: canViewTresorerie() },
+        { id: 'mouvements-tresorerie', text: 'Mouvements', icon: ArrowLeftRight, path: '/mouvements-tresorerie', permission: canViewTresorerie() },
+        { id: 'previsions-tresorerie', text: 'Prévisions', icon: TrendingUp, path: '/previsions-tresorerie', permission: canViewTresorerie() },
+        { id: 'rapprochements', text: 'Rapprochements', icon: CheckCircle, path: '/rapprochements', permission: canViewTresorerie() },
         { id: 'compte-resultat', text: 'Compte de résultat', icon: ChartNoAxesColumn, path: '/compte-resultat', permission: canViewAccountingReports() },
         { id: 'bilan', text: 'Bilan comptable', icon: Landmark, path: '/bilan', permission: canViewAccountingReports() },
         { id: 'indicateurs', text: 'Indicateurs KPI', icon: PieChart, path: '/indicateurs', permission: canViewAccountingReports() },
         { id: 'cloture', text: 'Clôture comptable', icon: ClipboardCheck, path: '/cloture', permission: canManageAccounting(), badge: clotureEnCours ? 1 : 0 },
-        { id: 'analyses', text: 'Analyses financières', icon: LineChart, path: '/analyses-financieres', permission: canViewAccountingReports() }
+        { id: 'analyses-financieres', text: 'Analyses financières', icon: LineChart, path: '/analyses-financieres', permission: canViewAccountingReports() }
       ]
     },
-    // ============================================
-    // 🔥 SECTION RESSOURCES HUMAINES - MODIFIÉE
-    // ============================================
     {
       name: 'RESSOURCES HUMAINES',
       icon: Users,
-      permission: canAccessHR(), // 👈 MODIFIÉ: RH ou ceux qui voient les notes
+      permission: canAccessHR(),
       items: [
-        // Gestion RH - Réservé au PDG/DRH
-        { 
-          id: 'departements', 
-          text: 'Départements', 
-          icon: Building2, 
-          path: '/departments', 
-          permission: canManageHR() 
-        },
-        { 
-          id: 'postes', 
-          text: 'Postes', 
-          icon: Briefcase, 
-          path: '/positions', 
-          permission: canManageHR() 
-        },
-        { 
-          id: 'employes', 
-          text: 'Employés', 
-          icon: Users, 
-          path: '/employees', 
-          permission: canManageHR() 
-        },
-        { 
-          id: 'conges', 
-          text: 'Congés', 
-          icon: Calendar, 
-          path: '/leaves', 
-          permission: canManageHR(), 
-          badge: absencesEnAttente 
-        },
-        { 
-          id: 'pointage', 
-          text: 'Pointage', 
-          icon: ClockIcon, 
-          path: '/attendance', 
-          permission: canManageHR() 
-        },
-        { 
-          id: 'paie', 
-          text: 'Paie', 
-          icon: DollarSign, 
-          path: '/payroll', 
-          permission: isPDG || canManageHR() 
-        },
-        { 
-          id: 'recrutement', 
-          text: 'Recrutements', 
-          icon: UserPlus, 
-          path: '/recruitments', 
-          permission: canManageHR() 
-        },
-        { 
-          id: 'candidats', 
-          text: 'Candidats', 
-          icon: UserPlus, 
-          path: '/candidates', 
-          permission: canManageHR() 
-        },
-        { 
-          id: 'formations', 
-          text: 'Formations', 
-          icon: GraduationCap, 
-          path: '/trainings', 
-          permission: canManageHR() 
-        },
-        { 
-          id: 'evaluations', 
-          text: 'Évaluations', 
-          icon: TrendingUp, 
-          path: '/performance', 
-          permission: canManageHR() 
-        },
-        // ============================================
-        // 🔥 NOTES DE FRAIS - ACCÈS ÉLARGI
-        // ============================================
-        { 
-          id: 'notes-frais', 
-          text: 'Notes de frais', 
-          icon: Receipt, 
-          path: '/expenses', 
-          permission: canAccessExpenses(), // 👈 MODIFIÉ: accessible à tous
-          badge: notifications.filter(n => n.type === 'error' && n.id === 'expenses').length || 0
-        },
-        { 
-          id: 'documents', 
-          text: 'Documents RH', 
-          icon: FileText, 
-          path: '/documents', 
-          permission: canManageHR() 
-        },
-        { 
-          id: 'statistiques', 
-          text: 'Statistiques RH', 
-          icon: BarChart3, 
-          path: '/stats', 
-          permission: canViewHR() || isPDG 
-        }
+        { id: 'departements', text: 'Départements', icon: Building2, path: '/departments', permission: canManageHR() },
+        { id: 'postes', text: 'Postes', icon: Briefcase, path: '/positions', permission: canManageHR() },
+        { id: 'employes', text: 'Employés', icon: Users, path: '/employees', permission: canManageHR() },
+        { id: 'conges', text: 'Congés', icon: Calendar, path: '/leaves', permission: canManageHR(), badge: absencesEnAttente },
+        { id: 'pointage', text: 'Pointage', icon: ClockIcon, path: '/attendance', permission: canManageHR() },
+        { id: 'paie', text: 'Paie', icon: DollarSign, path: '/payroll', permission: isPDG || canManageHR() },
+        { id: 'recrutement', text: 'Recrutements', icon: UserPlus, path: '/recruitments', permission: canManageHR() },
+        { id: 'candidats', text: 'Candidats', icon: UserPlus, path: '/candidates', permission: canManageHR() },
+        { id: 'formations', text: 'Formations', icon: GraduationCap, path: '/trainings', permission: canManageHR() },
+        { id: 'evaluations', text: 'Évaluations', icon: TrendingUp, path: '/performance', permission: canManageHR() },
+        { id: 'notes-frais', text: 'Notes de frais', icon: Receipt, path: '/expenses', permission: canAccessExpenses() },
+        { id: 'documents', text: 'Documents RH', icon: FileText, path: '/documents', permission: canManageHR() },
+        { id: 'statistiques-rh', text: 'Statistiques RH', icon: BarChart3, path: '/stats', permission: canViewHR() || isPDG }
       ]
     },
-    // ============================================
-    // FIN SECTION RH
-    // ============================================
     {
       name: 'ADMINISTRATION',
       icon: Settings,
@@ -858,6 +858,97 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                 <Search className="w-5 h-5" />
               </button>
 
+              {/* 🔥 BADGE TRÉSORERIE DÉTAILLÉ DANS LA NAVBAR */}
+              {(isComptable || isPDG || isDRH || isChefAgence) && (
+                <div className="relative group">
+                  <button
+                    onClick={() => navigate('/tresorerie')}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-success/20 border border-success/30 hover:bg-success/30 transition-all cursor-pointer"
+                    title="Voir la trésorerie"
+                  >
+                    <Wallet className="w-4 h-4 text-success" />
+                    <span className={`text-xs font-bold ${tresorerie >= 0 ? 'text-success' : 'text-error'}`}>
+                      {formatMontant(tresorerie)}
+                    </span>
+                    {tresorerieLoading && <Loader2 className="w-3 h-3 text-success animate-spin" />}
+                  </button>
+                  
+                  {/* Tooltip détaillé au survol */}
+                  <div className="absolute right-0 mt-2 w-80 bg-base-100 rounded-xl shadow-2xl z-50 border border-success/20 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
+                    <div className="p-3 bg-gradient-to-r from-success/10 to-transparent border-b border-success/20">
+                      <p className="text-xs font-semibold text-success">📊 DÉTAILS TRÉSORERIE</p>
+                    </div>
+                    <div className="p-4 space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-base-content/60">💰 Solde global</span>
+                        <span className={`text-sm font-bold ${tresorerie >= 0 ? 'text-success' : 'text-error'}`}>
+                          {formatMontant(tresorerie)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-base-content/60">🏦 Comptes bancaires</span>
+                        <span className="text-sm font-medium text-base-content">
+                          {formatMontant(tresorerieDetails.solde_banques)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-base-content/60">💵 Caisses</span>
+                        <span className="text-sm font-medium text-base-content">
+                          {formatMontant(tresorerieDetails.solde_caisses)}
+                        </span>
+                      </div>
+                      <div className="border-t border-base-200 my-1"></div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-base-content/60">📈 Encaissements (jour)</span>
+                        <span className="text-sm font-medium text-success">
+                          +{formatMontant(tresorerieDetails.encaissements_jour)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-base-content/60">📉 Décaissements (jour)</span>
+                        <span className="text-sm font-medium text-error">
+                          -{formatMontant(tresorerieDetails.decaissements_jour)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-base-content/60">📊 Flux journalier</span>
+                        <span className={`text-sm font-bold ${tresorerieDetails.flux_jour >= 0 ? 'text-success' : 'text-error'}`}>
+                          {tresorerieDetails.flux_jour >= 0 ? '+' : ''}{formatMontant(tresorerieDetails.flux_jour)}
+                        </span>
+                      </div>
+                      {tresorerieDetails.previsions_7j > 0 && (
+                        <>
+                          <div className="border-t border-base-200 my-1"></div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-base-content/60">📅 Prévisions 7j</span>
+                            <span className="text-sm font-medium text-info">
+                              {formatMontant(tresorerieDetails.previsions_7j)}
+                            </span>
+                          </div>
+                        </>
+                      )}
+                      {tresorerieDetails.alertes_tresorerie.length > 0 && (
+                        <div className="mt-2 p-2 bg-warning/10 rounded-lg border border-warning/20">
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className="w-4 h-4 text-warning mt-0.5" />
+                            <div>
+                              <p className="text-xs font-medium text-warning">Alertes actives</p>
+                              <p className="text-xs text-base-content/60">{tresorerieDetails.alertes_tresorerie.length} alerte(s) à traiter</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      <button
+                        onClick={() => navigate('/tresorerie')}
+                        className="w-full mt-2 btn btn-xs btn-success btn-outline"
+                      >
+                        Voir tous les détails
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Sélecteur d'agence */}
               {agences.length > 0 && agenceCourante && (
                 <div className="relative">
@@ -938,16 +1029,6 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                   <span className="badge badge-success badge-xs ml-1">Comptable</span>
                 )}
               </div>
-
-              {/* Badge Trésorerie pour le comptable */}
-              {isComptable && (
-                <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-success/20 border border-success/30">
-                  <Wallet className="w-3.5 h-3.5 text-success" />
-                  <span className={`text-xs font-medium ${tresorerie >= 0 ? 'text-success' : 'text-error'}`}>
-                    {tresorerie >= 0 ? '+' : ''}{tresorerie.toLocaleString()} FCFA
-                  </span>
-                </div>
-              )}
 
               {/* Notifications */}
               <div className="relative">
@@ -1158,6 +1239,9 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
               const isComptaSection = section.name === 'COMPTABILITÉ & FINANCE'
               const isRHSection = section.name === 'RESSOURCES HUMAINES'
               
+              // Compter les badges pour afficher un indicateur sur la section
+              const totalBadges = visibleItems.reduce((sum, item) => sum + (item.badge || 0), 0)
+              
               return (
                 <div key={idx} className="mb-1">
                   <button
@@ -1179,7 +1263,14 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                         <span className="flex-1 text-left text-xs font-semibold tracking-wide uppercase">
                           {section.name}
                         </span>
-                        {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                        <div className="flex items-center gap-1">
+                          {totalBadges > 0 && (
+                            <span className={`badge ${isComptaSection ? 'badge-error' : 'badge-warning'} badge-xs`}>
+                              {totalBadges}
+                            </span>
+                          )}
+                          {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                        </div>
                       </>
                     )}
                   </button>
@@ -1194,6 +1285,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                         const ItemIcon = item.icon
                         const isActive = path === item.path
                         const isExpenseItem = item.id === 'notes-frais'
+                        const isTresorerieItem = item.id === 'tresorerie'
                         
                         return (
                           <Link
@@ -1208,6 +1300,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                                 : 'text-base-content/60 hover:bg-primary/10 hover:text-primary'
                               }
                               ${isExpenseItem && !isActive ? 'hover:bg-secondary/10 hover:text-secondary' : ''}
+                              ${isTresorerieItem && !isActive ? 'hover:bg-success/10 hover:text-success' : ''}
                             `}
                           >
                             <ItemIcon className={`w-4 h-4 ${isActive ? (isComptaSection ? 'text-success-content' : isRHSection ? 'text-secondary-content' : 'text-primary-content') : ''}`} />
@@ -1215,6 +1308,11 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                             {item.badge > 0 && (
                               <span className={`badge ${isComptaSection && isActive ? 'badge-outline badge-error' : 'badge-error'} badge-xs`}>
                                 {item.badge > 99 ? '99+' : item.badge}
+                              </span>
+                            )}
+                            {isTresorerieItem && tresorerie >= 0 && (
+                              <span className={`text-[10px] font-medium ${tresorerie >= 0 ? 'text-success' : 'text-error'}`}>
+                                {formatMontant(tresorerie)}
                               </span>
                             )}
                           </Link>
@@ -1304,6 +1402,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                 const isOpen = openSections[section.name]
                 const isComptaSection = section.name === 'COMPTABILITÉ & FINANCE'
                 const isRHSection = section.name === 'RESSOURCES HUMAINES'
+                const totalBadges = visibleItems.reduce((sum, item) => sum + (item.badge || 0), 0)
                 
                 return (
                   <div key={idx} className="mb-2">
@@ -1319,7 +1418,12 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                         <SectionIcon className={`w-5 h-5 ${isComptaSection ? 'text-success' : isRHSection ? 'text-secondary' : 'text-primary'}`} />
                         <span className="text-xs font-bold uppercase">{section.name}</span>
                       </div>
-                      {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      <div className="flex items-center gap-1">
+                        {totalBadges > 0 && (
+                          <span className="badge badge-warning badge-xs">{totalBadges}</span>
+                        )}
+                        {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </div>
                     </button>
                     
                     {isOpen && (
@@ -1378,6 +1482,12 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         }
         .animate-pulse {
           animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        .group:hover .group-hover\\:visible {
+          visibility: visible;
+        }
+        .group:hover .group-hover\\:opacity-100 {
+          opacity: 100;
         }
       `}</style>
     </div>
