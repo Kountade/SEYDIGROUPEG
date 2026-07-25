@@ -637,33 +637,170 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         { id: 'livraisons', text: 'Livraisons', icon: Truck, path: '/livraisons', permission: canViewDeliveries() }
       ]
     },
-    {
-      name: 'COMPTABILITÉ & FINANCE',
-      icon: Calculator,
-      permission: canViewComptabilite(),
-      items: [
-        { id: 'dashboard-compta', text: 'Tableau de bord', icon: LayoutDashboard, path: '/dashboard/comptabilite', permission: canViewComptabilite() },
-        { id: 'ecritures', text: 'Écritures comptables', icon: Notebook, path: '/ecritures', permission: canManageAccounting(), badge: ecrituresEnAttente },
-        { id: 'journaux', text: 'Journaux', icon: BookOpen, path: '/journaux', permission: canManageAccounting() },
-        { id: 'plan-comptable', text: 'Plan comptable', icon: FileSpreadsheet, path: '/plan-comptable', permission: canManageAccounting() },
-        { id: 'balances', text: 'Balances', icon: Scale, path: '/balances', permission: canViewAccountingReports(), badge: balancesDisponibles },
-        { id: 'factures-comptables', text: 'Factures comptables', icon: ReceiptText, path: '/factures-comptables', permission: canViewAccountingReports(), badge: facturesImpayees },
-        { id: 'reglements', text: 'Règlements', icon: Banknote, path: '/reglements', permission: canViewAccountingReports() },
-        // 🔥 MENU TRÉSORERIE DÉTAILLÉ
-        { id: 'tresorerie', text: 'Trésorerie', icon: Wallet, path: '/tresorerie', permission: canViewTresorerie(), 
-          badge: tresorerieDetails.alertes_tresorerie.length > 0 ? tresorerieDetails.alertes_tresorerie.length : 0 },
-        { id: 'caisses', text: 'Caisses', icon: Coins, path: '/caisses', permission: canViewTresorerie() },
-        { id: 'comptes-bancaires', text: 'Comptes bancaires', icon: PiggyBank, path: '/comptes-bancaires', permission: canViewTresorerie() },
-        { id: 'mouvements-tresorerie', text: 'Mouvements', icon: ArrowLeftRight, path: '/mouvements-tresorerie', permission: canViewTresorerie() },
-        { id: 'previsions-tresorerie', text: 'Prévisions', icon: TrendingUp, path: '/previsions-tresorerie', permission: canViewTresorerie() },
-        { id: 'rapprochements', text: 'Rapprochements', icon: CheckCircle, path: '/rapprochements', permission: canViewTresorerie() },
-        { id: 'compte-resultat', text: 'Compte de résultat', icon: ChartNoAxesColumn, path: '/compte-resultat', permission: canViewAccountingReports() },
-        { id: 'bilan', text: 'Bilan comptable', icon: Landmark, path: '/bilan', permission: canViewAccountingReports() },
-        { id: 'indicateurs', text: 'Indicateurs KPI', icon: PieChart, path: '/indicateurs', permission: canViewAccountingReports() },
-        { id: 'cloture', text: 'Clôture comptable', icon: ClipboardCheck, path: '/cloture', permission: canManageAccounting(), badge: clotureEnCours ? 1 : 0 },
-        { id: 'analyses-financieres', text: 'Analyses financières', icon: LineChart, path: '/analyses-financieres', permission: canViewAccountingReports() }
-      ]
+ {
+  name: 'COMPTABILITÉ & FINANCE',
+  icon: Calculator,
+  permission: canViewComptabilite(),
+  items: [
+    // COMPTABILITÉ - EXISTANT
+    { 
+      id: 'dashboard-compta', 
+      text: 'Tableau de bord', 
+      icon: LayoutDashboard, 
+      path: '/dashboard/comptabilite', 
+      permission: canViewComptabilite() 
     },
+    { 
+      id: 'ecritures', 
+      text: 'Écritures comptables', 
+      icon: Notebook, 
+      path: '/ecritures', 
+      permission: canManageAccounting(), 
+      badge: ecrituresEnAttente 
+    },
+    { 
+      id: 'journaux', 
+      text: 'Journaux', 
+      icon: BookOpen, 
+      path: '/journaux', 
+      permission: canManageAccounting() 
+    },
+    { 
+      id: 'plan-comptable', 
+      text: 'Plan comptable', 
+      icon: FileSpreadsheet, 
+      path: '/plan-comptable', 
+      permission: canManageAccounting() 
+    },
+    { 
+      id: 'balances', 
+      text: 'Balances', 
+      icon: Scale, 
+      path: '/balances', 
+      permission: canViewAccountingReports(), 
+      badge: balancesDisponibles 
+    },
+    { 
+      id: 'factures-comptables', 
+      text: 'Factures comptables', 
+      icon: ReceiptText, 
+      path: '/factures-comptables', 
+      permission: canViewAccountingReports(), 
+      badge: facturesImpayees 
+    },
+    { 
+      id: 'reglements', 
+      text: 'Règlements', 
+      icon: Banknote, 
+      path: '/reglements', 
+      permission: canViewAccountingReports() 
+    },
+    
+    // ============================================
+    // 🔥 TRÉSORERIE - EXISTANT
+    // ============================================
+    { 
+      id: 'tresorerie-dashboard', 
+      text: 'Dashboard Trésorerie', 
+      icon: LayoutDashboard, 
+      path: '/tresorerie/dashboard', 
+      permission: canViewTresorerie() 
+    },
+    { 
+      id: 'caisses', 
+      text: 'Caisses', 
+      icon: Coins, 
+      path: '/caisses', 
+      permission: canViewTresorerie() 
+    },
+    { 
+      id: 'comptes-bancaires', 
+      text: 'Comptes bancaires', 
+      icon: PiggyBank, 
+      path: '/comptes-bancaires', 
+      permission: canViewTresorerie() 
+    },
+    { 
+      id: 'mouvements-tresorerie', 
+      text: 'Mouvements', 
+      icon: ArrowLeftRight, 
+      path: '/mouvements-tresorerie', 
+      permission: canViewTresorerie() 
+    },
+    { 
+      id: 'previsions', 
+      text: 'Prévisions', 
+      icon: TrendingUp, 
+      path: '/previsions', 
+      permission: canViewTresorerie() 
+    },
+    { 
+      id: 'rapprochements', 
+      text: 'Rapprochements', 
+      icon: CheckCircle, 
+      path: '/rapprochements', 
+      permission: canViewTresorerie() 
+    },
+    
+    // ============================================
+    // 🆕 AJOUTS MANQUANTS
+    // ============================================
+    { 
+      id: 'frais-tresorerie', 
+      text: 'Frais', 
+      icon: Receipt, 
+      path: '/frais', 
+      permission: canViewTresorerie() 
+    },
+    { 
+      id: 'tresorerie-journaliere', 
+      text: 'Suivi journalier', 
+      icon: Calendar, 
+      path: '/tresorerie-journaliere', 
+      permission: canViewTresorerie() 
+    },
+    
+    // ============================================
+    // RAPPORTS FINANCIERS - EXISTANT
+    // ============================================
+    { 
+      id: 'compte-resultat', 
+      text: 'Compte de résultat', 
+      icon: ChartNoAxesColumn, 
+      path: '/compte-resultat', 
+      permission: canViewAccountingReports() 
+    },
+    { 
+      id: 'bilan', 
+      text: 'Bilan comptable', 
+      icon: Landmark, 
+      path: '/bilan', 
+      permission: canViewAccountingReports() 
+    },
+    { 
+      id: 'indicateurs', 
+      text: 'Indicateurs KPI', 
+      icon: PieChart, 
+      path: '/indicateurs', 
+      permission: canViewAccountingReports() 
+    },
+    { 
+      id: 'cloture', 
+      text: 'Clôture comptable', 
+      icon: ClipboardCheck, 
+      path: '/cloture', 
+      permission: canManageAccounting(), 
+      badge: clotureEnCours ? 1 : 0 
+    },
+    { 
+      id: 'analyses-financieres', 
+      text: 'Analyses financières', 
+      icon: LineChart, 
+      path: '/analyses-financieres', 
+      permission: canViewAccountingReports() 
+    }
+  ]
+},
     {
       name: 'RESSOURCES HUMAINES',
       icon: Users,

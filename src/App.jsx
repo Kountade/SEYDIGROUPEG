@@ -126,9 +126,35 @@ import Reglements from './components/comptabilite/Reglements'
 import ReglementForm from './components/comptabilite/ReglementForm'
 import ReglementDetail from './components/comptabilite/ReglementDetail'
 
-import Tresorerie from './components/comptabilite/Tresorerie'
+import Tresorerie from './components/tresorerie/Tresorerie'
 import CompteResultat from './components/comptabilite/CompteResultat'
 
+import Caisses from './components/tresorerie/Caisses'
+import CaissesDetail from './components/tresorerie/CaissesDetail'
+import CaissesForm from './components/tresorerie/CaissesForm'
+
+import ComptesBancaires from './components/tresorerie/ComptesBancaires'
+import ComptesBancairesForm from './components/tresorerie/ComptesBancairesForm'
+import ComptesBancairesDetail from './components/tresorerie/ComptesBancairesDetail'
+
+import FraisTresorerie from './components/tresorerie/FraisTresorerie'
+import FraisTresorerieDetail from './components/tresorerie/FraisTresorerieDetail'
+import FraisTresorerieForm from './components/tresorerie/FraisTresorerieForm'
+
+import MouvementsTresorerie from './components/tresorerie/MouvementsTresorerie'
+import MouvementsTresorerieForm from './components/tresorerie/MouvementsTresorerieForm'
+import MouvementsTresorerieDetail from './components/tresorerie/MouvementsTresorerieDetail'
+
+import PrevisionsTresorerie from './components/tresorerie/PrevisionsTresorerie'
+import PrevisionsTresorerieForm from './components/tresorerie/PrevisionsTresorerieForm'
+import PrevisionsTresorerieDetail from './components/tresorerie/PrevisionsTresorerieDetail'
+
+import Rapprochements from './components/tresorerie/Rapprochements'
+import RapprochementsForm from './components/tresorerie/RapprochementsForm'
+import RapprochementsDetail from './components/tresorerie/RapprochementsDetail'
+
+import TresorerieJournaliere from './components/tresorerie/TresorerieJournaliere'
+ 
 import Bilan from './components/comptabilite/Bilan'
 
 import AuditLog from './components/audit/AuditLog'
@@ -204,7 +230,46 @@ function App() {
 <Route path="/reglements/:id/modifier" element={<ReglementForm />} />
 <Route path="/reglements/:id" element={<ReglementDetail />} />
 
-<Route path="/tresorerie" element={<Tresorerie />} />
+<Route path="/tresorerie/dashboard" element={<Tresorerie />} />
+
+  // Caisses - CRUD complet
+          <Route path="/caisses" element={<Caisses />} />
+          <Route path="/caisses/nouveau" element={<CaissesForm />} />
+          <Route path="/caisses/:id" element={<CaissesDetail />} />
+          <Route path="/caisses/:id/edit" element={<CaissesForm />} />
+
+           // Comptes bancaires - CRUD complet
+          <Route path="/comptes-bancaires" element={<ComptesBancaires />} />
+          <Route path="/comptes-bancaires/nouveau" element={<ComptesBancairesForm />} />
+          <Route path="/comptes-bancaires/:id" element={<ComptesBancairesDetail />} />
+          <Route path="/comptes-bancaires/:id/edit" element={<ComptesBancairesForm />} />
+          
+          // Mouvements - CRUD complet
+          <Route path="/mouvements-tresorerie" element={<MouvementsTresorerie />} />
+          <Route path="/mouvements/nouveau" element={<MouvementsTresorerieForm />} />
+          <Route path="/mouvements/:id" element={<MouvementsTresorerieDetail />} />
+          <Route path="/mouvements/:id/edit" element={<MouvementsTresorerieForm />} />
+          
+          // Frais - CRUD complet
+          <Route path="/frais" element={<FraisTresorerie />} />
+          <Route path="/frais/nouveau" element={<FraisTresorerieForm />} />
+          <Route path="/frais/:id" element={<FraisTresorerieDetail />} />
+          <Route path="/frais/:id/edit" element={<FraisTresorerieForm />} />
+          
+          // Prévisions - CRUD complet
+          <Route path="/previsions" element={<PrevisionsTresorerie />} />
+          <Route path="/previsions/nouveau" element={<PrevisionsTresorerieForm />} />
+          <Route path="/previsions/:id" element={<PrevisionsTresorerieDetail />} />
+          <Route path="/previsions/:id/edit" element={<PrevisionsTresorerieForm />} />
+          
+          // Rapprochements - CRUD complet
+          <Route path="/rapprochements" element={<Rapprochements />} />
+          <Route path="/rapprochements/nouveau" element={<RapprochementsForm />} />
+          <Route path="/rapprochements/:id" element={<RapprochementsDetail />} />
+          <Route path="/rapprochements/:id/edit" element={<RapprochementsForm />} />
+          
+          // Trésorerie journalière - Lecture seule
+          <Route path="/tresorerie-journaliere" element={<TresorerieJournaliere />} />
 
 <Route path="/compte-resultat" element={<CompteResultat />} />
 <Route path="/bilan" element={<Bilan />} />
