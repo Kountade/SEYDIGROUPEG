@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
-import TicketPOS from './TicketPOS'  // ✅ Import du ticket POS
+import TicketPOS from './TicketPOS'
 import {
   Plus,
   Minus,
@@ -48,7 +48,8 @@ import {
   Settings,
   LogOut,
   Percent,
-  Copy
+  Copy,
+  Layers
 } from 'lucide-react'
 
 const PointDeVente = () => {
@@ -61,7 +62,7 @@ const PointDeVente = () => {
   // ============================================================
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [printing, setPrinting] = useState(false)  // ✅ État pour l'impression
+  const [printing, setPrinting] = useState(false)
   const [products, setProducts] = useState([])
   const [clients, setClients] = useState([])
   const [selectedClient, setSelectedClient] = useState(null)
@@ -72,7 +73,7 @@ const PointDeVente = () => {
   const [currentUser, setCurrentUser] = useState(null)
   const [loadingUser, setLoadingUser] = useState(true)
   const [notes, setNotes] = useState('')
-  const [lastVente, setLastVente] = useState(null)  // ✅ Stocker la dernière vente
+  const [lastVente, setLastVente] = useState(null)
   
   // Panier (items)
   const [items, setItems] = useState([])
@@ -141,7 +142,7 @@ const PointDeVente = () => {
   };
 
   // ============================================================
-  // 2. Chargement des produits
+  // 2. Chargement des produits (avec prix détail et gros)
   // ============================================================
   useEffect(() => {
     if (!entrepot || !entrepot.id) return;
@@ -150,14 +151,21 @@ const PointDeVente = () => {
       try {
         const productsRes = await AxiosInstance.get('/products/?is_active=true');
         const allProducts = productsRes.data || [];
+        
         const productsWithPrices = await Promise.all(allProducts.map(async (product) => {
           try {
-            const priceRes = await AxiosInstance.get(`/product-prices/by_product_and_warehouse/?product_id=${product.id}&warehouse_id=${entrepot.id}`);
+            // Récupérer les prix du produit dans l'entrepôt
+            const priceRes = await AxiosInstance.get(
+              `/ventes/product_prices/?product_id=${product.id}&warehouse_id=${entrepot.id}`
+            );
             const stockRes = await AxiosInstance.get(`/warehouse-stocks/by_product/?product_id=${product.id}`);
             const stock = stockRes.data?.find(s => s.warehouse === entrepot.id);
+            
             return {
               ...product,
-              warehouse_price: priceRes.data.sale_price,
+              sale_price: priceRes.data.sale_price || 0,
+              wholesale_price: priceRes.data.wholesale_price || null,
+              has_wholesale: priceRes.data.has_wholesale || false,
               stock_quantity: stock?.quantity || 0,
               has_price: true,
               image_url: product.main_image || '/placeholder-product.png'
@@ -165,7 +173,9 @@ const PointDeVente = () => {
           } catch {
             return {
               ...product,
-              warehouse_price: product.sale_price || 0,
+              sale_price: product.sale_price || 0,
+              wholesale_price: null,
+              has_wholesale: false,
               stock_quantity: 0,
               has_price: false,
               image_url: product.main_image || '/placeholder-product.png'
@@ -175,6 +185,7 @@ const PointDeVente = () => {
         setProducts(productsWithPrices);
       } catch (error) {
         console.error(error);
+        showNotification('Erreur de chargement des produits', 'error');
       } finally {
         setLoading(false);
       }
@@ -198,7 +209,7 @@ const PointDeVente = () => {
   }, []);
 
   // ============================================================
-  // 4. Gestion du panier (items)
+  // 4. Gestion du panier (items) - AVEC TYPE DE PRIX
   // ============================================================
   const isProductAlreadyAdded = (productId) => {
     return items.some(item => item.product_id === productId);
@@ -222,15 +233,22 @@ const PointDeVente = () => {
       return;
     }
     
+    // Par défaut, utiliser le prix de détail
+    const defaultPrice = productToAdd.sale_price || 0;
+    
     setItems(prev => [...prev, {
       id: Date.now(),
       product_id: productToAdd.id,
       product_name: productToAdd.name,
       product_reference: productToAdd.reference || '',
       quantity: 1,
-      unit_price: productToAdd.warehouse_price || 0,
+      price_type: 'retail', // 'retail' ou 'wholesale'
+      unit_price: defaultPrice,
+      sale_price: productToAdd.sale_price || 0,
+      wholesale_price: productToAdd.wholesale_price || null,
+      has_wholesale: productToAdd.has_wholesale || false,
       discount: 0,
-      total: productToAdd.warehouse_price || 0,
+      total: defaultPrice,
       stock_max: productToAdd.stock_quantity || 0,
       image_url: productToAdd.image_url || '/placeholder-product.png'
     }]);
@@ -238,6 +256,31 @@ const PointDeVente = () => {
 
   const handleRemoveItem = (itemId) => {
     setItems(items.filter(item => item.id !== itemId));
+  };
+
+  // Gérer le changement de type de prix (détail/gros)
+  const handlePriceTypeChange = (itemId, priceType) => {
+    setItems(items.map(item => {
+      if (item.id === itemId) {
+        const newPrice = priceType === 'wholesale' 
+          ? (item.wholesale_price || item.sale_price)
+          : item.sale_price;
+        
+        const updatedItem = {
+          ...item,
+          price_type: priceType,
+          unit_price: newPrice
+        };
+        
+        // Recalculer le total
+        const qty = parseFloat(updatedItem.quantity) || 0;
+        const discount = parseFloat(updatedItem.discount) || 0;
+        updatedItem.total = qty * newPrice * (1 - discount / 100);
+        
+        return updatedItem;
+      }
+      return item;
+    }));
   };
 
   const handleItemChange = (itemId, field, value) => {
@@ -259,13 +302,24 @@ const PointDeVente = () => {
             
             updatedItem.product_name = product.name;
             updatedItem.product_reference = product.reference || '';
-            updatedItem.unit_price = product.warehouse_price || 0;
+            updatedItem.sale_price = product.sale_price || 0;
+            updatedItem.wholesale_price = product.wholesale_price || null;
+            updatedItem.has_wholesale = product.has_wholesale || false;
             updatedItem.stock_max = product.stock_quantity || 0;
             updatedItem.image_url = product.image_url || '/placeholder-product.png';
+            
+            // Mettre à jour le prix selon le type actuel
+            if (updatedItem.price_type === 'wholesale' && updatedItem.wholesale_price) {
+              updatedItem.unit_price = updatedItem.wholesale_price;
+            } else {
+              updatedItem.unit_price = updatedItem.sale_price;
+              updatedItem.price_type = 'retail';
+            }
           }
         }
         
-        if (field === 'quantity' || field === 'unit_price' || field === 'discount' || field === 'product_id') {
+        if (field === 'quantity' || field === 'unit_price' || field === 'discount' || 
+            field === 'product_id' || field === 'price_type') {
           const qty = parseFloat(updatedItem.quantity) || 0;
           const price = parseFloat(updatedItem.unit_price) || 0;
           const discount = parseFloat(updatedItem.discount) || 0;
@@ -351,6 +405,7 @@ const PointDeVente = () => {
         product: parseInt(item.product_id),
         quantity: item.quantity,
         prix_unitaire: item.unit_price,
+        price_type: item.price_type || 'retail', // Envoi du type de prix
         tva: 0,
         remise: item.discount || 0
       }))
@@ -370,7 +425,7 @@ const PointDeVente = () => {
       setSelectedClient(null);
       setNotes('');
       
-      // ✅ IMPRESSION DU TICKET POS
+      // Impression du ticket POS
       try {
         setPrinting(true);
         const ticketData = {
@@ -477,7 +532,7 @@ const PointDeVente = () => {
       let aVal = a[sortField] || ''
       let bVal = b[sortField] || ''
       
-      if (sortField === 'stock_quantity' || sortField === 'warehouse_price') {
+      if (sortField === 'stock_quantity' || sortField === 'sale_price' || sortField === 'wholesale_price') {
         aVal = parseFloat(aVal) || 0
         bVal = parseFloat(bVal) || 0
       }
@@ -641,7 +696,8 @@ const PointDeVente = () => {
               onChange={(e) => setSortField(e.target.value)}
             >
               <option value="name">Trier par nom</option>
-              <option value="warehouse_price">Trier par prix</option>
+              <option value="sale_price">Trier par prix détail</option>
+              <option value="wholesale_price">Trier par prix gros</option>
               <option value="stock_quantity">Trier par stock</option>
             </select>
             
@@ -740,6 +796,17 @@ const PointDeVente = () => {
                             <span className="badge badge-primary badge-sm">✓ Ajouté</span>
                           </div>
                         )}
+                        {/* Affichage des prix sur la carte */}
+                        <div className="absolute bottom-2 left-2 right-2 flex gap-1">
+                          <span className="badge badge-sm bg-black/70 text-white border-0">
+                            {formatPrice(product.sale_price || 0)}
+                          </span>
+                          {product.has_wholesale && (
+                            <span className="badge badge-sm bg-primary/80 text-white border-0">
+                              Gros: {formatPrice(product.wholesale_price)}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       
                       <div className="p-3">
@@ -757,7 +824,7 @@ const PointDeVente = () => {
                         <div className="flex items-center justify-between mt-2 pt-2 border-t border-base-300">
                           <div>
                             <span className="text-sm font-bold text-primary">
-                              {formatPrice(product.warehouse_price || product.sale_price || 0)}
+                              {formatPrice(product.sale_price || 0)}
                             </span>
                           </div>
                           <div className="flex items-center gap-1">
@@ -785,7 +852,8 @@ const PointDeVente = () => {
                     <th>Produit</th>
                     <th>Référence</th>
                     <th>Catégorie</th>
-                    <th>Prix</th>
+                    <th>Prix détail</th>
+                    <th>Prix gros</th>
                     <th>Stock</th>
                     <th>Statut</th>
                     <th className="text-center">Action</th>
@@ -818,7 +886,14 @@ const PointDeVente = () => {
                           {product.category_name || 'Non catégorisé'}
                         </span>
                       </td>
-                      <td className="font-semibold text-primary">{formatPrice(product.warehouse_price || product.sale_price || 0)}</td>
+                      <td className="font-semibold text-primary">{formatPrice(product.sale_price || 0)}</td>
+                      <td>
+                        {product.has_wholesale ? (
+                          <span className="font-semibold text-secondary">{formatPrice(product.wholesale_price)}</span>
+                        ) : (
+                          <span className="text-base-content/40">-</span>
+                        )}
+                      </td>
                       <td>
                         <span className={`badge ${
                           product.stock_quantity <= 0 ? 'badge-error' : 
@@ -947,49 +1022,77 @@ const PointDeVente = () => {
             ) : (
               <div className="space-y-2">
                 {items.map((item) => (
-                  <div key={item.id} className="bg-base-200 rounded-lg p-3 flex items-center gap-3">
-                    <div className="w-12 h-12 bg-base-300 rounded-lg overflow-hidden flex items-center justify-center flex-shrink-0">
-                      {item.image_url && item.image_url !== '/placeholder-product.png' ? (
-                        <img
-                          src={item.image_url}
-                          alt={item.product_name}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            e.target.style.display = 'none'
-                            e.target.parentElement.innerHTML = `<Package class="w-6 h-6 text-base-content/30" />`
-                          }}
-                        />
-                      ) : (
-                        <Package className="w-6 h-6 text-base-content/30" />
-                      )}
+                  <div key={item.id} className="bg-base-200 rounded-lg p-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 bg-base-300 rounded-lg overflow-hidden flex items-center justify-center flex-shrink-0">
+                        {item.image_url && item.image_url !== '/placeholder-product.png' ? (
+                          <img
+                            src={item.image_url}
+                            alt={item.product_name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              e.target.style.display = 'none'
+                              e.target.parentElement.innerHTML = `<Package class="w-6 h-6 text-base-content/30" />`
+                            }}
+                          />
+                        ) : (
+                          <Package className="w-6 h-6 text-base-content/30" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm truncate">{item.product_name}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          {/* Sélecteur de type de prix */}
+                          <select
+                            className="select select-bordered select-xs w-24"
+                            value={item.price_type || 'retail'}
+                            onChange={(e) => handlePriceTypeChange(item.id, e.target.value)}
+                            disabled={submitting || printing}
+                          >
+                            <option value="retail">Détail</option>
+                            <option value="wholesale" disabled={!item.has_wholesale}>
+                              {item.has_wholesale ? 'Gros' : 'Gros (ND)'}
+                            </option>
+                          </select>
+                          <span className="text-xs font-semibold text-primary">
+                            {formatPrice(item.unit_price)}
+                          </span>
+                        </div>
+                        {item.has_wholesale && item.price_type === 'wholesale' && (
+                          <p className="text-xs text-success">
+                            ✅ Économie: {formatPrice((item.sale_price - item.wholesale_price) * item.quantity)}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          className="btn btn-ghost btn-xs btn-square"
+                          onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
+                          disabled={item.quantity <= 1 || submitting || printing}
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <span className="w-6 text-center font-semibold text-sm">{item.quantity}</span>
+                        <button
+                          className="btn btn-ghost btn-xs btn-square"
+                          onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
+                          disabled={item.quantity >= item.stock_max || submitting || printing}
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                        <button
+                          className="btn btn-ghost btn-xs btn-square text-error"
+                          onClick={() => handleRemoveItem(item.id)}
+                          disabled={submitting || printing}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">{item.product_name}</p>
-                      <p className="text-xs text-base-content/50">{formatPrice(item.unit_price)}</p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        className="btn btn-ghost btn-xs btn-square"
-                        onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
-                        disabled={item.quantity <= 1 || submitting || printing}
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                      <span className="w-6 text-center font-semibold text-sm">{item.quantity}</span>
-                      <button
-                        className="btn btn-ghost btn-xs btn-square"
-                        onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
-                        disabled={item.quantity >= item.stock_max || submitting || printing}
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                      <button
-                        className="btn btn-ghost btn-xs btn-square text-error"
-                        onClick={() => handleRemoveItem(item.id)}
-                        disabled={submitting || printing}
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
+                    <div className="mt-1 text-right">
+                      <span className="text-sm font-semibold text-primary">
+                        Total: {formatPrice(item.total)}
+                      </span>
                     </div>
                   </div>
                 ))}

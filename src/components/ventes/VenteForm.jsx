@@ -4,8 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
 import {
   Save, X, ArrowLeft, Plus, Minus, Trash2, User, ShoppingCart,
-  CheckCircle, AlertCircle, Loader2, Building2, 
-  Package, DollarSign, FileText, Warehouse
+  CheckCircle, AlertCircle, Loader2, Package, FileText, Warehouse, Tag
 } from 'lucide-react';
 
 const VenteForm = () => {
@@ -88,7 +87,7 @@ const VenteForm = () => {
   };
 
   // ============================================================
-  // 2. Chargement des produits (avec prix dans l'entrepôt)
+  // 2. Chargement des produits (avec prix détail et gros)
   // ============================================================
   useEffect(() => {
     if (!entrepot || !entrepot.id) return;
@@ -97,21 +96,30 @@ const VenteForm = () => {
       try {
         const productsRes = await AxiosInstance.get('/products/?is_active=true');
         const allProducts = productsRes.data || [];
+        
         const productsWithPrices = await Promise.all(allProducts.map(async (product) => {
           try {
-            const priceRes = await AxiosInstance.get(`/product-prices/by_product_and_warehouse/?product_id=${product.id}&warehouse_id=${entrepot.id}`);
+            // Récupérer les prix du produit dans l'entrepôt
+            const priceRes = await AxiosInstance.get(
+              `/ventes/product_prices/?product_id=${product.id}&warehouse_id=${entrepot.id}`
+            );
             const stockRes = await AxiosInstance.get(`/warehouse-stocks/by_product/?product_id=${product.id}`);
             const stock = stockRes.data?.find(s => s.warehouse === entrepot.id);
+            
             return {
               ...product,
-              warehouse_price: priceRes.data.sale_price,
+              sale_price: priceRes.data.sale_price || 0,
+              wholesale_price: priceRes.data.wholesale_price || null,
+              has_wholesale: priceRes.data.has_wholesale || false,
               stock_quantity: stock?.quantity || 0,
               has_price: true
             };
           } catch {
             return {
               ...product,
-              warehouse_price: product.sale_price || 0,
+              sale_price: product.sale_price || 0,
+              wholesale_price: null,
+              has_wholesale: false,
               stock_quantity: 0,
               has_price: false
             };
@@ -120,6 +128,7 @@ const VenteForm = () => {
         setProducts(productsWithPrices);
       } catch (error) {
         console.error(error);
+        showNotification('Erreur de chargement des produits', 'error');
       } finally {
         setLoading(false);
       }
@@ -147,37 +156,37 @@ const VenteForm = () => {
   }, [clientIdParam]);
 
   // ============================================================
-  // 4. Gestion des lignes (items) - AVEC VÉRIFICATION DES DOUBLONS
+  // 4. Gestion des lignes (items) - AVEC CHOIX DU TYPE DE PRIX
   // ============================================================
   
-  // Vérifier si un produit est déjà dans la liste
   const isProductAlreadyAdded = (productId) => {
     return items.some(item => item.product_id === productId);
   };
 
-  // Ajouter un nouvel item avec vérification des doublons
   const handleAddItem = () => {
-    // Si des produits sont déjà sélectionnés, on propose d'ajouter un nouveau produit
-    // mais on ne peut pas ajouter de ligne vide car le select montre tous les produits
-    
-    // On vérifie si tous les produits disponibles sont déjà ajoutés
     const availableProducts = products.filter(p => !isProductAlreadyAdded(p.id));
     if (availableProducts.length === 0) {
       showNotification('Tous les produits sont déjà dans la liste', 'warning');
       return;
     }
     
-    // Ajouter une nouvelle ligne avec le premier produit disponible
     const firstAvailable = availableProducts[0];
+    // Par défaut, utiliser le prix de détail
+    const defaultPrice = firstAvailable.sale_price || 0;
+    
     setItems(prev => [...prev, {
       id: Date.now(),
       product_id: firstAvailable.id,
       product_name: firstAvailable.name,
       product_reference: firstAvailable.reference || '',
       quantity: 1,
-      unit_price: firstAvailable.warehouse_price || 0,
+      price_type: 'retail', // 'retail' ou 'wholesale'
+      unit_price: defaultPrice,
+      sale_price: firstAvailable.sale_price || 0,
+      wholesale_price: firstAvailable.wholesale_price || null,
+      has_wholesale: firstAvailable.has_wholesale || false,
       discount: 0,
-      total: firstAvailable.warehouse_price || 0,
+      total: defaultPrice,
       stock_max: firstAvailable.stock_quantity || 0
     }]);
   };
@@ -186,34 +195,68 @@ const VenteForm = () => {
     setItems(items.filter(item => item.id !== itemId));
   };
 
+  // Gérer le changement de type de prix (détail/gros)
+  const handlePriceTypeChange = (itemId, priceType) => {
+    setItems(items.map(item => {
+      if (item.id === itemId) {
+        const newPrice = priceType === 'wholesale' 
+          ? (item.wholesale_price || item.sale_price)
+          : item.sale_price;
+        
+        const updatedItem = {
+          ...item,
+          price_type: priceType,
+          unit_price: newPrice
+        };
+        
+        // Recalculer le total
+        const qty = parseFloat(updatedItem.quantity) || 0;
+        const discount = parseFloat(updatedItem.discount) || 0;
+        updatedItem.total = qty * newPrice * (1 - discount / 100);
+        
+        return updatedItem;
+      }
+      return item;
+    }));
+  };
+
   const handleItemChange = (itemId, field, value) => {
     const updatedItems = items.map(item => {
       if (item.id === itemId) {
         const updatedItem = { ...item, [field]: value };
         
-        // Si le produit change, mettre à jour les infos
         if (field === 'product_id') {
           const product = products.find(p => p.id === parseInt(value));
           if (product) {
-            // Vérifier si le produit est déjà utilisé ailleurs (sauf pour l'item en cours)
             const isDuplicate = items.some(other => 
               other.id !== itemId && other.product_id === parseInt(value)
             );
             
             if (isDuplicate) {
               showNotification(`Le produit "${product.name}" est déjà dans la liste`, 'warning');
-              return item; // Retourner l'item inchangé
+              return item;
             }
             
             updatedItem.product_name = product.name;
             updatedItem.product_reference = product.reference || '';
-            updatedItem.unit_price = product.warehouse_price || 0;
+            updatedItem.sale_price = product.sale_price || 0;
+            updatedItem.wholesale_price = product.wholesale_price || null;
+            updatedItem.has_wholesale = product.has_wholesale || false;
             updatedItem.stock_max = product.stock_quantity || 0;
+            
+            // Mettre à jour le prix selon le type actuel
+            if (updatedItem.price_type === 'wholesale' && updatedItem.wholesale_price) {
+              updatedItem.unit_price = updatedItem.wholesale_price;
+            } else {
+              updatedItem.unit_price = updatedItem.sale_price;
+              updatedItem.price_type = 'retail';
+            }
           }
         }
         
-        // Recalculer le total si quantité, prix ou remise change
-        if (field === 'quantity' || field === 'unit_price' || field === 'discount' || field === 'product_id') {
+        // Recalculer le total
+        if (field === 'quantity' || field === 'unit_price' || field === 'discount' || 
+            field === 'product_id' || field === 'price_type') {
           const qty = parseFloat(updatedItem.quantity) || 0;
           const price = parseFloat(updatedItem.unit_price) || 0;
           const discount = parseFloat(updatedItem.discount) || 0;
@@ -232,13 +275,13 @@ const VenteForm = () => {
   // ============================================================
   useEffect(() => {
     const subtotal = items.reduce((sum, item) => sum + (item.total || 0), 0);
-    const tax_amount = 0; // TVA à 0%
+    const tax_amount = 0;
     const total = subtotal + tax_amount;
     setTotals({ subtotal, tax_amount, total });
   }, [items]);
 
   // ============================================================
-  // 6. Soumission de la vente - AVEC VÉRIFICATION DES DOUBLONS
+  // 6. Soumission de la vente
   // ============================================================
   const handleSubmit = async () => {
     // Vérifier que tous les items ont un produit sélectionné
@@ -257,7 +300,7 @@ const VenteForm = () => {
       return;
     }
 
-    // ✅ VÉRIFICATION DES DOUBLONS AVANT ENVOI
+    // Vérification des doublons
     const productIds = items.map(item => item.product_id);
     const uniqueProductIds = new Set(productIds);
     if (productIds.length !== uniqueProductIds.size) {
@@ -265,7 +308,7 @@ const VenteForm = () => {
       return;
     }
 
-    // ✅ VÉRIFICATION DU STOCK
+    // Vérification du stock
     const stockErrors = [];
     items.forEach(item => {
       if (item.quantity > item.stock_max) {
@@ -288,6 +331,7 @@ const VenteForm = () => {
         product: parseInt(item.product_id),
         quantity: item.quantity,
         prix_unitaire: item.unit_price,
+        price_type: item.price_type || 'retail', // Envoi du type de prix
         tva: 0,
         remise: item.discount || 0
       }))
@@ -316,7 +360,6 @@ const VenteForm = () => {
     const item = items.find(i => i.id === itemId);
     if (!item) return;
     
-    // Limiter la quantité au stock disponible
     const maxQty = item.stock_max || 999;
     const safeQty = Math.max(1, Math.min(newQuantity, maxQty));
     
@@ -341,12 +384,6 @@ const VenteForm = () => {
       </div>
     );
   }
-
-  // Filtrer les produits disponibles (non déjà ajoutés)
-  const getAvailableProducts = () => {
-    const selectedIds = items.map(item => item.product_id);
-    return products.filter(p => !selectedIds.includes(p.id));
-  };
 
   return (
     <div className="px-0 lg:px-0 py-4 lg:py-6 bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
@@ -468,13 +505,13 @@ const VenteForm = () => {
                 </h3>
                 <div className="flex gap-2">
                   <span className="text-xs text-gray-500 self-center">
-                    {getAvailableProducts().length} produits disponibles
+                    {products.filter(p => !isProductAlreadyAdded(p.id)).length} produits disponibles
                   </span>
                   <button
                     type="button"
                     className="btn btn-primary btn-sm gap-2"
                     onClick={handleAddItem}
-                    disabled={submitting || getAvailableProducts().length === 0}
+                    disabled={submitting || products.filter(p => !isProductAlreadyAdded(p.id)).length === 0}
                   >
                     <Plus className="w-4 h-4" /> Ajouter une ligne
                   </button>
@@ -490,10 +527,6 @@ const VenteForm = () => {
               ) : (
                 <>
                   {items.map((item, index) => {
-                    const availableProducts = products.filter(p => 
-                      !items.some(other => other.id !== item.id && other.product_id === p.id)
-                    );
-                    
                     return (
                       <div key={item.id} className="bg-gray-50 rounded-xl p-4 mb-4 border border-gray-200">
                         <div className="flex items-center justify-between mb-3">
@@ -507,8 +540,8 @@ const VenteForm = () => {
                           </button>
                         </div>
                         
-                        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-                          {/* Select Produit - avec filtrage des doublons */}
+                        <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
+                          {/* Select Produit */}
                           <div className="form-control w-full md:col-span-2">
                             <label className="label">
                               <span className="label-text text-sm font-semibold">Produit</span>
@@ -520,7 +553,6 @@ const VenteForm = () => {
                               disabled={submitting}
                             >
                               <option value="">Sélectionner un produit</option>
-                              {/* Afficher uniquement les produits non déjà sélectionnés + le produit actuel */}
                               {products.map(p => {
                                 const isSelected = items.some(other => other.id !== item.id && other.product_id === p.id);
                                 return (
@@ -539,8 +571,35 @@ const VenteForm = () => {
                             )}
                           </div>
 
+                          {/* Type de prix - NOUVEAU */}
+                          <div className="form-control w-full md:col-span-1">
+                            <label className="label">
+                              <span className="label-text text-sm font-semibold flex items-center gap-1">
+                                <Tag className="w-3 h-3" />
+                                Prix
+                              </span>
+                            </label>
+                            <select
+                              className="select select-bordered w-full text-sm"
+                              value={item.price_type || 'retail'}
+                              onChange={(e) => handlePriceTypeChange(item.id, e.target.value)}
+                              disabled={submitting || !item.product_id}
+                            >
+                              <option value="retail">Détail</option>
+                              <option value="wholesale" disabled={!item.has_wholesale}>
+                                {item.has_wholesale ? 'Gros' : 'Gros (ND)'}
+                              </option>
+                            </select>
+                            {item.price_type === 'wholesale' && item.has_wholesale && (
+                              <span className="text-xs text-success mt-1">✅ Prix de gros appliqué</span>
+                            )}
+                            {item.price_type === 'wholesale' && !item.has_wholesale && (
+                              <span className="text-xs text-warning mt-1">⚠️ Prix de gros non disponible</span>
+                            )}
+                          </div>
+
                           {/* Quantité */}
-                          <div className="form-control w-full">
+                          <div className="form-control w-full md:col-span-1">
                             <label className="label">
                               <span className="label-text text-sm font-semibold">Qté</span>
                             </label>
@@ -572,7 +631,7 @@ const VenteForm = () => {
                           </div>
 
                           {/* Prix unitaire */}
-                          <div className="form-control w-full">
+                          <div className="form-control w-full md:col-span-1">
                             <label className="label">
                               <span className="label-text text-sm font-semibold">Prix unit.</span>
                             </label>
@@ -588,7 +647,7 @@ const VenteForm = () => {
                           </div>
 
                           {/* Remise */}
-                          <div className="form-control w-full">
+                          <div className="form-control w-full md:col-span-1">
                             <label className="label">
                               <span className="label-text text-sm font-semibold">Remise %</span>
                             </label>
@@ -604,7 +663,7 @@ const VenteForm = () => {
                           </div>
 
                           {/* Total */}
-                          <div className="form-control w-full">
+                          <div className="form-control w-full md:col-span-1">
                             <label className="label">
                               <span className="label-text text-sm font-semibold text-primary">Total</span>
                             </label>
@@ -613,6 +672,21 @@ const VenteForm = () => {
                             </div>
                           </div>
                         </div>
+                        
+                        {/* Affichage des prix de référence */}
+                        {item.product_id && (
+                          <div className="mt-2 text-xs text-gray-400 flex gap-4 flex-wrap">
+                            <span>💰 Prix détail: <span className="font-medium">{formatPrice(item.sale_price)}</span></span>
+                            {item.has_wholesale && (
+                              <span>🏷️ Prix gros: <span className="font-medium text-primary">{formatPrice(item.wholesale_price)}</span></span>
+                            )}
+                            {item.has_wholesale && item.wholesale_price > 0 && (
+                              <span className="text-success">
+                                Économie: {formatPrice((item.sale_price - item.wholesale_price) * item.quantity)}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
