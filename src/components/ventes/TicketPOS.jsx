@@ -68,13 +68,11 @@ const TicketPOS = async (vente) => {
       return y
     }
 
-    // Fonction deux colonnes avec marges serrées
     const twoColumnText = (left, right, size = 9, leftStyle = 'normal', rightStyle = 'normal') => {
       doc.setFontSize(size)
       doc.setFont('helvetica', leftStyle)
       doc.text(left, margins.left, y)
       doc.setFont('helvetica', rightStyle)
-      // Rapprocher la valeur à droite (marge de 2mm)
       doc.text(right, pageWidth - margins.right - 2, y, { align: 'right' })
       y += lineHeight
       return y
@@ -100,10 +98,36 @@ const TicketPOS = async (vente) => {
     }
 
     // ============================================================
-    // DONNEES
+    // DONNEES - CORRECTION IMPORTANTE
     // ============================================================
-    const items = vente.items || []
-    const itemsData = vente.items_data || items
+    // Récupérer les items depuis différentes sources possibles
+    let items = []
+    
+    // Essayer plusieurs sources pour les items
+    if (vente.items && Array.isArray(vente.items) && vente.items.length > 0) {
+      items = vente.items
+    } else if (vente.items_data && Array.isArray(vente.items_data) && vente.items_data.length > 0) {
+      items = vente.items_data
+    } else if (vente.vente_items && Array.isArray(vente.vente_items) && vente.vente_items.length > 0) {
+      items = vente.vente_items
+    }
+    
+    // Récupérer les totaux
+    const sousTotal = parseFloat(vente.sous_total || vente.subtotal || 0)
+    const total = parseFloat(vente.total || vente.total_ttc || sousTotal)
+    const paye = parseFloat(vente.montant_paye || vente.paid_amount || 0)
+    const reste = parseFloat(vente.reste_a_payer || vente.montant_restant || vente.remaining_amount || 0)
+    const taxAmount = parseFloat(vente.tax_amount || vente.tva || 0)
+
+    console.log('TicketPOS - Données reçues:', {
+      itemsCount: items.length,
+      sousTotal,
+      total,
+      paye,
+      reste,
+      taxAmount,
+      venteKeys: Object.keys(vente)
+    })
 
     // ============================================================
     // 1. EN-TETE
@@ -127,6 +151,12 @@ const TicketPOS = async (vente) => {
     // --- NUMERO ET DATE ---
     y = centerText('TICKET N° ' + (vente.reference || vente.sale_number || '---'), 10, 'bold')
     y = centerText(formatDate(vente.date_vente || vente.created_at || new Date()), 7, 'normal')
+    
+    // Client
+    const client = vente.client || {}
+    if (client.nom) {
+      y = centerText('Client: ' + client.nom + (client.prenom ? ' ' + client.prenom : ''), 7, 'normal')
+    }
     
     y = sectionSpacer(2)
 
@@ -158,29 +188,41 @@ const TicketPOS = async (vente) => {
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(7)
 
-    if (itemsData && itemsData.length > 0) {
-      itemsData.forEach((item, index) => {
-        const qty = parseFloat(item.quantity) || 0
-        const price = parseFloat(item.prix_unitaire || item.unit_price) || 0
-        const total = parseFloat(item.total) || qty * price
-        const name = (item.product_name || item.product?.name || '-').substring(0, 16)
+    if (items && items.length > 0) {
+      items.forEach((item, index) => {
+        // Récupérer les valeurs avec différentes possibilités
+        const qty = parseFloat(item.quantity || item.qty || 1) || 0
+        const price = parseFloat(item.prix_unitaire || item.unit_price || item.price || item.prix) || 0
+        const totalItem = parseFloat(item.total || item.total_price || item.sous_total) || qty * price
+        const name = (item.product_name || item.product?.name || item.name || 'Produit').substring(0, 16)
 
+        // Afficher la ligne
         doc.text(qty.toString(), colQte, y)
         doc.text(name, colDesignation, y)
         doc.text(formatNumber(price), colPrix, y, { align: 'right' })
         doc.setFont('helvetica', 'bold')
-        doc.text(formatNumber(total), colTotal, y, { align: 'right' })
+        doc.text(formatNumber(totalItem), colTotal, y, { align: 'right' })
         doc.setFont('helvetica', 'normal')
         
         y += 4
 
+        // Si on arrive en bas de page, ajouter une nouvelle page
         if (y > 170) {
           doc.addPage()
           y = margins.top + 10
         }
       })
+      
+      // Afficher le nombre total d'articles
+      y += 2
+      doc.setFontSize(6)
+      doc.setFont('helvetica', 'italic')
+      doc.text('Total articles: ' + items.length, margins.left, y)
+      y += 3
+      
     } else {
-      y = leftText('Aucun article', 7)
+      y = centerText('Aucun article', 7, 'bold')
+      y += 3
     }
 
     y = sectionSpacer(1.5)
@@ -188,38 +230,32 @@ const TicketPOS = async (vente) => {
     y = sectionSpacer(1.5)
 
     // ============================================================
-    // 3. TOTAUX - COLONNES RAPPROCHEES
+    // 3. TOTAUX - SANS TVA
     // ============================================================
-    const sousTotal = parseFloat(vente.sous_total || vente.subtotal) || 0
-    const tva = parseFloat(vente.tva || vente.tax_amount) || 0
-    const totalTTC = parseFloat(vente.total_ttc || vente.total) || 0
-    const paye = parseFloat(vente.montant_paye || vente.paid_amount) || 0
-    const reste = parseFloat(vente.montant_restant || vente.remaining_amount) || 0
-
-    // Sous-total avec alignement serré
+    // Sous-total
     doc.setFontSize(8)
     doc.setFont('helvetica', 'normal')
     doc.text('Sous-total', margins.left, y)
     doc.text(formatCurrency(sousTotal), pageWidth - margins.right - 2, y, { align: 'right' })
     y += lineHeight
 
-    // TVA
+    // TVA (0%)
     doc.text('TVA (0%)', margins.left, y)
-    doc.text(formatCurrency(tva), pageWidth - margins.right - 2, y, { align: 'right' })
+    doc.text(formatCurrency(taxAmount), pageWidth - margins.right - 2, y, { align: 'right' })
     y += lineHeight
 
     y = sectionSpacer(1)
     y = doubleSeparator()
     y = sectionSpacer(1)
 
-    // TOTAL - en gras et rapproché
+    // TOTAL - en gras
     doc.setFontSize(12)
     doc.setFont('helvetica', 'bold')
     doc.text('TOTAL', margins.left, y)
-    doc.text(formatCurrency(totalTTC), pageWidth - margins.right - 2, y, { align: 'right' })
+    doc.text(formatCurrency(total), pageWidth - margins.right - 2, y, { align: 'right' })
     y += lineHeight + 2
 
-    // Paye
+    // Payé
     if (paye > 0) {
       doc.setFontSize(9)
       doc.setFont('helvetica', 'normal')
@@ -244,14 +280,14 @@ const TicketPOS = async (vente) => {
     // ============================================================
     // 4. PAIEMENT
     // ============================================================
-    const modePaiement = vente.mode_paiement || vente.payment_method || 'Especes'
+    const modePaiement = vente.mode_paiement || vente.payment_method || vente.methode_paiement || 'Especes'
     doc.setFontSize(8)
     doc.setFont('helvetica', 'bold')
     doc.text('Paiement: ' + modePaiement, margins.left, y)
     y += lineHeight
     y = sectionSpacer(1)
 
-    const remise = parseFloat(vente.remise || vente.discount) || 0
+    const remise = parseFloat(vente.remise || vente.discount || 0)
     if (remise > 0) {
       doc.setFontSize(8)
       doc.setFont('helvetica', 'normal')
@@ -287,7 +323,7 @@ const TicketPOS = async (vente) => {
     // ============================================================
     // 6. PIED DE PAGE
     // ============================================================
-    y = centerText('MERCI DE VOTRE CONFIDENCE', 11, 'bold')
+    y = centerText('MERCI DE VOTRE CONFIANCE', 11, 'bold')
     y = centerText('A tres bientot !', 8, 'normal')
     y = centerText('Votre satisfaction est notre priorite', 7, 'normal')
     y = centerText('contact@seydigroup.com', 7, 'normal')

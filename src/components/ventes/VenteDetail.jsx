@@ -140,9 +140,7 @@ const VenteDetail = () => {
     }
   }
 
-  // ============================================================
-  // ✅ NOUVEAU : Générer le ticket POS
-  // ============================================================
+  // Générer le ticket POS
   const handleGenerateTicket = async () => {
     if (!vente) {
       showNotification('Aucune donnée de vente disponible', 'error')
@@ -151,7 +149,6 @@ const VenteDetail = () => {
 
     setGeneratingTicket(true)
     try {
-      // Préparer les données pour le ticket
       const ticketData = {
         ...vente,
         items_data: vente.items || [],
@@ -171,7 +168,7 @@ const VenteDetail = () => {
     }
   }
 
-  // ✅ NOUVEAU : Imprimer directement le ticket
+  // Imprimer directement le ticket
   const handlePrintTicket = async () => {
     if (!vente) {
       showNotification('Aucune donnée de vente disponible', 'error')
@@ -189,10 +186,8 @@ const VenteDetail = () => {
         remaining_amount: vente.reste_a_payer || 0
       }
 
-      // Générer le PDF et l'ouvrir dans une nouvelle fenêtre pour impression
       const doc = await TicketPOS(ticketData)
       
-      // Alternative : ouvrir le PDF dans une nouvelle fenêtre pour impression directe
       const pdfBlob = doc.output('blob')
       const pdfUrl = URL.createObjectURL(pdfBlob)
       const printWindow = window.open(pdfUrl, '_blank')
@@ -468,7 +463,6 @@ const VenteDetail = () => {
             Actualiser
           </button>
           
-          {/* ✅ NOUVEAU : Bouton Ticket POS */}
           {canGenerateTicket() && (
             <div className="dropdown dropdown-end">
               <button 
@@ -685,10 +679,7 @@ const VenteDetail = () => {
                         <td colSpan="3" className="text-right font-semibold">Sous-total</td>
                         <td className="text-right font-semibold">{formatPrice(vente.sous_total)}</td>
                       </tr>
-                      <tr>
-                        <td colSpan="3" className="text-right text-sm text-base-content/60">TVA (18%)</td>
-                        <td className="text-right text-sm">{formatPrice(vente.tva)}</td>
-                      </tr>
+                      {/* LIGNE TVA SUPPRIMÉE */}
                       <tr className="border-t border-base-300">
                         <td colSpan="3" className="text-right font-bold text-lg">Total</td>
                         <td className="text-right font-bold text-primary text-lg">{formatPrice(vente.total)}</td>
@@ -742,10 +733,14 @@ const VenteDetail = () => {
                   ))}
                   
                   <div className="flex justify-between items-center pt-4 border-t border-base-300">
-                    <span className="font-semibold">Total payé</span>
-                    <span className="font-bold text-success text-lg">{formatPrice(vente.montant_paye)}</span>
+                    <span className="font-semibold">Total</span>
+                    <span className="font-bold text-primary text-lg">{formatPrice(vente.total)}</span>
                   </div>
                   <div className="flex justify-between items-center">
+                    <span className="font-semibold">Payé</span>
+                    <span className="font-bold text-success">{formatPrice(vente.montant_paye)}</span>
+                  </div>
+                  <div className="flex justify-between items-center pb-2">
                     <span className="font-semibold">Reste à payer</span>
                     <span className={`font-bold text-lg ${vente.reste_a_payer > 0 ? 'text-error' : 'text-success'}`}>
                       {formatPrice(vente.reste_a_payer)}

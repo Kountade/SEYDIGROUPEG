@@ -271,11 +271,11 @@ const VenteForm = () => {
   };
 
   // ============================================================
-  // 5. Calcul des totaux
+  // 5. Calcul des totaux - SANS TVA
   // ============================================================
   useEffect(() => {
     const subtotal = items.reduce((sum, item) => sum + (item.total || 0), 0);
-    const tax_amount = 0;
+    const tax_amount = 0; // TVA à 0
     const total = subtotal + tax_amount;
     setTotals({ subtotal, tax_amount, total });
   }, [items]);
@@ -331,8 +331,8 @@ const VenteForm = () => {
         product: parseInt(item.product_id),
         quantity: item.quantity,
         prix_unitaire: item.unit_price,
-        price_type: item.price_type || 'retail', // Envoi du type de prix
-        tva: 0,
+        price_type: item.price_type || 'retail',
+        // tva: 0, // SUPPRIMÉ - plus nécessaire
         remise: item.discount || 0
       }))
     };
@@ -571,7 +571,7 @@ const VenteForm = () => {
                             )}
                           </div>
 
-                          {/* Type de prix - NOUVEAU */}
+                          {/* Type de prix */}
                           <div className="form-control w-full md:col-span-1">
                             <label className="label">
                               <span className="label-text text-sm font-semibold flex items-center gap-1">
@@ -691,17 +691,14 @@ const VenteForm = () => {
                     );
                   })}
 
-                  {/* Total général */}
+                  {/* Total général - SANS TVA */}
                   <div className="text-right pt-4 border-t border-gray-200">
                     <div className="space-y-1">
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Sous-total</span>
                         <span className="font-semibold">{formatPrice(totals.subtotal)}</span>
                       </div>
-                      <div className="flex justify-between text-sm text-success">
-                        <span className="text-gray-600">TVA (0%)</span>
-                        <span>{formatPrice(totals.tax_amount)}</span>
-                      </div>
+                      {/* LIGNE TVA SUPPRIMÉE */}
                       <div className="flex justify-between text-xl font-bold">
                         <span>Total</span>
                         <span className="text-primary">{formatPrice(totals.total)}</span>

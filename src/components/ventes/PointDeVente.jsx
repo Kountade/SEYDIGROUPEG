@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
-import TicketPOS from './TicketPOS'
 import {
   Plus,
   Minus,
@@ -62,7 +61,6 @@ const PointDeVente = () => {
   // ============================================================
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [printing, setPrinting] = useState(false)
   const [products, setProducts] = useState([])
   const [clients, setClients] = useState([])
   const [selectedClient, setSelectedClient] = useState(null)
@@ -154,7 +152,6 @@ const PointDeVente = () => {
         
         const productsWithPrices = await Promise.all(allProducts.map(async (product) => {
           try {
-            // Récupérer les prix du produit dans l'entrepôt
             const priceRes = await AxiosInstance.get(
               `/ventes/product_prices/?product_id=${product.id}&warehouse_id=${entrepot.id}`
             );
@@ -209,7 +206,7 @@ const PointDeVente = () => {
   }, []);
 
   // ============================================================
-  // 4. Gestion du panier (items) - AVEC TYPE DE PRIX
+  // 4. Gestion du panier (items)
   // ============================================================
   const isProductAlreadyAdded = (productId) => {
     return items.some(item => item.product_id === productId);
@@ -233,7 +230,6 @@ const PointDeVente = () => {
       return;
     }
     
-    // Par défaut, utiliser le prix de détail
     const defaultPrice = productToAdd.sale_price || 0;
     
     setItems(prev => [...prev, {
@@ -242,7 +238,7 @@ const PointDeVente = () => {
       product_name: productToAdd.name,
       product_reference: productToAdd.reference || '',
       quantity: 1,
-      price_type: 'retail', // 'retail' ou 'wholesale'
+      price_type: 'retail',
       unit_price: defaultPrice,
       sale_price: productToAdd.sale_price || 0,
       wholesale_price: productToAdd.wholesale_price || null,
@@ -258,7 +254,6 @@ const PointDeVente = () => {
     setItems(items.filter(item => item.id !== itemId));
   };
 
-  // Gérer le changement de type de prix (détail/gros)
   const handlePriceTypeChange = (itemId, priceType) => {
     setItems(items.map(item => {
       if (item.id === itemId) {
@@ -272,7 +267,6 @@ const PointDeVente = () => {
           unit_price: newPrice
         };
         
-        // Recalculer le total
         const qty = parseFloat(updatedItem.quantity) || 0;
         const discount = parseFloat(updatedItem.discount) || 0;
         updatedItem.total = qty * newPrice * (1 - discount / 100);
@@ -308,7 +302,6 @@ const PointDeVente = () => {
             updatedItem.stock_max = product.stock_quantity || 0;
             updatedItem.image_url = product.image_url || '/placeholder-product.png';
             
-            // Mettre à jour le prix selon le type actuel
             if (updatedItem.price_type === 'wholesale' && updatedItem.wholesale_price) {
               updatedItem.unit_price = updatedItem.wholesale_price;
             } else {
@@ -348,17 +341,17 @@ const PointDeVente = () => {
   };
 
   // ============================================================
-  // 5. Calcul des totaux
+  // 5. Calcul des totaux - SANS TVA
   // ============================================================
   useEffect(() => {
     const subtotal = items.reduce((sum, item) => sum + (item.total || 0), 0);
-    const tax_amount = 0;
+    const tax_amount = 0; // TVA à 0%
     const total = subtotal + tax_amount;
     setTotals({ subtotal, tax_amount, total });
   }, [items]);
 
   // ============================================================
-  // 6. Soumission de la vente + Impression du ticket
+  // 6. Soumission de la vente - SANS TÉLÉCHARGEMENT AUTOMATIQUE DU TICKET
   // ============================================================
   const handleSubmit = async () => {
     const emptyItems = items.filter(item => !item.product_id);
@@ -405,8 +398,7 @@ const PointDeVente = () => {
         product: parseInt(item.product_id),
         quantity: item.quantity,
         prix_unitaire: item.unit_price,
-        price_type: item.price_type || 'retail', // Envoi du type de prix
-        tva: 0,
+        price_type: item.price_type || 'retail',
         remise: item.discount || 0
       }))
     };
@@ -417,35 +409,17 @@ const PointDeVente = () => {
       
       showNotification('Vente créée avec succès !', 'success');
       
-      // Stocker la vente pour l'impression
-      setLastVente(venteData);
-      
       // Vider le panier
       setItems([]);
       setSelectedClient(null);
       setNotes('');
       
-      // Impression du ticket POS
-      try {
-        setPrinting(true);
-        const ticketData = {
-          ...venteData,
-          items_data: venteData.items || [],
-          client: selectedClient || {},
-          payment_method: 'Especes',
-          paid_amount: parseFloat(venteData.montant_paye) || 0,
-          remaining_amount: parseFloat(venteData.reste_a_payer) || 0
-        };
-        
-        await TicketPOS(ticketData);
-        showNotification('Ticket POS généré avec succès !', 'success');
-        
-      } catch (printError) {
-        console.error('Erreur impression ticket:', printError);
-        showNotification('Vente créée mais erreur lors de l\'impression du ticket', 'warning');
-      } finally {
-        setPrinting(false);
-      }
+      // ✅ REDIRECTION VERS VENTESLIST APRÈS UN COURT DÉLAI
+      // Le ticket NE se télécharge PAS automatiquement
+      // L'utilisateur pourra le télécharger depuis la liste des ventes ou les détails
+      setTimeout(() => {
+        navigate('/ventes');
+      }, 1500);
       
     } catch (error) {
       console.error(error);
@@ -454,7 +428,6 @@ const PointDeVente = () => {
       else if (error.response?.data?.detail) errorMessage = error.response.data.detail;
       else if (error.response?.data?.non_field_errors) errorMessage = error.response.data.non_field_errors.join(', ');
       showNotification(errorMessage, 'error', error.response?.data);
-    } finally {
       setSubmitting(false);
     }
   };
@@ -471,7 +444,7 @@ const PointDeVente = () => {
   // 8. Formatage et utils
   // ============================================================
   const formatPrice = (price) => {
-    if (!price) return '0 FCFA'
+    if (!price && price !== 0) return '0 FCFA'
     return new Intl.NumberFormat('fr-FR').format(price) + ' FCFA'
   }
 
@@ -764,7 +737,7 @@ const PointDeVente = () => {
                         isInCart ? 'border-primary' : 'border-base-300 hover:border-primary/50'
                       } group relative`}
                       onClick={() => handleAddItem(product)}
-                      disabled={product.stock_quantity <= 0 || submitting || printing}
+                      disabled={product.stock_quantity <= 0 || submitting}
                     >
                       <div className="relative h-40 bg-base-300">
                         {product.image_url && product.image_url !== '/placeholder-product.png' ? (
@@ -796,7 +769,6 @@ const PointDeVente = () => {
                             <span className="badge badge-primary badge-sm">✓ Ajouté</span>
                           </div>
                         )}
-                        {/* Affichage des prix sur la carte */}
                         <div className="absolute bottom-2 left-2 right-2 flex gap-1">
                           <span className="badge badge-sm bg-black/70 text-white border-0">
                             {formatPrice(product.sale_price || 0)}
@@ -908,7 +880,7 @@ const PointDeVente = () => {
                         <button
                           className="btn btn-primary btn-sm gap-1"
                           onClick={() => handleAddItem(product)}
-                          disabled={product.stock_quantity <= 0 || submitting || printing}
+                          disabled={product.stock_quantity <= 0 || submitting}
                         >
                           <Plus className="w-4 h-4" /> Ajouter
                         </button>
@@ -1004,7 +976,7 @@ const PointDeVente = () => {
                 <button
                   className="btn btn-ghost btn-sm text-error hover:bg-error/10"
                   onClick={() => setItems([])}
-                  disabled={submitting || printing}
+                  disabled={submitting}
                 >
                   <Trash2 className="w-4 h-4" /> Vider
                 </button>
@@ -1042,12 +1014,11 @@ const PointDeVente = () => {
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-sm truncate">{item.product_name}</p>
                         <div className="flex items-center gap-2 mt-1">
-                          {/* Sélecteur de type de prix */}
                           <select
                             className="select select-bordered select-xs w-24"
                             value={item.price_type || 'retail'}
                             onChange={(e) => handlePriceTypeChange(item.id, e.target.value)}
-                            disabled={submitting || printing}
+                            disabled={submitting}
                           >
                             <option value="retail">Détail</option>
                             <option value="wholesale" disabled={!item.has_wholesale}>
@@ -1068,7 +1039,7 @@ const PointDeVente = () => {
                         <button
                           className="btn btn-ghost btn-xs btn-square"
                           onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
-                          disabled={item.quantity <= 1 || submitting || printing}
+                          disabled={item.quantity <= 1 || submitting}
                         >
                           <Minus className="w-3 h-3" />
                         </button>
@@ -1076,14 +1047,14 @@ const PointDeVente = () => {
                         <button
                           className="btn btn-ghost btn-xs btn-square"
                           onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
-                          disabled={item.quantity >= item.stock_max || submitting || printing}
+                          disabled={item.quantity >= item.stock_max || submitting}
                         >
                           <Plus className="w-3 h-3" />
                         </button>
                         <button
                           className="btn btn-ghost btn-xs btn-square text-error"
                           onClick={() => handleRemoveItem(item.id)}
-                          disabled={submitting || printing}
+                          disabled={submitting}
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>
@@ -1108,10 +1079,7 @@ const PointDeVente = () => {
                     <span className="text-base-content/60">Sous-total</span>
                     <span className="font-semibold">{formatPrice(totals.subtotal)}</span>
                   </div>
-                  <div className="flex justify-between text-sm text-success">
-                    <span className="text-base-content/60">TVA (0%)</span>
-                    <span>0 FCFA</span>
-                  </div>
+                  {/* TVA supprimée - ligne retirée */}
                   <div className="flex justify-between text-lg font-bold border-t border-base-300 pt-2">
                     <span>Total</span>
                     <span className="text-primary">{formatPrice(totals.total)}</span>
@@ -1126,29 +1094,23 @@ const PointDeVente = () => {
                     placeholder="Notes (optionnel)"
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    disabled={submitting || printing}
+                    disabled={submitting}
                   />
                 </div>
 
                 <button
                   className="btn btn-primary w-full gap-2 shadow-md hover:shadow-lg transition-all"
                   onClick={handleSubmit}
-                  disabled={items.length === 0 || submitting || printing || !entrepot}
+                  disabled={items.length === 0 || submitting || !entrepot}
                 >
-                  {submitting || printing ? (
-                    <><Loader className="w-4 h-4 animate-spin" /> {printing ? 'Impression...' : 'Traitement...'}</>
+                  {submitting ? (
+                    <><Loader className="w-4 h-4 animate-spin" /> Traitement...</>
                   ) : (
                     <><Receipt className="w-4 h-4" /> Valider la vente {formatPrice(totals.total)}</>
                   )}
                 </button>
                 {!entrepot && (
                   <p className="text-xs text-error text-center mt-2">⚠️ Entrepôt non trouvé</p>
-                )}
-                {printing && (
-                  <p className="text-xs text-center text-gray-500 mt-2">
-                    <Loader className="w-3 h-3 inline animate-spin mr-1" />
-                    Génération du ticket en cours...
-                  </p>
                 )}
               </>
             ) : (
