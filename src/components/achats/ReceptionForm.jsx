@@ -1,11 +1,10 @@
-// src/components/achats/ReceptionForm.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
 import {
   Save, X, ArrowLeft, Plus, Minus, Trash2, ShoppingCart,
-  CheckCircle, AlertCircle, Loader2, Building2, 
-  Package, DollarSign, FileText, Truck, Calendar, 
+  CheckCircle, AlertCircle, Loader2, Building2,
+  Package, DollarSign, FileText, Truck, Calendar,
   Users, RefreshCw, Filter, Hash
 } from 'lucide-react';
 
@@ -20,14 +19,14 @@ const ReceptionForm = () => {
   const [commandes, setCommandes] = useState([]);
   const [commandeSelected, setCommandeSelected] = useState(null);
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success', details: null });
-  
+
   // Champs du formulaire
   const [purchaseOrder, setPurchaseOrder] = useState('');
   const [notes, setNotes] = useState('');
-  
+
   // Items (lignes de produits)
   const [items, setItems] = useState([]);
-  
+
   // Total
   const [totalValue, setTotalValue] = useState(0);
 
@@ -45,29 +44,22 @@ const ReceptionForm = () => {
       try {
         const response = await AxiosInstance.get('/purchase-orders/');
         const allOrders = response.data || [];
-        
-        // ✅ FILTRAGE CORRECT : Commandes qui peuvent être réceptionnées
-        // - Statut différent de 'received' (déjà reçue)
-        // - Statut différent de 'draft' (brouillon)
-        // - A des articles avec quantité restante > 0
+
+        // Filtrer les commandes qui peuvent être réceptionnées
         const eligibleOrders = allOrders.filter(order => {
-          // Exclure les brouillons et les commandes déjà reçues
           if (order.status === 'draft' || order.status === 'received') {
             return false;
           }
-          
-          // Vérifier s'il reste des articles à recevoir
           const hasRemainingItems = order.items?.some(item => {
             const ordered = item.quantity_ordered || 0;
             const received = item.quantity_received || 0;
             return received < ordered;
           });
-          
           return hasRemainingItems;
         });
-        
+
         setCommandes(eligibleOrders);
-        
+
         if (isEditMode) {
           await fetchReception();
         }
@@ -82,18 +74,61 @@ const ReceptionForm = () => {
   }, [id]);
 
   // ============================================================
-  // 2. Chargement de la réception en mode édition
+  // 2. Chargement de la réception en mode édition (avec ses items)
   // ============================================================
   const fetchReception = async () => {
     try {
       const response = await AxiosInstance.get(`/purchase-receipts/${id}/`);
       const reception = response.data;
-      
+
       setPurchaseOrder(reception.purchase_order?.id || reception.purchase_order || '');
       setNotes(reception.notes || '');
-      
+
+      // Charger les détails de la commande
       if (reception.purchase_order) {
-        await loadCommandeDetails(reception.purchase_order.id);
+        const orderId = reception.purchase_order.id || reception.purchase_order;
+        const orderResponse = await AxiosInstance.get(`/purchase-orders/${orderId}/`);
+        const order = orderResponse.data;
+        setCommandeSelected(order);
+
+        // Construire les items à partir des items de la réception
+        const receptionItems = reception.items || [];
+        const orderItems = order.items || [];
+
+        const loadedItems = receptionItems.map(recItem => {
+          // Trouver le order_item correspondant
+          const orderItem = orderItems.find(oi => oi.id === recItem.order_item);
+          if (!orderItem) return null;
+
+          const ordered = orderItem.quantity_ordered || 0;
+          const alreadyReceived = orderItem.quantity_received || 0;
+          // La quantité déjà reçue inclut cette réception, mais on veut le restant avant cette réception ?
+          // Pour simplifier, on utilise le restant calculé à partir de la commande.
+          // Mais pour la modification, on veut que la quantité reçue puisse être ajustée.
+          // On initialise la quantité à la quantité de la réception (pour permettre de la modifier)
+          const qtyReceived = recItem.quantity || 0;
+
+          return {
+            id: recItem.id, // ID de la ligne de réception (pour modification)
+            order_item_id: recItem.order_item,
+            product_id: orderItem.product,
+            product_name: orderItem.product_name || orderItem.product?.name || 'Produit',
+            product_reference: orderItem.product_reference || '',
+            quantity_ordered: ordered,
+            quantity_received: alreadyReceived, // total déjà reçu avant cette réception
+            remaining_quantity: ordered - alreadyReceived, // restant avant cette réception
+            quantity: qtyReceived, // quantité de cette réception
+            unit_price: parseFloat(orderItem.unit_price) || 0,
+            total: (parseFloat(orderItem.unit_price) || 0) * qtyReceived,
+            quality_ok: recItem.quality_ok !== false,
+            lot_number: recItem.lot_number || '',
+            expiry_date: recItem.expiry_date || '', // ✅ date d'expiration récupérée
+            notes: recItem.notes || ''
+          };
+        }).filter(item => item !== null);
+
+        setItems(loadedItems);
+        calculateTotal(loadedItems);
       }
     } catch (error) {
       console.error('Erreur chargement réception:', error);
@@ -102,7 +137,7 @@ const ReceptionForm = () => {
   };
 
   // ============================================================
-  // 3. Chargement des détails d'une commande
+  // 3. Chargement des détails d'une commande (création)
   // ============================================================
   const loadCommandeDetails = async (orderId) => {
     if (!orderId) {
@@ -111,13 +146,12 @@ const ReceptionForm = () => {
       setTotalValue(0);
       return;
     }
-    
+
     setLoading(true);
     try {
       const response = await AxiosInstance.get(`/purchase-orders/${orderId}/`);
       const order = response.data;
-      
-      // ✅ Vérifier si la commande peut être réceptionnée
+
       if (order.status === 'draft' || order.status === 'received') {
         showNotification(`Cette commande (statut: ${order.status_display || order.status}) ne peut pas être réceptionnée`, 'error');
         setCommandeSelected(null);
@@ -127,9 +161,9 @@ const ReceptionForm = () => {
         setLoading(false);
         return;
       }
-      
+
       setCommandeSelected(order);
-      
+
       const loadedItems = (order.items || [])
         .filter(item => {
           const ordered = item.quantity_ordered || 0;
@@ -140,9 +174,10 @@ const ReceptionForm = () => {
           const ordered = item.quantity_ordered || 0;
           const received = item.quantity_received || 0;
           const remaining = ordered - received;
-          
+
           return {
-            id: item.id || Date.now() + Math.random(),
+            id: item.id,
+            order_item_id: item.id,
             product_id: item.product,
             product_name: item.product_name,
             product_reference: item.product_reference || '',
@@ -154,13 +189,13 @@ const ReceptionForm = () => {
             total: 0,
             quality_ok: true,
             lot_number: '',
+            expiry_date: '', // ✅ champ ajouté
             notes: ''
           };
         });
-      
+
       setItems(loadedItems);
       calculateTotal(loadedItems);
-      
     } catch (error) {
       console.error('Erreur chargement détails commande:', error);
       showNotification('Erreur lors du chargement des détails', 'error');
@@ -172,7 +207,7 @@ const ReceptionForm = () => {
   // ============================================================
   // 4. Gestion des items
   // ============================================================
-  
+
   const calculateTotal = (itemsList) => {
     const total = itemsList.reduce((sum, item) => sum + (item.total || 0), 0);
     setTotalValue(total);
@@ -182,22 +217,22 @@ const ReceptionForm = () => {
     const item = items[index];
     const maxQty = item.remaining_quantity;
     let quantity = parseInt(newQuantity) || 0;
-    
+
     if (quantity > maxQty) {
       showNotification(`La quantité ne peut pas dépasser ${maxQty} (quantité restante)`, 'warning');
       quantity = maxQty;
     }
     if (quantity < 0) quantity = 0;
-    
+
     const newTotal = (item.unit_price || 0) * quantity;
-    
+
     const updatedItems = [...items];
     updatedItems[index] = {
       ...item,
       quantity: quantity,
       total: newTotal
     };
-    
+
     setItems(updatedItems);
     calculateTotal(updatedItems);
   };
@@ -216,6 +251,16 @@ const ReceptionForm = () => {
     updatedItems[index] = {
       ...updatedItems[index],
       lot_number: lotNumber
+    };
+    setItems(updatedItems);
+  };
+
+  // ✅ Nouvelle fonction pour gérer la date d'expiration
+  const handleExpiryChange = (index, expiryDate) => {
+    const updatedItems = [...items];
+    updatedItems[index] = {
+      ...updatedItems[index],
+      expiry_date: expiryDate
     };
     setItems(updatedItems);
   };
@@ -277,18 +322,18 @@ const ReceptionForm = () => {
     }
 
     setSubmitting(true);
-    
+
     const payload = {
       purchase_order: parseInt(purchaseOrder),
       notes: notes,
       items: itemsToReceive.map(item => ({
-        order_item: item.id,
+        order_item: item.order_item_id || item.id, // on envoie l'ID de la ligne de commande
         quantity: parseInt(item.quantity),
         quality_checked: true,
         quality_ok: item.quality_ok !== false,
         quality_notes: '',
         lot_number: item.lot_number || '',
-        expiry_date: null,
+        expiry_date: item.expiry_date || null, // ✅ envoi de la date
         notes: item.notes || ''
       }))
     };
@@ -321,11 +366,6 @@ const ReceptionForm = () => {
   };
 
   const formatPrice = (price) => new Intl.NumberFormat('fr-FR').format(price || 0) + ' FCFA';
-
-  // Filtrer les commandes avec des articles restants
-  const getAvailableCommandes = () => {
-    return commandes;
-  };
 
   // Vérifier si la commande a des articles à recevoir
   const hasItemsToReceive = items.some(item => item.quantity > 0);
@@ -385,9 +425,9 @@ const ReceptionForm = () => {
             <Link to="/receptions" className="btn btn-outline btn-sm lg:btn-md gap-2">
               <ArrowLeft className="w-4 h-4" /> Retour
             </Link>
-            <button 
-              onClick={handleSubmit} 
-              disabled={submitting || !hasItemsToReceive} 
+            <button
+              onClick={handleSubmit}
+              disabled={submitting || !hasItemsToReceive}
               className="btn btn-primary btn-sm lg:btn-md gap-2 shadow-lg hover:shadow-xl transition-all"
             >
               {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
@@ -416,7 +456,7 @@ const ReceptionForm = () => {
                 disabled={isEditMode || loading}
               >
                 <option value="">-- Sélectionner une commande --</option>
-                {getAvailableCommandes().map(cmd => (
+                {commandes.map(cmd => (
                   <option key={cmd.id} value={cmd.id}>
                     {cmd.order_number} - {cmd.supplier?.company_name || cmd.supplier_name} - {new Date(cmd.order_date).toLocaleDateString()} - {cmd.status_display || cmd.status}
                   </option>
@@ -450,17 +490,17 @@ const ReceptionForm = () => {
                     Détails de la commande
                   </h3>
                   <div className="flex gap-2">
-                    <button 
-                      type="button" 
-                      onClick={selectAllItems} 
+                    <button
+                      type="button"
+                      onClick={selectAllItems}
                       className="btn btn-xs btn-primary gap-1"
                       disabled={submitting || items.length === 0}
                     >
                       <CheckCircle className="w-3 h-3" /> Tout recevoir
                     </button>
-                    <button 
-                      type="button" 
-                      onClick={deselectAllItems} 
+                    <button
+                      type="button"
+                      onClick={deselectAllItems}
                       className="btn btn-xs btn-ghost gap-1"
                       disabled={submitting || items.length === 0}
                     >
@@ -521,13 +561,14 @@ const ReceptionForm = () => {
                         <th className="text-right">Prix unit.</th>
                         <th className="text-right">Total</th>
                         <th>Lot</th>
+                        <th>Date expiration</th> {/* ✅ Nouvelle colonne */}
                         <th className="text-center">Qualité</th>
                         <th></th>
                       </tr>
                     </thead>
                     <tbody>
                       {items.map((item, index) => (
-                        <tr key={item.id} className="hover">
+                        <tr key={item.id || index} className="hover">
                           <td className="font-medium">{item.product_name}</td>
                           <td className="text-xs font-mono">{item.product_reference}</td>
                           <td className="text-center">
@@ -578,6 +619,15 @@ const ReceptionForm = () => {
                               disabled={item.quantity === 0 || submitting}
                             />
                           </td>
+                          <td> {/* ✅ Champ date d'expiration */}
+                            <input
+                              type="date"
+                              value={item.expiry_date || ''}
+                              onChange={(e) => handleExpiryChange(index, e.target.value)}
+                              className="input input-bordered input-xs w-32"
+                              disabled={item.quantity === 0 || submitting}
+                            />
+                          </td>
                           <td className="text-center">
                             <input
                               type="checkbox"
@@ -602,7 +652,7 @@ const ReceptionForm = () => {
                     </tbody>
                     <tfoot className="bg-gray-50 border-t-2">
                       <tr>
-                        <td colSpan="7" className="text-right font-bold">Valeur totale à recevoir</td>
+                        <td colSpan="8" className="text-right font-bold">Valeur totale à recevoir</td>
                         <td colSpan="3" className="font-bold text-primary text-lg">{formatPrice(totalValue)}</td>
                         <td></td>
                       </tr>
@@ -644,9 +694,9 @@ const ReceptionForm = () => {
             <Link to="/receptions" className="btn btn-ghost gap-2">
               Annuler
             </Link>
-            <button 
-              className="btn btn-primary gap-2 shadow-lg hover:shadow-xl transition-all" 
-              onClick={handleSubmit} 
+            <button
+              className="btn btn-primary gap-2 shadow-lg hover:shadow-xl transition-all"
+              onClick={handleSubmit}
               disabled={submitting || !hasItemsToReceive}
             >
               {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}

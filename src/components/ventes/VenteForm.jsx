@@ -4,7 +4,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
 import {
   Save, X, ArrowLeft, Plus, Minus, Trash2, User, ShoppingCart,
-  CheckCircle, AlertCircle, Loader2, Package, FileText, Warehouse, Tag
+  CheckCircle, AlertCircle, Loader2, Package, FileText, Warehouse, Tag,
+  Layers  // ← NOUVEAU : icône pour les lots
 } from 'lucide-react';
 
 const VenteForm = () => {
@@ -26,7 +27,11 @@ const VenteForm = () => {
   const [currentUser, setCurrentUser] = useState(null);
   const [loadingUser, setLoadingUser] = useState(true);
   const [notes, setNotes] = useState('');
-  
+
+  // ========== NOUVEAU : États pour les lots ==========
+  const [lotsByProduct, setLotsByProduct] = useState({}); // { productId: [lot, ...] }
+  const [loadingLots, setLoadingLots] = useState({});
+
   // Items (lignes de produits)
   const [items, setItems] = useState([]);
 
@@ -99,7 +104,6 @@ const VenteForm = () => {
         
         const productsWithPrices = await Promise.all(allProducts.map(async (product) => {
           try {
-            // Récupérer les prix du produit dans l'entrepôt
             const priceRes = await AxiosInstance.get(
               `/ventes/product_prices/?product_id=${product.id}&warehouse_id=${entrepot.id}`
             );
@@ -156,7 +160,31 @@ const VenteForm = () => {
   }, [clientIdParam]);
 
   // ============================================================
-  // 4. Gestion des lignes (items) - AVEC CHOIX DU TYPE DE PRIX
+  // 4. Chargement des lots disponibles pour un produit
+  // ============================================================
+  const fetchLotsForProduct = async (productId) => {
+    if (!productId || !entrepot?.id) return;
+
+    setLoadingLots(prev => ({ ...prev, [productId]: true }));
+    try {
+      const response = await AxiosInstance.get(`/lots/by-product/${productId}/`);
+      // Filtrer les lots valides dans l'entrepôt, en bon état et avec quantité > 0
+      const availableLots = response.data.filter(lot =>
+        lot.warehouse === entrepot.id &&
+        lot.quality_status === 'good' &&
+        lot.quantity > 0
+      );
+      setLotsByProduct(prev => ({ ...prev, [productId]: availableLots }));
+    } catch (error) {
+      console.error('Erreur chargement lots:', error);
+      showNotification('Erreur de chargement des lots', 'error');
+    } finally {
+      setLoadingLots(prev => ({ ...prev, [productId]: false }));
+    }
+  };
+
+  // ============================================================
+  // 5. Gestion des lignes (items) - AVEC CHOIX DU LOT
   // ============================================================
   
   const isProductAlreadyAdded = (productId) => {
@@ -171,7 +199,6 @@ const VenteForm = () => {
     }
     
     const firstAvailable = availableProducts[0];
-    // Par défaut, utiliser le prix de détail
     const defaultPrice = firstAvailable.sale_price || 0;
     
     setItems(prev => [...prev, {
@@ -180,22 +207,26 @@ const VenteForm = () => {
       product_name: firstAvailable.name,
       product_reference: firstAvailable.reference || '',
       quantity: 1,
-      price_type: 'retail', // 'retail' ou 'wholesale'
+      price_type: 'retail',
       unit_price: defaultPrice,
       sale_price: firstAvailable.sale_price || 0,
       wholesale_price: firstAvailable.wholesale_price || null,
       has_wholesale: firstAvailable.has_wholesale || false,
       discount: 0,
       total: defaultPrice,
-      stock_max: firstAvailable.stock_quantity || 0
+      stock_max: firstAvailable.stock_quantity || 0,
+      // ========== NOUVEAU : champ lot ==========
+      lot: null // ID du lot sélectionné, null = FIFO automatique
     }]);
+
+    // Charger les lots pour ce produit
+    fetchLotsForProduct(firstAvailable.id);
   };
 
   const handleRemoveItem = (itemId) => {
     setItems(items.filter(item => item.id !== itemId));
   };
 
-  // Gérer le changement de type de prix (détail/gros)
   const handlePriceTypeChange = (itemId, priceType) => {
     setItems(items.map(item => {
       if (item.id === itemId) {
@@ -209,7 +240,6 @@ const VenteForm = () => {
           unit_price: newPrice
         };
         
-        // Recalculer le total
         const qty = parseFloat(updatedItem.quantity) || 0;
         const discount = parseFloat(updatedItem.discount) || 0;
         updatedItem.total = qty * newPrice * (1 - discount / 100);
@@ -243,6 +273,7 @@ const VenteForm = () => {
             updatedItem.wholesale_price = product.wholesale_price || null;
             updatedItem.has_wholesale = product.has_wholesale || false;
             updatedItem.stock_max = product.stock_quantity || 0;
+            updatedItem.lot = null; // Réinitialiser le lot sélectionné
             
             // Mettre à jour le prix selon le type actuel
             if (updatedItem.price_type === 'wholesale' && updatedItem.wholesale_price) {
@@ -251,12 +282,15 @@ const VenteForm = () => {
               updatedItem.unit_price = updatedItem.sale_price;
               updatedItem.price_type = 'retail';
             }
+
+            // Charger les lots pour ce produit
+            fetchLotsForProduct(parseInt(value));
           }
         }
         
         // Recalculer le total
         if (field === 'quantity' || field === 'unit_price' || field === 'discount' || 
-            field === 'product_id' || field === 'price_type') {
+            field === 'product_id' || field === 'price_type' || field === 'lot') {
           const qty = parseFloat(updatedItem.quantity) || 0;
           const price = parseFloat(updatedItem.unit_price) || 0;
           const discount = parseFloat(updatedItem.discount) || 0;
@@ -271,20 +305,19 @@ const VenteForm = () => {
   };
 
   // ============================================================
-  // 5. Calcul des totaux - SANS TVA
+  // 6. Calcul des totaux - SANS TVA
   // ============================================================
   useEffect(() => {
     const subtotal = items.reduce((sum, item) => sum + (item.total || 0), 0);
-    const tax_amount = 0; // TVA à 0
+    const tax_amount = 0;
     const total = subtotal + tax_amount;
     setTotals({ subtotal, tax_amount, total });
   }, [items]);
 
   // ============================================================
-  // 6. Soumission de la vente
+  // 7. Soumission de la vente - AVEC LE LOT
   // ============================================================
   const handleSubmit = async () => {
-    // Vérifier que tous les items ont un produit sélectionné
     const emptyItems = items.filter(item => !item.product_id);
     if (emptyItems.length > 0) {
       showNotification('Veuillez sélectionner un produit pour chaque ligne', 'error');
@@ -300,7 +333,6 @@ const VenteForm = () => {
       return;
     }
 
-    // Vérification des doublons
     const productIds = items.map(item => item.product_id);
     const uniqueProductIds = new Set(productIds);
     if (productIds.length !== uniqueProductIds.size) {
@@ -308,7 +340,7 @@ const VenteForm = () => {
       return;
     }
 
-    // Vérification du stock
+    // Vérification du stock (optionnelle car le backend vérifiera aussi)
     const stockErrors = [];
     items.forEach(item => {
       if (item.quantity > item.stock_max) {
@@ -332,8 +364,8 @@ const VenteForm = () => {
         quantity: item.quantity,
         prix_unitaire: item.unit_price,
         price_type: item.price_type || 'retail',
-        // tva: 0, // SUPPRIMÉ - plus nécessaire
-        remise: item.discount || 0
+        remise: item.discount || 0,
+        lot: item.lot || null // ← ENVOI DU LOT (ID ou null)
       }))
     };
 
@@ -347,6 +379,9 @@ const VenteForm = () => {
       if (error.response?.data?.error) errorMessage = error.response.data.error;
       else if (error.response?.data?.detail) errorMessage = error.response.data.detail;
       else if (error.response?.data?.non_field_errors) errorMessage = error.response.data.non_field_errors.join(', ');
+      else if (error.response?.data?.items) {
+        errorMessage = 'Erreur dans les articles : ' + JSON.stringify(error.response.data.items);
+      }
       showNotification(errorMessage, 'error', error.response?.data);
     } finally {
       setSubmitting(false);
@@ -354,7 +389,7 @@ const VenteForm = () => {
   };
 
   // ============================================================
-  // 7. Gestion de la quantité avec limite de stock
+  // 8. Gestion de la quantité avec limite de stock
   // ============================================================
   const handleQuantityChange = (itemId, newQuantity) => {
     const item = items.find(i => i.id === itemId);
@@ -371,6 +406,14 @@ const VenteForm = () => {
   };
 
   const formatPrice = (price) => new Intl.NumberFormat('fr-FR').format(price || 0) + ' FCFA';
+
+  // Fonction pour formater l'affichage d'un lot dans le select
+  const formatLotLabel = (lot) => {
+    let label = `${lot.lot_number}`;
+    if (lot.quantity !== undefined) label += ` (${lot.quantity} u.)`;
+    if (lot.expiry_date) label += ` - Exp: ${new Date(lot.expiry_date).toLocaleDateString()}`;
+    return label;
+  };
 
   if (loadingUser || loading) {
     return (
@@ -527,6 +570,9 @@ const VenteForm = () => {
               ) : (
                 <>
                   {items.map((item, index) => {
+                    const availableLots = lotsByProduct[item.product_id] || [];
+                    const isLoadingLots = loadingLots[item.product_id];
+                    
                     return (
                       <div key={item.id} className="bg-gray-50 rounded-xl p-4 mb-4 border border-gray-200">
                         <div className="flex items-center justify-between mb-3">
@@ -540,7 +586,7 @@ const VenteForm = () => {
                           </button>
                         </div>
                         
-                        <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
+                        <div className="grid grid-cols-1 md:grid-cols-8 gap-3">
                           {/* Select Produit */}
                           <div className="form-control w-full md:col-span-2">
                             <label className="label">
@@ -671,6 +717,46 @@ const VenteForm = () => {
                               <span className="font-bold text-primary">{formatPrice(item.total)}</span>
                             </div>
                           </div>
+
+                          {/* ========== NOUVEAU : Sélecteur de lot ========== */}
+                          <div className="form-control w-full md:col-span-1">
+                            <label className="label">
+                              <span className="label-text text-sm font-semibold flex items-center gap-1">
+                                <Layers className="w-3 h-3" />
+                                Lot
+                              </span>
+                            </label>
+                            <select
+                              className="select select-bordered w-full text-sm"
+                              value={item.lot || ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                handleItemChange(item.id, 'lot', val ? parseInt(val) : null);
+                              }}
+                              disabled={submitting || !item.product_id || isLoadingLots}
+                            >
+                              <option value="">Automatique (FIFO)</option>
+                              {availableLots.map(lot => (
+                                <option key={lot.id} value={lot.id}>
+                                  {formatLotLabel(lot)}
+                                </option>
+                              ))}
+                            </select>
+                            {isLoadingLots && (
+                              <span className="text-xs text-info mt-1 flex items-center gap-1">
+                                <Loader2 className="w-3 h-3 animate-spin" /> Chargement...
+                              </span>
+                            )}
+                            {!isLoadingLots && item.product_id && availableLots.length === 0 && (
+                              <span className="text-xs text-warning mt-1">⚠️ Aucun lot disponible</span>
+                            )}
+                            {item.lot && (
+                              <span className="text-xs text-success mt-1">✅ Lot sélectionné</span>
+                            )}
+                            {!item.lot && item.product_id && availableLots.length > 0 && (
+                              <span className="text-xs text-info mt-1">⚡ FIFO automatique</span>
+                            )}
+                          </div>
                         </div>
                         
                         {/* Affichage des prix de référence */}
@@ -698,7 +784,6 @@ const VenteForm = () => {
                         <span className="text-gray-600">Sous-total</span>
                         <span className="font-semibold">{formatPrice(totals.subtotal)}</span>
                       </div>
-                      {/* LIGNE TVA SUPPRIMÉE */}
                       <div className="flex justify-between text-xl font-bold">
                         <span>Total</span>
                         <span className="text-primary">{formatPrice(totals.total)}</span>

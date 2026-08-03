@@ -94,11 +94,11 @@ const Products = () => {
   }
 
   const formatPrice = (price) => {
-    if (!price && price !== 0) return '0 €'
+    if (!price && price !== 0) return '0 FCFA'
     return new Intl.NumberFormat('fr-FR', { 
       minimumFractionDigits: 0, 
       maximumFractionDigits: 0 
-    }).format(price) + ' €'
+    }).format(price) + ' FCFA'
   }
 
   const showNotification = (message, type = 'success') => {

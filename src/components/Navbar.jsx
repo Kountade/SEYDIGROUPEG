@@ -1,4 +1,4 @@
-// src/components/Navbar.jsx - Version Complète avec Trésorerie
+// src/components/Navbar.jsx - Version Complète avec Trésorerie et Lots
 import React, { useState, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { 
@@ -91,8 +91,9 @@ import {
   Download,
   Printer,
   FileCheck,
-  Coins, // Ajout pour trésorerie
-  PiggyBank // Ajout pour trésorerie
+  Coins,
+  PiggyBank,
+  Layers  // ← AJOUT POUR LES LOTS
 } from 'lucide-react'
 
 import logo from '../assets/logo.svg'
@@ -156,7 +157,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const [clotureEnCours, setClotureEnCours] = useState(false)
   const [balancesDisponibles, setBalancesDisponibles] = useState(0)
   
-  // 🔥 NOUVEAUX ÉTATS TRÉSORERIE DÉTAILLÉS
+  // États trésorerie détaillés
   const [tresorerieDetails, setTresorerieDetails] = useState({
     solde_global: 0,
     solde_caisses: 0,
@@ -179,6 +180,14 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const [stocksFaibles, setStocksFaibles] = useState(0)
   const [ventesImpayees, setVentesImpayees] = useState(0)
   const [absencesEnAttente, setAbsencesEnAttente] = useState(0)
+  
+  // ✅ NOUVEAU : État pour les lots
+  const [lotsStats, setLotsStats] = useState({
+    total: 0,
+    expiringSoon: 0,
+    expired: 0,
+    damaged: 0
+  })
 
   // Récupérer l'utilisateur
   const getUserData = () => {
@@ -236,36 +245,30 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     try {
       const params = agenceId ? `?agence_id=${agenceId}` : ''
       
-      // 1. Récupérer le solde global
       const tresorerieRes = await AxiosInstance.get(`/tresorerie/${params}`).catch(() => ({ data: { solde_final: 0 } }))
       const soldeGlobal = tresorerieRes.data?.solde_final || 0
       setTresorerie(soldeGlobal)
       
-      // 2. Récupérer les caisses
       const caissesRes = await AxiosInstance.get(`/caisses/${params}`).catch(() => ({ data: [] }))
       const caisses = caissesRes.data || []
       const soldeCaisses = caisses.reduce((sum, c) => sum + (c.solde_actuel || 0), 0)
       
-      // 3. Récupérer les comptes bancaires
       const comptesRes = await AxiosInstance.get(`/comptes-bancaires/${params}`).catch(() => ({ data: [] }))
       const comptes = comptesRes.data || []
       const soldeBanques = comptes.reduce((sum, c) => sum + (c.solde || 0), 0)
       
-      // 4. Récupérer les mouvements du jour
       const today = new Date().toISOString().split('T')[0]
       const mouvementsRes = await AxiosInstance.get(`/mouvements/?date=${today}${params}`).catch(() => ({ data: [] }))
       const mouvements = mouvementsRes.data || []
       const encaissements = mouvements.filter(m => m.type === 'encaissement').reduce((sum, m) => sum + (m.montant || 0), 0)
       const decaissements = mouvements.filter(m => m.type === 'decaissement').reduce((sum, m) => sum + (m.montant || 0), 0)
       
-      // 5. Récupérer les prévisions 7 jours
       const previsionsRes = await AxiosInstance.get(`/previsions/${params}`).catch(() => ({ data: [] }))
       const previsions = previsionsRes.data || []
       const previsions7j = previsions
         .filter(p => new Date(p.date) >= new Date() && new Date(p.date) <= new Date(Date.now() + 7 * 86400000))
         .reduce((sum, p) => sum + (p.montant_prevu || 0), 0)
       
-      // 6. Récupérer les alertes de trésorerie
       const alertesRes = await AxiosInstance.get(`/alertes-tresorerie/${params}`).catch(() => ({ data: [] }))
       const alertes = alertesRes.data || []
       
@@ -385,7 +388,6 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
             const balancesRes = await AxiosInstance.get(`/balances/${params}`).catch(() => ({ data: [] }))
             setBalancesDisponibles(balancesRes.data?.length || 0)
             
-            // 🔥 Charger la trésorerie détaillée
             await loadTresorerieData(agenceId, isComptableOrAdmin)
             
           } catch (e) {
@@ -393,6 +395,27 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
           }
         }
         
+        // ✅ NOUVEAU : Charger les données des lots
+        const lotsRes = await AxiosInstance.get(`/lots/${params}`).catch(() => ({ data: [] }))
+        const lotsData = lotsRes.data || []
+        
+        const totalLots = lotsData.length
+        const expiringSoon = lotsData.filter(l => {
+          if (!l.expiry_date || l.is_expired || l.quality_status === 'expired') return false
+          const diffDays = Math.ceil((new Date(l.expiry_date) - new Date()) / (1000 * 60 * 60 * 24))
+          return diffDays <= 30 && diffDays >= 0
+        }).length
+        const expired = lotsData.filter(l => l.is_expired || l.quality_status === 'expired').length
+        const damaged = lotsData.filter(l => l.quality_status === 'damaged').length
+        
+        setLotsStats({
+          total: totalLots,
+          expiringSoon,
+          expired,
+          damaged
+        })
+        
+        // Charger les autres données
         const [achatsRes, alertsRes, fournisseursRes, stocksRes, ventesRes, absencesRes] = await Promise.all([
           AxiosInstance.get(`/purchase-orders/?status=confirmed${params}`).catch(() => ({ data: [] })),
           AxiosInstance.get(`/purchase-alerts/?is_active=true${params}`).catch(() => ({ data: [] })),
@@ -433,7 +456,29 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
           notifs.push({ id: 'absences', title: 'Absences en attente', message: `${absencesRes.data.length} demande(s) de congé en attente`, link: '/leaves', type: 'info', time: "aujourd'hui" })
         }
         
-        // 🔥 Ajouter les alertes de trésorerie
+        // ✅ NOUVEAU : Notifications pour les lots expirant bientôt
+        if (expiringSoon > 0) {
+          notifs.push({ 
+            id: 'lots-expiring', 
+            title: '⚠️ Lots expirant bientôt', 
+            message: `${expiringSoon} lot(s) expirent dans moins de 30 jours`, 
+            link: '/lots', 
+            type: 'warning', 
+            time: "maintenant" 
+          })
+        }
+        if (expired > 0) {
+          notifs.push({ 
+            id: 'lots-expired', 
+            title: '❌ Lots expirés', 
+            message: `${expired} lot(s) ont expiré`, 
+            link: '/lots', 
+            type: 'error', 
+            time: "maintenant" 
+          })
+        }
+        
+        // Alertes de trésorerie
         if (tresorerieDetails.alertes_tresorerie.length > 0) {
           tresorerieDetails.alertes_tresorerie.forEach(alerte => {
             notifs.push({
@@ -462,7 +507,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     loadData()
   }, [])
 
-  // Rafraîchir la trésorerie périodiquement (toutes les 60 secondes)
+  // Rafraîchir la trésorerie périodiquement
   useEffect(() => {
     const interval = setInterval(() => {
       if (isComptable || isPDG) {
@@ -547,7 +592,6 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       setRoleType(type)
     }
     
-    // Recharger la trésorerie pour la nouvelle agence
     const isComptableOrAdmin = isComptable || isPDG || isDRH
     if (isComptableOrAdmin) {
       loadTresorerieData(agence.id, true)
@@ -628,6 +672,15 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         { id: 'marques', text: 'Marques', icon: Award, path: '/brands', permission: canViewInventory() },
         { id: 'unites', text: 'Unités', icon: Ruler, path: '/units', permission: canViewInventory() },
         { id: 'reception', text: 'Réception stock', icon: Truck, path: '/stock-receipt', permission: canViewInventory() },
+        // ✅ NOUVEAU : Menu Lots
+        { 
+          id: 'lots', 
+          text: 'Lots', 
+          icon: Layers, 
+          path: '/lots', 
+          permission: canViewInventory(),
+          badge: lotsStats.expiringSoon || 0
+        },
         { id: 'stocks', text: 'Stocks', icon: Boxes, path: '/stocks', permission: canViewInventory() },
         { id: 'add-stock', text: 'Ajouter du stock', icon: Package, path: '/stocks/ajouter', permission: canViewInventory() },
         { id: 'entrepots', text: 'Entrepôts', icon: Warehouse, path: '/entrepots', permission: canViewInventory() },
@@ -637,170 +690,157 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         { id: 'livraisons', text: 'Livraisons', icon: Truck, path: '/livraisons', permission: canViewDeliveries() }
       ]
     },
- {
-  name: 'COMPTABILITÉ & FINANCE',
-  icon: Calculator,
-  permission: canViewComptabilite(),
-  items: [
-    // COMPTABILITÉ - EXISTANT
-    { 
-      id: 'dashboard-compta', 
-      text: 'Tableau de bord', 
-      icon: LayoutDashboard, 
-      path: '/dashboard/comptabilite', 
-      permission: canViewComptabilite() 
+    {
+      name: 'COMPTABILITÉ & FINANCE',
+      icon: Calculator,
+      permission: canViewComptabilite(),
+      items: [
+        { 
+          id: 'dashboard-compta', 
+          text: 'Tableau de bord', 
+          icon: LayoutDashboard, 
+          path: '/dashboard/comptabilite', 
+          permission: canViewComptabilite() 
+        },
+        { 
+          id: 'ecritures', 
+          text: 'Écritures comptables', 
+          icon: Notebook, 
+          path: '/ecritures', 
+          permission: canManageAccounting(), 
+          badge: ecrituresEnAttente 
+        },
+        { 
+          id: 'journaux', 
+          text: 'Journaux', 
+          icon: BookOpen, 
+          path: '/journaux', 
+          permission: canManageAccounting() 
+        },
+        { 
+          id: 'plan-comptable', 
+          text: 'Plan comptable', 
+          icon: FileSpreadsheet, 
+          path: '/plan-comptable', 
+          permission: canManageAccounting() 
+        },
+        { 
+          id: 'balances', 
+          text: 'Balances', 
+          icon: Scale, 
+          path: '/balances', 
+          permission: canViewAccountingReports(), 
+          badge: balancesDisponibles 
+        },
+        { 
+          id: 'factures-comptables', 
+          text: 'Factures comptables', 
+          icon: ReceiptText, 
+          path: '/factures-comptables', 
+          permission: canViewAccountingReports(), 
+          badge: facturesImpayees 
+        },
+        { 
+          id: 'reglements', 
+          text: 'Règlements', 
+          icon: Banknote, 
+          path: '/reglements', 
+          permission: canViewAccountingReports() 
+        },
+        { 
+          id: 'tresorerie-dashboard', 
+          text: 'Dashboard Trésorerie', 
+          icon: LayoutDashboard, 
+          path: '/tresorerie/dashboard', 
+          permission: canViewTresorerie() 
+        },
+        { 
+          id: 'caisses', 
+          text: 'Caisses', 
+          icon: Coins, 
+          path: '/caisses', 
+          permission: canViewTresorerie() 
+        },
+        { 
+          id: 'comptes-bancaires', 
+          text: 'Comptes bancaires', 
+          icon: PiggyBank, 
+          path: '/comptes-bancaires', 
+          permission: canViewTresorerie() 
+        },
+        { 
+          id: 'mouvements-tresorerie', 
+          text: 'Mouvements', 
+          icon: ArrowLeftRight, 
+          path: '/mouvements-tresorerie', 
+          permission: canViewTresorerie() 
+        },
+        { 
+          id: 'previsions', 
+          text: 'Prévisions', 
+          icon: TrendingUp, 
+          path: '/previsions', 
+          permission: canViewTresorerie() 
+        },
+        { 
+          id: 'rapprochements', 
+          text: 'Rapprochements', 
+          icon: CheckCircle, 
+          path: '/rapprochements', 
+          permission: canViewTresorerie() 
+        },
+        { 
+          id: 'frais-tresorerie', 
+          text: 'Frais', 
+          icon: Receipt, 
+          path: '/frais', 
+          permission: canViewTresorerie() 
+        },
+        { 
+          id: 'tresorerie-journaliere', 
+          text: 'Suivi journalier', 
+          icon: Calendar, 
+          path: '/tresorerie-journaliere', 
+          permission: canViewTresorerie() 
+        },
+        { 
+          id: 'compte-resultat', 
+          text: 'Compte de résultat', 
+          icon: ChartNoAxesColumn, 
+          path: '/compte-resultat', 
+          permission: canViewAccountingReports() 
+        },
+        { 
+          id: 'bilan', 
+          text: 'Bilan comptable', 
+          icon: Landmark, 
+          path: '/bilan', 
+          permission: canViewAccountingReports() 
+        },
+        { 
+          id: 'indicateurs', 
+          text: 'Indicateurs KPI', 
+          icon: PieChart, 
+          path: '/indicateurs', 
+          permission: canViewAccountingReports() 
+        },
+        { 
+          id: 'cloture', 
+          text: 'Clôture comptable', 
+          icon: ClipboardCheck, 
+          path: '/cloture', 
+          permission: canManageAccounting(), 
+          badge: clotureEnCours ? 1 : 0 
+        },
+        { 
+          id: 'analyses-financieres', 
+          text: 'Analyses financières', 
+          icon: LineChart, 
+          path: '/analyses-financieres', 
+          permission: canViewAccountingReports() 
+        }
+      ]
     },
-    { 
-      id: 'ecritures', 
-      text: 'Écritures comptables', 
-      icon: Notebook, 
-      path: '/ecritures', 
-      permission: canManageAccounting(), 
-      badge: ecrituresEnAttente 
-    },
-    { 
-      id: 'journaux', 
-      text: 'Journaux', 
-      icon: BookOpen, 
-      path: '/journaux', 
-      permission: canManageAccounting() 
-    },
-    { 
-      id: 'plan-comptable', 
-      text: 'Plan comptable', 
-      icon: FileSpreadsheet, 
-      path: '/plan-comptable', 
-      permission: canManageAccounting() 
-    },
-    { 
-      id: 'balances', 
-      text: 'Balances', 
-      icon: Scale, 
-      path: '/balances', 
-      permission: canViewAccountingReports(), 
-      badge: balancesDisponibles 
-    },
-    { 
-      id: 'factures-comptables', 
-      text: 'Factures comptables', 
-      icon: ReceiptText, 
-      path: '/factures-comptables', 
-      permission: canViewAccountingReports(), 
-      badge: facturesImpayees 
-    },
-    { 
-      id: 'reglements', 
-      text: 'Règlements', 
-      icon: Banknote, 
-      path: '/reglements', 
-      permission: canViewAccountingReports() 
-    },
-    
-    // ============================================
-    // 🔥 TRÉSORERIE - EXISTANT
-    // ============================================
-    { 
-      id: 'tresorerie-dashboard', 
-      text: 'Dashboard Trésorerie', 
-      icon: LayoutDashboard, 
-      path: '/tresorerie/dashboard', 
-      permission: canViewTresorerie() 
-    },
-    { 
-      id: 'caisses', 
-      text: 'Caisses', 
-      icon: Coins, 
-      path: '/caisses', 
-      permission: canViewTresorerie() 
-    },
-    { 
-      id: 'comptes-bancaires', 
-      text: 'Comptes bancaires', 
-      icon: PiggyBank, 
-      path: '/comptes-bancaires', 
-      permission: canViewTresorerie() 
-    },
-    { 
-      id: 'mouvements-tresorerie', 
-      text: 'Mouvements', 
-      icon: ArrowLeftRight, 
-      path: '/mouvements-tresorerie', 
-      permission: canViewTresorerie() 
-    },
-    { 
-      id: 'previsions', 
-      text: 'Prévisions', 
-      icon: TrendingUp, 
-      path: '/previsions', 
-      permission: canViewTresorerie() 
-    },
-    { 
-      id: 'rapprochements', 
-      text: 'Rapprochements', 
-      icon: CheckCircle, 
-      path: '/rapprochements', 
-      permission: canViewTresorerie() 
-    },
-    
-    // ============================================
-    // 🆕 AJOUTS MANQUANTS
-    // ============================================
-    { 
-      id: 'frais-tresorerie', 
-      text: 'Frais', 
-      icon: Receipt, 
-      path: '/frais', 
-      permission: canViewTresorerie() 
-    },
-    { 
-      id: 'tresorerie-journaliere', 
-      text: 'Suivi journalier', 
-      icon: Calendar, 
-      path: '/tresorerie-journaliere', 
-      permission: canViewTresorerie() 
-    },
-    
-    // ============================================
-    // RAPPORTS FINANCIERS - EXISTANT
-    // ============================================
-    { 
-      id: 'compte-resultat', 
-      text: 'Compte de résultat', 
-      icon: ChartNoAxesColumn, 
-      path: '/compte-resultat', 
-      permission: canViewAccountingReports() 
-    },
-    { 
-      id: 'bilan', 
-      text: 'Bilan comptable', 
-      icon: Landmark, 
-      path: '/bilan', 
-      permission: canViewAccountingReports() 
-    },
-    { 
-      id: 'indicateurs', 
-      text: 'Indicateurs KPI', 
-      icon: PieChart, 
-      path: '/indicateurs', 
-      permission: canViewAccountingReports() 
-    },
-    { 
-      id: 'cloture', 
-      text: 'Clôture comptable', 
-      icon: ClipboardCheck, 
-      path: '/cloture', 
-      permission: canManageAccounting(), 
-      badge: clotureEnCours ? 1 : 0 
-    },
-    { 
-      id: 'analyses-financieres', 
-      text: 'Analyses financières', 
-      icon: LineChart, 
-      path: '/analyses-financieres', 
-      permission: canViewAccountingReports() 
-    }
-  ]
-},
     {
       name: 'RESSOURCES HUMAINES',
       icon: Users,
@@ -995,7 +1035,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                 <Search className="w-5 h-5" />
               </button>
 
-              {/* 🔥 BADGE TRÉSORERIE DÉTAILLÉ DANS LA NAVBAR */}
+              {/* Badge trésorerie */}
               {(isComptable || isPDG || isDRH || isChefAgence) && (
                 <div className="relative group">
                   <button
@@ -1010,7 +1050,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                     {tresorerieLoading && <Loader2 className="w-3 h-3 text-success animate-spin" />}
                   </button>
                   
-                  {/* Tooltip détaillé au survol */}
+                  {/* Tooltip détaillé */}
                   <div className="absolute right-0 mt-2 w-80 bg-base-100 rounded-xl shadow-2xl z-50 border border-success/20 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
                     <div className="p-3 bg-gradient-to-r from-success/10 to-transparent border-b border-success/20">
                       <p className="text-xs font-semibold text-success">📊 DÉTAILS TRÉSORERIE</p>
@@ -1375,6 +1415,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
               const isOpen = openSections[section.name]
               const isComptaSection = section.name === 'COMPTABILITÉ & FINANCE'
               const isRHSection = section.name === 'RESSOURCES HUMAINES'
+              const isStockSection = section.name === 'STOCK & LOGISTIQUE'
               
               // Compter les badges pour afficher un indicateur sur la section
               const totalBadges = visibleItems.reduce((sum, item) => sum + (item.badge || 0), 0)
@@ -1389,12 +1430,13 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                       ${isOpen 
                         ? isComptaSection ? 'bg-success/10 text-success' : 
                           isRHSection ? 'bg-secondary/10 text-secondary' : 
+                          isStockSection ? 'bg-warning/10 text-warning' :
                           'bg-primary/10 text-primary'
                         : 'text-base-content/70 hover:bg-primary/5 hover:text-primary'
                       }
                     `}
                   >
-                    <SectionIcon className={`w-5 h-5 ${isOpen && isComptaSection ? 'text-success' : isOpen && isRHSection ? 'text-secondary' : isOpen ? 'text-primary' : ''}`} />
+                    <SectionIcon className={`w-5 h-5 ${isOpen && isComptaSection ? 'text-success' : isOpen && isRHSection ? 'text-secondary' : isOpen && isStockSection ? 'text-warning' : isOpen ? 'text-primary' : ''}`} />
                     {sidebarOpen && (
                       <>
                         <span className="flex-1 text-left text-xs font-semibold tracking-wide uppercase">
@@ -1416,6 +1458,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                     <div className={`ml-6 mt-2 space-y-1 border-l-2 pl-4 ${
                       isComptaSection ? 'border-success' : 
                       isRHSection ? 'border-secondary' : 
+                      isStockSection ? 'border-warning' :
                       'border-primary'
                     }`}>
                       {visibleItems.map((item) => {
@@ -1423,6 +1466,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                         const isActive = path === item.path
                         const isExpenseItem = item.id === 'notes-frais'
                         const isTresorerieItem = item.id === 'tresorerie'
+                        const isLotsItem = item.id === 'lots'
                         
                         return (
                           <Link
@@ -1433,14 +1477,16 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                               ${isActive 
                                 ? isComptaSection ? 'bg-success text-success-content shadow-md' : 
                                   isRHSection ? 'bg-secondary text-secondary-content shadow-md' : 
+                                  isStockSection ? 'bg-warning text-warning-content shadow-md' :
                                   'bg-primary text-primary-content shadow-md'
                                 : 'text-base-content/60 hover:bg-primary/10 hover:text-primary'
                               }
                               ${isExpenseItem && !isActive ? 'hover:bg-secondary/10 hover:text-secondary' : ''}
                               ${isTresorerieItem && !isActive ? 'hover:bg-success/10 hover:text-success' : ''}
+                              ${isLotsItem && !isActive ? 'hover:bg-warning/10 hover:text-warning' : ''}
                             `}
                           >
-                            <ItemIcon className={`w-4 h-4 ${isActive ? (isComptaSection ? 'text-success-content' : isRHSection ? 'text-secondary-content' : 'text-primary-content') : ''}`} />
+                            <ItemIcon className={`w-4 h-4 ${isActive ? (isComptaSection ? 'text-success-content' : isRHSection ? 'text-secondary-content' : isStockSection ? 'text-warning-content' : 'text-primary-content') : ''}`} />
                             <span className="flex-1">{item.text}</span>
                             {item.badge > 0 && (
                               <span className={`badge ${isComptaSection && isActive ? 'badge-outline badge-error' : 'badge-error'} badge-xs`}>
@@ -1539,6 +1585,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                 const isOpen = openSections[section.name]
                 const isComptaSection = section.name === 'COMPTABILITÉ & FINANCE'
                 const isRHSection = section.name === 'RESSOURCES HUMAINES'
+                const isStockSection = section.name === 'STOCK & LOGISTIQUE'
                 const totalBadges = visibleItems.reduce((sum, item) => sum + (item.badge || 0), 0)
                 
                 return (
@@ -1548,11 +1595,12 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                       className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all ${
                         isComptaSection ? 'hover:bg-success/10' : 
                         isRHSection ? 'hover:bg-secondary/10' : 
+                        isStockSection ? 'hover:bg-warning/10' :
                         'hover:bg-primary/10'
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <SectionIcon className={`w-5 h-5 ${isComptaSection ? 'text-success' : isRHSection ? 'text-secondary' : 'text-primary'}`} />
+                        <SectionIcon className={`w-5 h-5 ${isComptaSection ? 'text-success' : isRHSection ? 'text-secondary' : isStockSection ? 'text-warning' : 'text-primary'}`} />
                         <span className="text-xs font-bold uppercase">{section.name}</span>
                       </div>
                       <div className="flex items-center gap-1">
@@ -1567,6 +1615,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                       <div className={`ml-6 mt-2 space-y-1 border-l-2 pl-4 ${
                         isComptaSection ? 'border-success' : 
                         isRHSection ? 'border-secondary' : 
+                        isStockSection ? 'border-warning' :
                         'border-primary'
                       }`}>
                         {visibleItems.map((item) => {
@@ -1582,6 +1631,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                                 ${isActive 
                                   ? isComptaSection ? 'bg-success text-success-content' : 
                                     isRHSection ? 'bg-secondary text-secondary-content' : 
+                                    isStockSection ? 'bg-warning text-warning-content' :
                                     'bg-primary text-primary-content'
                                   : 'hover:bg-primary/10'
                                 }

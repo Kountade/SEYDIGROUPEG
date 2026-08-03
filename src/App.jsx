@@ -154,7 +154,12 @@ import RapprochementsForm from './components/tresorerie/RapprochementsForm'
 import RapprochementsDetail from './components/tresorerie/RapprochementsDetail'
 
 import TresorerieJournaliere from './components/tresorerie/TresorerieJournaliere'
+
+import PriceHistory from './components/achats/PriceHistory'
+
+import Lots from './components/inventaire/Lots'
  
+
 import Bilan from './components/comptabilite/Bilan'
 
 import AuditLog from './components/audit/AuditLog'
@@ -299,6 +304,7 @@ function App() {
                  <Route path="/categories/nouveau" element={<CategoryForm />} />
                 <Route path="/categories/:id/modifier" element={<CategoryForm />} />
 
+<Route path="/price-history" element={<PriceHistory />} />
 
                    {/* Gestion des produits */}
                         <Route path="/produits" element={<Products />} />
@@ -346,6 +352,9 @@ function App() {
                       <Route path="/fournisseurs/:id/edit" element={<FournisseurForm />} />
                       <Route path="/fournisseurs/:id" element={<FournisseurDetail />} />
 
+
+
+  <Route path="/lots" element={<Lots />} />
 
   {/* Gestion des COMMADES */}
                       <Route path="/commandes-fournisseurs" element={<CommandesFournisseurs />} />
