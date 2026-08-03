@@ -48,7 +48,7 @@ import {
   LogOut,
   Percent,
   Copy,
-  Layers
+  Layers  // ← déjà présent
 } from 'lucide-react'
 
 const PointDeVente = () => {
@@ -72,7 +72,11 @@ const PointDeVente = () => {
   const [loadingUser, setLoadingUser] = useState(true)
   const [notes, setNotes] = useState('')
   const [lastVente, setLastVente] = useState(null)
-  
+
+  // ========== NOUVEAU : États pour les lots ==========
+  const [lotsByProduct, setLotsByProduct] = useState({}) // { productId: [lot, ...] }
+  const [loadingLots, setLoadingLots] = useState({})
+
   // Panier (items)
   const [items, setItems] = useState([])
   const [totals, setTotals] = useState({ subtotal: 0, tax_amount: 0, total: 0 })
@@ -206,7 +210,31 @@ const PointDeVente = () => {
   }, []);
 
   // ============================================================
-  // 4. Gestion du panier (items)
+  // 4. Chargement des lots disponibles pour un produit
+  // ============================================================
+  const fetchLotsForProduct = async (productId) => {
+    if (!productId || !entrepot?.id) return;
+
+    setLoadingLots(prev => ({ ...prev, [productId]: true }));
+    try {
+      const response = await AxiosInstance.get(`/lots/by-product/${productId}/`);
+      // Filtrer les lots valides dans l'entrepôt, en bon état et avec quantité > 0
+      const availableLots = response.data.filter(lot =>
+        lot.warehouse === entrepot.id &&
+        lot.quality_status === 'good' &&
+        lot.quantity > 0
+      );
+      setLotsByProduct(prev => ({ ...prev, [productId]: availableLots }));
+    } catch (error) {
+      console.error('Erreur chargement lots:', error);
+      showNotification('Erreur de chargement des lots', 'error');
+    } finally {
+      setLoadingLots(prev => ({ ...prev, [productId]: false }));
+    }
+  };
+
+  // ============================================================
+  // 5. Gestion du panier (items) - AVEC LOT
   // ============================================================
   const isProductAlreadyAdded = (productId) => {
     return items.some(item => item.product_id === productId);
@@ -232,6 +260,9 @@ const PointDeVente = () => {
     
     const defaultPrice = productToAdd.sale_price || 0;
     
+    // Charger les lots pour ce produit
+    fetchLotsForProduct(productToAdd.id);
+    
     setItems(prev => [...prev, {
       id: Date.now(),
       product_id: productToAdd.id,
@@ -246,7 +277,9 @@ const PointDeVente = () => {
       discount: 0,
       total: defaultPrice,
       stock_max: productToAdd.stock_quantity || 0,
-      image_url: productToAdd.image_url || '/placeholder-product.png'
+      image_url: productToAdd.image_url || '/placeholder-product.png',
+      // ========== NOUVEAU : champ lot ==========
+      lot: null // ID du lot sélectionné, null = FIFO automatique
     }]);
   };
 
@@ -301,18 +334,24 @@ const PointDeVente = () => {
             updatedItem.has_wholesale = product.has_wholesale || false;
             updatedItem.stock_max = product.stock_quantity || 0;
             updatedItem.image_url = product.image_url || '/placeholder-product.png';
+            updatedItem.lot = null; // Réinitialiser le lot
             
+            // Mettre à jour le prix selon le type actuel
             if (updatedItem.price_type === 'wholesale' && updatedItem.wholesale_price) {
               updatedItem.unit_price = updatedItem.wholesale_price;
             } else {
               updatedItem.unit_price = updatedItem.sale_price;
               updatedItem.price_type = 'retail';
             }
+
+            // Charger les lots pour ce produit
+            fetchLotsForProduct(parseInt(value));
           }
         }
         
+        // Recalculer le total (incluant le changement de lot)
         if (field === 'quantity' || field === 'unit_price' || field === 'discount' || 
-            field === 'product_id' || field === 'price_type') {
+            field === 'product_id' || field === 'price_type' || field === 'lot') {
           const qty = parseFloat(updatedItem.quantity) || 0;
           const price = parseFloat(updatedItem.unit_price) || 0;
           const discount = parseFloat(updatedItem.discount) || 0;
@@ -341,7 +380,7 @@ const PointDeVente = () => {
   };
 
   // ============================================================
-  // 5. Calcul des totaux - SANS TVA
+  // 6. Calcul des totaux - SANS TVA
   // ============================================================
   useEffect(() => {
     const subtotal = items.reduce((sum, item) => sum + (item.total || 0), 0);
@@ -351,7 +390,7 @@ const PointDeVente = () => {
   }, [items]);
 
   // ============================================================
-  // 6. Soumission de la vente - SANS TÉLÉCHARGEMENT AUTOMATIQUE DU TICKET
+  // 7. Soumission de la vente - AVEC LE CHAMP LOT
   // ============================================================
   const handleSubmit = async () => {
     const emptyItems = items.filter(item => !item.product_id);
@@ -399,7 +438,8 @@ const PointDeVente = () => {
         quantity: item.quantity,
         prix_unitaire: item.unit_price,
         price_type: item.price_type || 'retail',
-        remise: item.discount || 0
+        remise: item.discount || 0,
+        lot: item.lot || null   // ← ENVOI DU LOT
       }))
     };
 
@@ -414,9 +454,6 @@ const PointDeVente = () => {
       setSelectedClient(null);
       setNotes('');
       
-      // ✅ REDIRECTION VERS VENTESLIST APRÈS UN COURT DÉLAI
-      // Le ticket NE se télécharge PAS automatiquement
-      // L'utilisateur pourra le télécharger depuis la liste des ventes ou les détails
       setTimeout(() => {
         navigate('/ventes');
       }, 1500);
@@ -427,13 +464,16 @@ const PointDeVente = () => {
       if (error.response?.data?.error) errorMessage = error.response.data.error;
       else if (error.response?.data?.detail) errorMessage = error.response.data.detail;
       else if (error.response?.data?.non_field_errors) errorMessage = error.response.data.non_field_errors.join(', ');
+      else if (error.response?.data?.items) {
+        errorMessage = 'Erreur dans les articles : ' + JSON.stringify(error.response.data.items);
+      }
       showNotification(errorMessage, 'error', error.response?.data);
       setSubmitting(false);
     }
   };
 
   // ============================================================
-  // 7. Notification
+  // 8. Notification
   // ============================================================
   const showNotification = (message, type = 'success', details = null) => {
     setNotification({ show: true, message, type, details });
@@ -441,12 +481,20 @@ const PointDeVente = () => {
   };
 
   // ============================================================
-  // 8. Formatage et utils
+  // 9. Formatage et utils
   // ============================================================
   const formatPrice = (price) => {
     if (!price && price !== 0) return '0 FCFA'
     return new Intl.NumberFormat('fr-FR').format(price) + ' FCFA'
   }
+
+  // Fonction pour formater l'affichage d'un lot dans le sélecteur
+  const formatLotLabel = (lot) => {
+    let label = `${lot.lot_number}`;
+    if (lot.quantity !== undefined) label += ` (${lot.quantity} u.)`;
+    if (lot.expiry_date) label += ` - Exp: ${new Date(lot.expiry_date).toLocaleDateString()}`;
+    return label;
+  };
 
   const getStatusBadge = (product) => {
     const stock = parseFloat(product.stock_quantity) || 0
@@ -478,7 +526,7 @@ const PointDeVente = () => {
   }
 
   // ============================================================
-  // 9. Filtrage et tri
+  // 10. Filtrage et tri
   // ============================================================
   const filteredProducts = React.useMemo(() => {
     let filtered = products
@@ -542,7 +590,7 @@ const PointDeVente = () => {
   }
 
   // ============================================================
-  // 10. RENDU
+  // 11. RENDU
   // ============================================================
   return (
     <div className="space-y-6 p-4 lg:p-6">
@@ -993,80 +1041,113 @@ const PointDeVente = () => {
               </div>
             ) : (
               <div className="space-y-2">
-                {items.map((item) => (
-                  <div key={item.id} className="bg-base-200 rounded-lg p-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 bg-base-300 rounded-lg overflow-hidden flex items-center justify-center flex-shrink-0">
-                        {item.image_url && item.image_url !== '/placeholder-product.png' ? (
-                          <img
-                            src={item.image_url}
-                            alt={item.product_name}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              e.target.style.display = 'none'
-                              e.target.parentElement.innerHTML = `<Package class="w-6 h-6 text-base-content/30" />`
-                            }}
-                          />
-                        ) : (
-                          <Package className="w-6 h-6 text-base-content/30" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">{item.product_name}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <select
-                            className="select select-bordered select-xs w-24"
-                            value={item.price_type || 'retail'}
-                            onChange={(e) => handlePriceTypeChange(item.id, e.target.value)}
+                {items.map((item) => {
+                  const availableLots = lotsByProduct[item.product_id] || [];
+                  const isLoadingLots = loadingLots[item.product_id];
+                  
+                  return (
+                    <div key={item.id} className="bg-base-200 rounded-lg p-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 bg-base-300 rounded-lg overflow-hidden flex items-center justify-center flex-shrink-0">
+                          {item.image_url && item.image_url !== '/placeholder-product.png' ? (
+                            <img
+                              src={item.image_url}
+                              alt={item.product_name}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                e.target.style.display = 'none'
+                                e.target.parentElement.innerHTML = `<Package class="w-6 h-6 text-base-content/30" />`
+                              }}
+                            />
+                          ) : (
+                            <Package className="w-6 h-6 text-base-content/30" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">{item.product_name}</p>
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            <select
+                              className="select select-bordered select-xs w-24"
+                              value={item.price_type || 'retail'}
+                              onChange={(e) => handlePriceTypeChange(item.id, e.target.value)}
+                              disabled={submitting}
+                            >
+                              <option value="retail">Détail</option>
+                              <option value="wholesale" disabled={!item.has_wholesale}>
+                                {item.has_wholesale ? 'Gros' : 'Gros (ND)'}
+                              </option>
+                            </select>
+                            <span className="text-xs font-semibold text-primary">
+                              {formatPrice(item.unit_price)}
+                            </span>
+                          </div>
+                          {item.has_wholesale && item.price_type === 'wholesale' && (
+                            <p className="text-xs text-success">
+                              ✅ Économie: {formatPrice((item.sale_price - item.wholesale_price) * item.quantity)}
+                            </p>
+                          )}
+                          {/* ========== NOUVEAU : Sélecteur de lot dans le panier ========== */}
+                          <div className="mt-1">
+                            <select
+                              className="select select-bordered select-xs w-full max-w-[180px]"
+                              value={item.lot || ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                handleItemChange(item.id, 'lot', val ? parseInt(val) : null);
+                              }}
+                              disabled={submitting || !item.product_id || isLoadingLots}
+                            >
+                              <option value="">Automatique (FIFO)</option>
+                              {availableLots.map(lot => (
+                                <option key={lot.id} value={lot.id}>
+                                  {formatLotLabel(lot)}
+                                </option>
+                              ))}
+                            </select>
+                            {isLoadingLots && (
+                              <span className="text-xs text-info ml-1">⏳</span>
+                            )}
+                            {!isLoadingLots && item.product_id && availableLots.length === 0 && (
+                              <span className="text-xs text-warning ml-1">⚠️ Aucun lot</span>
+                            )}
+                            {item.lot && (
+                              <span className="text-xs text-success ml-1">✅</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            className="btn btn-ghost btn-xs btn-square"
+                            onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
+                            disabled={item.quantity <= 1 || submitting}
+                          >
+                            <Minus className="w-3 h-3" />
+                          </button>
+                          <span className="w-6 text-center font-semibold text-sm">{item.quantity}</span>
+                          <button
+                            className="btn btn-ghost btn-xs btn-square"
+                            onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
+                            disabled={item.quantity >= item.stock_max || submitting}
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                          <button
+                            className="btn btn-ghost btn-xs btn-square text-error"
+                            onClick={() => handleRemoveItem(item.id)}
                             disabled={submitting}
                           >
-                            <option value="retail">Détail</option>
-                            <option value="wholesale" disabled={!item.has_wholesale}>
-                              {item.has_wholesale ? 'Gros' : 'Gros (ND)'}
-                            </option>
-                          </select>
-                          <span className="text-xs font-semibold text-primary">
-                            {formatPrice(item.unit_price)}
-                          </span>
+                            <Trash2 className="w-3 h-3" />
+                          </button>
                         </div>
-                        {item.has_wholesale && item.price_type === 'wholesale' && (
-                          <p className="text-xs text-success">
-                            ✅ Économie: {formatPrice((item.sale_price - item.wholesale_price) * item.quantity)}
-                          </p>
-                        )}
                       </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          className="btn btn-ghost btn-xs btn-square"
-                          onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
-                          disabled={item.quantity <= 1 || submitting}
-                        >
-                          <Minus className="w-3 h-3" />
-                        </button>
-                        <span className="w-6 text-center font-semibold text-sm">{item.quantity}</span>
-                        <button
-                          className="btn btn-ghost btn-xs btn-square"
-                          onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
-                          disabled={item.quantity >= item.stock_max || submitting}
-                        >
-                          <Plus className="w-3 h-3" />
-                        </button>
-                        <button
-                          className="btn btn-ghost btn-xs btn-square text-error"
-                          onClick={() => handleRemoveItem(item.id)}
-                          disabled={submitting}
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+                      <div className="mt-1 text-right">
+                        <span className="text-sm font-semibold text-primary">
+                          Total: {formatPrice(item.total)}
+                        </span>
                       </div>
                     </div>
-                    <div className="mt-1 text-right">
-                      <span className="text-sm font-semibold text-primary">
-                        Total: {formatPrice(item.total)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1079,7 +1160,7 @@ const PointDeVente = () => {
                     <span className="text-base-content/60">Sous-total</span>
                     <span className="font-semibold">{formatPrice(totals.subtotal)}</span>
                   </div>
-                  {/* TVA supprimée - ligne retirée */}
+                  {/* TVA supprimée */}
                   <div className="flex justify-between text-lg font-bold border-t border-base-300 pt-2">
                     <span>Total</span>
                     <span className="text-primary">{formatPrice(totals.total)}</span>
