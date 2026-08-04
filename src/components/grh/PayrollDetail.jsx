@@ -68,9 +68,10 @@ const PayrollDetail = () => {
     window.print();
   };
 
+  // Fonction pour télécharger le PDF - Redirection vers /payroll/{id}/slip
   const handleDownload = () => {
-    // Logique de téléchargement du PDF
-    window.open(`/api/payroll/${id}/download/`, '_blank');
+    // Rediriger vers l'URL du bulletin PDF
+    window.location.href = `/payroll/${id}/slip`;
   };
 
   if (loading) {
@@ -175,10 +176,10 @@ const PayrollDetail = () => {
             <div className="space-y-2">
               <h3 className="font-semibold text-base-content border-l-4 border-primary pl-3">Employeur</h3>
               <div className="bg-base-200 rounded-lg p-4 space-y-1">
-                <p className="font-bold text-base-content">SEYDI GROUP</p>
-                <p className="text-sm text-base-content/70">SIRET : 123 456 789 00012</p>
-                <p className="text-sm text-base-content/70">NAF : 6202A</p>
-                <p className="text-sm text-base-content/70">Conakry, Guinée</p>
+                <p className="font-bold text-base-content">SEYDI GROUP SARL</p>
+                <p className="text-sm text-base-content/70">Capital : 10 000 000 FG</p>
+                <p className="text-sm text-base-content/70">RCCM : GN.TCC.2024.B01789</p>
+                <p className="text-sm text-base-content/70">CONAKRY, RÉPUBLIQUE DE GUINÉE</p>
               </div>
             </div>
             
@@ -327,7 +328,7 @@ const PayrollDetail = () => {
 
           {/* Informations bancaires */}
           <div className="text-center text-xs text-base-content/50 pt-4 border-t border-base-200">
-            <p>SEYDI GROUP - ERP Multi-Agences</p>
+            <p>SEYDI GROUP SARL - ERP Multi-Agences</p>
             <p>Document généré automatiquement - Fait foi</p>
           </div>
         </div>
@@ -343,10 +344,17 @@ const PayrollDetail = () => {
         </button>
         <button 
           onClick={handlePrint}
-          className="btn btn-primary gap-2"
+          className="btn btn-outline gap-2"
         >
           <Printer className="w-4 h-4" />
-          Imprimer le bulletin
+          Imprimer
+        </button>
+        <button 
+          onClick={handleDownload}
+          className="btn btn-primary gap-2"
+        >
+          <Download className="w-4 h-4" />
+          Télécharger PDF
         </button>
       </div>
 
