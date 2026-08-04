@@ -392,13 +392,13 @@ const PayrollSlipPDF = ({ payroll }) => {
         {/* Filigrane */}
         <Text style={styles.watermark}>BULLETIN DE PAIE</Text>
 
-        {/* En-tête SEYDI GROUP */}
+        {/* En-tête SEYDI GROUP SARL */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <Text style={styles.companyName}>SEYDI GROUP</Text>
-            <Text style={styles.companySub}>S.A.R.L au capital de 50 000 000 GNF</Text>
-            <Text style={styles.companySub}>RC: 2025/G/001 - NIF: 123456789</Text>
-            <Text style={styles.companySub}>Conakry, République de Guinée</Text>
+            <Text style={styles.companyName}>SEYDI GROUP SARL</Text>
+            <Text style={styles.companySub}>Capital social : 10 000 000 FG</Text>
+            <Text style={styles.companySub}>N° RCCM : GN.TCC.2024.B01789</Text>
+            <Text style={styles.companySub}>CONAKRY, RÉPUBLIQUE DE GUINÉE</Text>
           </View>
           <View style={styles.headerRight}>
             <Text style={styles.documentTitle}>BULLETIN DE PAIE</Text>
@@ -544,7 +544,7 @@ const PayrollSlipPDF = ({ payroll }) => {
             <View style={styles.signatureLine} />
             <Text style={styles.signatureLabel}>Signature de l'employeur</Text>
             <Text style={{ fontSize: 7, color: '#78909c', marginTop: 2 }}>
-              SEYDI GROUP
+              SEYDI GROUP SARL
             </Text>
           </View>
         </View>
@@ -552,13 +552,13 @@ const PayrollSlipPDF = ({ payroll }) => {
         {/* Pied de page */}
         <View style={styles.footer} fixed>
           <Text style={styles.footerText}>
-            SEYDI GROUP - Conakry, République de Guinée
+            SEYDI GROUP SARL - CONAKRY, RÉPUBLIQUE DE GUINÉE
           </Text>
           <Text style={styles.footerText}>
             Tél: (+224) 600 00 00 00 - Email: contact@seydigroup.gn
           </Text>
           <Text style={styles.footerText}>
-            Page 1/1
+            RCCM: GN.TCC.2024.B01789
           </Text>
         </View>
       </Page>
