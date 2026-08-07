@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
-import FacturePDF from './FacturePDF';
+import { downloadFacturePDF } from './FacturePDF';
 import { 
   ArrowLeft, Receipt, User, Calendar, CreditCard, 
   CheckCircle, XCircle, Clock, Printer, AlertCircle, 
@@ -45,12 +45,12 @@ const FactureDetail = () => {
     fetchFacture();
   }, [id]);
 
-  // Génération du PDF avec le composant React
+  // Génération du PDF avec downloadFacturePDF (sans TVA)
   const handleGeneratePDF = async () => {
     if (!facture) return;
     setGeneratingPDF(true);
     try {
-      await FacturePDF(facture);
+      await downloadFacturePDF(facture);
       showNotification('PDF généré avec succès', 'success');
     } catch (error) {
       console.error('Erreur:', error);
@@ -60,7 +60,7 @@ const FactureDetail = () => {
     }
   };
 
-  // Alternative: télécharger via l'API backend
+  // Alternative: télécharger via l'API backend (si besoin)
   const handleDownloadPDFFromAPI = async () => {
     if (!facture) return;
     setGeneratingPDF(true);
@@ -263,20 +263,17 @@ const FactureDetail = () => {
                       <tr key={idx}>
                         <td>{item.product_name || item.product?.name || '-'}</td>
                         <td className="text-center">{item.quantity || item.quantite || 0}</td>
-                        <td className="text-right">{formatPrice(item.prix_unitaire || item.prix_unitaire_ht || 0)}</td>
-                        <td className="text-right font-semibold">{formatPrice(item.total || item.montant_ht || 0)}</td>
+                        <td className="text-right">{formatPrice(item.prix_unitaire || 0)}</td>
+                        <td className="text-right font-semibold">{formatPrice(item.total || 0)}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot className="bg-gray-50">
                     <tr>
-                      <td colSpan="3" className="text-right font-semibold">Sous-total HT</td>
+                      <td colSpan="3" className="text-right font-semibold">Sous-total</td>
                       <td className="text-right">{formatPrice(facture.sous_total)}</td>
                     </tr>
-                    <tr>
-                      <td colSpan="3" className="text-right">TVA (18%)</td>
-                      <td className="text-right">{formatPrice(facture.tva)}</td>
-                    </tr>
+                    {/* Suppression de la TVA car pas de TVA dans le modèle */}
                     <tr className="border-t">
                       <td colSpan="3" className="text-right font-bold text-lg">Total TTC</td>
                       <td className="text-right font-bold text-primary text-lg">{formatPrice(facture.total_ttc)}</td>

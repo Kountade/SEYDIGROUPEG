@@ -1,369 +1,672 @@
 // src/components/sales/DevisPDF.jsx
-import jsPDF from 'jspdf';
+import React from 'react';
+import {
+  Document,
+  Page,
+  Text,
+  View,
+  StyleSheet,
+  Image,
+} from '@react-pdf/renderer';
 import logoSvg from '../../assets/logo.svg';
 
-/**
- * Génère un PDF de devis professionnel (sans TVA)
- * @param {Object} devis - L'objet devis complet (avec client, items, etc.)
- * @returns {Promise<boolean>}
- */
-const DevisPDF = async (devis) => {
-  if (!devis || typeof devis !== 'object') {
-    console.error('Devis invalide', devis);
-    throw new Error('Données du devis invalides');
-  }
+// ================================================================
+// STYLES (identiques à ExpensePDF)
+// ================================================================
+const styles = StyleSheet.create({
+  page: {
+    padding: 40,
+    fontSize: 10,
+    fontFamily: 'Helvetica',
+    backgroundColor: '#FFFFFF',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingBottom: 15,
+    borderBottomWidth: 2,
+    borderBottomColor: '#1a237e',
+    borderBottomStyle: 'solid',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  logo: {
+    width: 50,
+    height: 50,
+    marginRight: 12,
+  },
+  companyInfo: {
+    flexDirection: 'column',
+  },
+  companyName: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1a237e',
+    letterSpacing: 1,
+  },
+  companySub: {
+    fontSize: 8,
+    color: '#546e7a',
+    marginTop: 1,
+  },
+  headerRight: {
+    textAlign: 'right',
+  },
+  documentTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#1a237e',
+    letterSpacing: 2,
+  },
+  documentRef: {
+    fontSize: 9,
+    color: '#546e7a',
+    marginTop: 2,
+  },
+  infoGrid: {
+    flexDirection: 'row',
+    marginBottom: 15,
+    padding: 12,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderStyle: 'solid',
+  },
+  infoCol: {
+    flex: 1,
+    flexDirection: 'column',
+    paddingHorizontal: 4,
+  },
+  infoLabel: {
+    fontSize: 7,
+    color: '#78909c',
+    marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  infoValue: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#1a237e',
+  },
+  sectionTitle: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#1a237e',
+    marginTop: 15,
+    marginBottom: 8,
+    paddingBottom: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+    borderBottomStyle: 'solid',
+    letterSpacing: 0.5,
+  },
+  clientSection: {
+    marginTop: 5,
+    marginBottom: 10,
+    padding: 12,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderStyle: 'solid',
+  },
+  clientRow: {
+    flexDirection: 'row',
+    paddingVertical: 4,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#e0e0e0',
+    borderBottomStyle: 'solid',
+  },
+  clientRowLast: {
+    flexDirection: 'row',
+    paddingVertical: 4,
+  },
+  clientLabel: {
+    width: '25%',
+    fontSize: 9,
+    color: '#546e7a',
+  },
+  clientValue: {
+    width: '75%',
+    fontSize: 9,
+    fontWeight: 'bold',
+    color: '#1a237e',
+  },
+  statusBadge: {
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 3,
+    alignSelf: 'flex-start',
+  },
+  statusDraft: {
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#9e9e9e',
+    borderStyle: 'solid',
+  },
+  statusSent: {
+    backgroundColor: '#fff3e0',
+    borderWidth: 1,
+    borderColor: '#ff9800',
+    borderStyle: 'solid',
+  },
+  statusAccepted: {
+    backgroundColor: '#e8f5e9',
+    borderWidth: 1,
+    borderColor: '#4caf50',
+    borderStyle: 'solid',
+  },
+  statusRefused: {
+    backgroundColor: '#ffebee',
+    borderWidth: 1,
+    borderColor: '#f44336',
+    borderStyle: 'solid',
+  },
+  statusConverted: {
+    backgroundColor: '#e3f2fd',
+    borderWidth: 1,
+    borderColor: '#2196f3',
+    borderStyle: 'solid',
+  },
+  statusExpired: {
+    backgroundColor: '#fce4ec',
+    borderWidth: 1,
+    borderColor: '#e91e63',
+    borderStyle: 'solid',
+  },
+  statusCancelled: {
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#9e9e9e',
+    borderStyle: 'solid',
+  },
+  statusText: {
+    fontSize: 8,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  statusTextDraft: { color: '#757575' },
+  statusTextSent: { color: '#ff9800' },
+  statusTextAccepted: { color: '#4caf50' },
+  statusTextRefused: { color: '#f44336' },
+  statusTextConverted: { color: '#2196f3' },
+  statusTextExpired: { color: '#e91e63' },
+  statusTextCancelled: { color: '#757575' },
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#1a237e',
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    marginTop: 5,
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 4,
+  },
+  tableHeaderText: {
+    fontSize: 8,
+    fontWeight: 'bold',
+    color: '#ffffff',
+  },
+  tableRow: {
+    flexDirection: 'row',
+    paddingVertical: 5,
+    paddingHorizontal: 4,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#e0e0e0',
+    borderBottomStyle: 'solid',
+    backgroundColor: '#ffffff',
+  },
+  tableRowAlt: {
+    backgroundColor: '#f8f9fa',
+  },
+  colDesignation: { width: '32%', paddingRight: 4 },
+  colRef: { width: '15%', paddingRight: 4 },
+  colQte: { width: '10%', textAlign: 'center' },
+  colPrix: { width: '15%', textAlign: 'right', paddingRight: 4 },
+  colRemise: { width: '12%', textAlign: 'right', paddingRight: 4 },
+  colTotal: { width: '16%', textAlign: 'right', paddingRight: 4 },
+  tableText: {
+    fontSize: 8,
+    color: '#212121',
+  },
+  totalsBox: {
+    marginTop: 15,
+    padding: 12,
+    backgroundColor: '#e8eaf6',
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#c5cae9',
+    borderStyle: 'solid',
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+  },
+  totalRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingVertical: 2,
+  },
+  totalLabel: {
+    fontSize: 9,
+    fontWeight: 'bold',
+    color: '#1a237e',
+    marginRight: 20,
+  },
+  totalValue: {
+    fontSize: 9,
+    color: '#1a237e',
+    width: 80,
+    textAlign: 'right',
+  },
+  totalFinal: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 4,
+    paddingTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: '#1a237e',
+    borderTopStyle: 'solid',
+  },
+  totalFinalLabel: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#1a237e',
+    marginRight: 20,
+  },
+  totalFinalValue: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#1a237e',
+    width: 80,
+    textAlign: 'right',
+  },
+  notesBox: {
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: '#fff3e0',
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#ffcc80',
+    borderStyle: 'solid',
+  },
+  notesLabel: {
+    fontSize: 8,
+    color: '#e65100',
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  notesText: {
+    fontSize: 9,
+    color: '#424242',
+    marginTop: 2,
+  },
+  signature: {
+    marginTop: 15,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  signatureBlock: {
+    textAlign: 'center',
+    width: '45%',
+  },
+  signatureLine: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#424242',
+    borderBottomStyle: 'solid',
+    marginBottom: 4,
+    paddingTop: 10,
+  },
+  signatureLabel: {
+    fontSize: 8,
+    color: '#546e7a',
+  },
+  signatureSub: {
+    fontSize: 7,
+    color: '#78909c',
+    marginTop: 2,
+  },
+  footer: {
+    position: 'absolute',
+    bottom: 30,
+    left: 40,
+    right: 40,
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+    borderTopStyle: 'solid',
+    paddingTop: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  footerText: {
+    fontSize: 7,
+    color: '#78909c',
+  },
+  watermark: {
+    position: 'absolute',
+    bottom: 150,
+    left: 50,
+    right: 50,
+    textAlign: 'center',
+    fontSize: 40,
+    color: 'rgba(26, 35, 126, 0.05)',
+    transform: 'rotate(-30deg)',
+  },
+  emptyItems: {
+    padding: 10,
+    backgroundColor: '#fafafa',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderStyle: 'solid',
+    borderRadius: 4,
+    marginTop: 5,
+  },
+  emptyItemsText: {
+    fontSize: 9,
+    color: '#78909c',
+    textAlign: 'center',
+  },
+});
 
-  console.log('DevisPDF - données reçues:', devis);
-  console.log('Items:', devis.items);
+// ================================================================
+// UTILITAIRES (identiques à ExpensePDF)
+// ================================================================
+const formatNumber = (n) => {
+  if (!n && n !== 0) return '0';
+  const num = typeof n === 'string' ? parseFloat(n) : n;
+  if (isNaN(num)) return '0';
+  return Math.round(num).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+};
 
+const formatCurrency = (amt) => `${formatNumber(amt)} FCFA`;
+
+const formatDate = (dateString) => {
+  if (!dateString) return '-';
   try {
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const pageWidth = 210;
-    const pageHeight = 297;
-    const margins = { left: 18, right: 18, top: 12, bottom: 15 };
-    const contentWidth = pageWidth - margins.left - margins.right;
-    let y = margins.top;
-
-    // Société
-    const company = {
-      name: 'SEYDI GROUP SARL',
-      address: 'Dakar, Sénégal',
-      phone: '+221 33 123 45 67',
-      email: 'contact@seydigroup.com',
-      rccm: 'SN DKR 2023 B 123',
-      capital: '10 000 000 FCFA'
-    };
-
-    const formatNumber = (n) => new Intl.NumberFormat('fr-FR').format(parseFloat(n) || 0);
-    const formatCurrency = (amt) => `${formatNumber(amt)} FCFA`;
-    const formatDate = (d) => d ? new Date(d).toLocaleDateString('fr-FR') : '-';
-
-    // Client
-    const clientNom = devis.client?.nom || 'Client inconnu';
-    const clientPrenom = devis.client?.prenom || '';
-    const clientRaison = devis.client?.raison_sociale || '';
-    const clientEmail = devis.client?.email || '';
-    const clientTel = devis.client?.telephone || '';
-    const clientAdr = devis.client?.adresse || '';
-    const clientFull = clientRaison || (clientPrenom ? `${clientNom} ${clientPrenom}` : clientNom);
-
-    const agenceNom = devis.agence?.nom || '-';
-    const vendeur = devis.vendeur?.email || '-';
-    const statutMap = {
-      draft: 'Brouillon', sent: 'Envoyé', accepted: 'Accepté',
-      refused: 'Refusé', converted: 'Converti', expired: 'Expiré', cancelled: 'Annulé'
-    };
-    const statut = statutMap[devis.status] || devis.status || '-';
-
-    // Logo
-    const loadLogo = (src) => new Promise((resolve) => {
-      const img = new Image();
-      img.crossOrigin = 'Anonymous';
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        canvas.getContext('2d').drawImage(img, 0, 0);
-        resolve(canvas.toDataURL('image/png'));
-      };
-      img.onerror = () => resolve(null);
-      img.src = src;
+    const date = new Date(dateString);
+    return date.toLocaleDateString('fr-FR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
     });
-    let logoData = null;
-    try { logoData = await loadLogo(logoSvg); } catch { /* ignore */ }
+  } catch {
+    return dateString;
+  }
+};
 
-    // ========== EN-TÊTE ==========
-    const logoW = 30, logoH = 13;
-    if (logoData) doc.addImage(logoData, 'PNG', margins.left, y, logoW, logoH);
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(50, 50, 50);
-    doc.text(company.name, margins.left + logoW + 4, y + 4);
-    doc.setFontSize(6.5);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(80, 80, 80);
-    doc.text(company.address, margins.left + logoW + 4, y + 9);
-    doc.setFontSize(6);
-    doc.text(`RCCM: ${company.rccm} | Capital: ${company.capital}`, margins.left + logoW + 4, y + 13);
-    y += 20;
-    doc.setDrawColor(180, 180, 180);
-    doc.line(margins.left, y, pageWidth - margins.right, y);
-    y += 5;
+const getStatusInfo = (status) => {
+  const map = {
+    draft: { label: 'Brouillon', style: styles.statusDraft, textStyle: styles.statusTextDraft },
+    sent: { label: 'Envoyé', style: styles.statusSent, textStyle: styles.statusTextSent },
+    accepted: { label: 'Accepté', style: styles.statusAccepted, textStyle: styles.statusTextAccepted },
+    refused: { label: 'Refusé', style: styles.statusRefused, textStyle: styles.statusTextRefused },
+    converted: { label: 'Converti', style: styles.statusConverted, textStyle: styles.statusTextConverted },
+    expired: { label: 'Expiré', style: styles.statusExpired, textStyle: styles.statusTextExpired },
+    cancelled: { label: 'Annulé', style: styles.statusCancelled, textStyle: styles.statusTextCancelled },
+  };
+  return map[status] || map.draft;
+};
 
-    // Titre
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(40, 40, 40);
-    doc.text('DEVIS', pageWidth / 2, y, { align: 'center' });
-    y += 5.5;
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(100, 100, 100);
-    doc.text(`N° ${devis.reference || 'Sans référence'}`, pageWidth / 2, y, { align: 'center' });
-    y += 8;
+// ================================================================
+// COMPOSANT PRINCIPAL – DevisPDF
+// ================================================================
+const DevisPDF = ({ devis }) => {
+  const data = devis || {};
+  const items = data.items || [];
+  const client = data.client || {};
+  const agence = data.agence || {};
+  const vendeur = data.vendeur || {};
 
-    // ========== INFORMATIONS GÉNÉRALES ==========
-    const boxH = 35;
-    doc.setFillColor(248, 248, 248);
-    doc.rect(margins.left, y, contentWidth, boxH, 'F');
-    doc.setDrawColor(160, 160, 160);
-    doc.rect(margins.left, y, contentWidth, boxH, 'S');
-    doc.setFillColor(220, 220, 220);
-    doc.rect(margins.left, y, contentWidth, 6, 'F');
-    doc.setFontSize(7.5);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(60, 60, 60);
-    doc.text('INFORMATIONS DU DEVIS', margins.left + 5, y + 4.5);
+  const company = {
+    name: 'SEYDI GROUP SARL',
+    address: 'Dakar, Sénégal',
+    phone: '+221 33 123 45 67',
+    email: 'contact@seydigroup.com',
+    rccm: 'SN DKR 2023 B 123',
+    capital: '10 000 000 FCFA',
+  };
 
-    const col1 = margins.left + 10;
-    const col2 = margins.left + 105;
-    let iy = y + 11;
-    doc.setFontSize(7.5);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(70, 70, 70);
-    doc.text('Date création :', col1, iy);
-    doc.setFont('helvetica', 'normal');
-    doc.text(formatDate(devis.date_creation), col1 + 28, iy);
-    iy += 6;
-    doc.text('Date expiration :', col1, iy);
-    doc.text(formatDate(devis.date_expiration), col1 + 32, iy);
-    iy += 6;
-    doc.text('Agence :', col1, iy);
-    doc.text(agenceNom, col1 + 17, iy);
-    iy += 6;
-    doc.text('Vendeur :', col1, iy);
-    doc.text(vendeur, col1 + 19, iy);
+  const clientNom = client.nom || 'Client inconnu';
+  const clientPrenom = client.prenom || '';
+  const clientRaison = client.raison_sociale || '';
+  const clientFull = clientRaison || (clientPrenom ? `${clientNom} ${clientPrenom}` : clientNom);
+  const clientEmail = client.email || '';
+  const clientTel = client.telephone || '';
+  const clientAdr = client.adresse || '';
 
-    iy = y + 11;
-    doc.text('Statut :', col2, iy);
-    doc.setTextColor(statut === 'Accepté' ? '#2e7d32' : (statut === 'Refusé' ? '#c62828' : '#e65100'));
-    doc.setFont('helvetica', 'bold');
-    doc.text(statut, col2 + 16, iy);
-    y += boxH + 6;
+  const statusInfo = getStatusInfo(data.status);
 
-    // ========== CLIENT ==========
-    if (clientFull !== 'Client inconnu') {
-      const ch = 28;
-      doc.setFillColor(248, 248, 248);
-      doc.rect(margins.left, y, contentWidth, ch, 'F');
-      doc.setDrawColor(160, 160, 160);
-      doc.rect(margins.left, y, contentWidth, ch, 'S');
-      doc.setFillColor(220, 220, 220);
-      doc.rect(margins.left, y, contentWidth, 6, 'F');
-      doc.setFontSize(7.5);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(60, 60, 60);
-      doc.text('INFORMATIONS CLIENT', margins.left + 5, y + 4.5);
-      let cy = y + 10;
-      doc.setFontSize(7.5);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(70, 70, 70);
-      doc.text('Nom :', col1, cy);
-      doc.setFont('helvetica', 'normal');
-      doc.text(clientFull.substring(0, 30), col1 + 14, cy);
-      cy += 5.5;
-      if (clientEmail) {
-        doc.text('Email :', col1, cy);
-        doc.text(clientEmail.substring(0, 30), col1 + 17, cy);
-        cy += 5.5;
-      }
-      if (clientTel) {
-        doc.text('Tél :', col1, cy);
-        doc.text(clientTel, col1 + 13, cy);
-        cy += 5.5;
-      }
-      if (clientAdr) {
-        doc.text('Adresse :', col1, cy);
-        doc.text(clientAdr.substring(0, 30), col1 + 18, cy);
-      }
-      y += ch + 5;
+  // Calculs des totaux
+  let sousTotal = 0;
+  items.forEach((item) => {
+    const qty = item.quantity || 0;
+    const price = item.prix_unitaire || 0;
+    const remise = item.remise || 0;
+    sousTotal += qty * price - remise;
+  });
+  const remiseTotale = data.remise || 0;
+  const totalFinal = data.total || sousTotal;
+
+  return (
+    <Document>
+      <Page size="A4" style={styles.page}>
+        {/* Filigrane */}
+        <Text style={styles.watermark}>DEVIS</Text>
+
+        {/* En-tête */}
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <Image src={logoSvg} style={styles.logo} />
+            <View style={styles.companyInfo}>
+              <Text style={styles.companyName}>{company.name}</Text>
+              <Text style={styles.companySub}>Capital social : {company.capital}</Text>
+              <Text style={styles.companySub}>N° RCCM : {company.rccm}</Text>
+              <Text style={styles.companySub}>{company.address}</Text>
+            </View>
+          </View>
+          <View style={styles.headerRight}>
+            <Text style={styles.documentTitle}>DEVIS</Text>
+            <Text style={styles.documentRef}>N° {data.reference || 'Sans référence'}</Text>
+            <Text style={styles.documentRef}>
+              Émis le {formatDate(data.date_creation || new Date().toISOString())}
+            </Text>
+          </View>
+        </View>
+
+        {/* Grille d'informations générales */}
+        <View style={styles.infoGrid}>
+          <View style={styles.infoCol}>
+            <Text style={styles.infoLabel}>Date création</Text>
+            <Text style={styles.infoValue}>{formatDate(data.date_creation)}</Text>
+          </View>
+          <View style={styles.infoCol}>
+            <Text style={styles.infoLabel}>Date expiration</Text>
+            <Text style={styles.infoValue}>{formatDate(data.date_expiration)}</Text>
+          </View>
+          <View style={styles.infoCol}>
+            <Text style={styles.infoLabel}>Agence</Text>
+            <Text style={styles.infoValue}>{agence.nom || '-'}</Text>
+          </View>
+          <View style={styles.infoCol}>
+            <Text style={styles.infoLabel}>Vendeur</Text>
+            <Text style={styles.infoValue}>{vendeur.email || '-'}</Text>
+          </View>
+          <View style={styles.infoCol}>
+            <Text style={styles.infoLabel}>Statut</Text>
+            <View style={[styles.statusBadge, statusInfo.style]}>
+              <Text style={[styles.statusText, statusInfo.textStyle]}>{statusInfo.label}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Informations client */}
+        <Text style={styles.sectionTitle}>INFORMATIONS CLIENT</Text>
+        <View style={styles.clientSection}>
+          <View style={styles.clientRow}>
+            <Text style={styles.clientLabel}>Nom / Raison sociale</Text>
+            <Text style={styles.clientValue}>{clientFull}</Text>
+          </View>
+          {clientEmail && (
+            <View style={styles.clientRow}>
+              <Text style={styles.clientLabel}>Email</Text>
+              <Text style={styles.clientValue}>{clientEmail}</Text>
+            </View>
+          )}
+          {clientTel && (
+            <View style={styles.clientRow}>
+              <Text style={styles.clientLabel}>Téléphone</Text>
+              <Text style={styles.clientValue}>{clientTel}</Text>
+            </View>
+          )}
+          {clientAdr && (
+            <View style={styles.clientRowLast}>
+              <Text style={styles.clientLabel}>Adresse</Text>
+              <Text style={styles.clientValue}>{clientAdr}</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Articles */}
+        <Text style={styles.sectionTitle}>ARTICLES</Text>
+        {items.length === 0 ? (
+          <View style={styles.emptyItems}>
+            <Text style={styles.emptyItemsText}>Aucun article dans ce devis.</Text>
+          </View>
+        ) : (
+          <>
+            <View style={styles.tableHeader}>
+              <Text style={[styles.tableHeaderText, styles.colDesignation]}>Désignation</Text>
+              <Text style={[styles.tableHeaderText, styles.colRef]}>Réf.</Text>
+              <Text style={[styles.tableHeaderText, styles.colQte]}>Qté</Text>
+              <Text style={[styles.tableHeaderText, styles.colPrix]}>Prix unit.</Text>
+              <Text style={[styles.tableHeaderText, styles.colRemise]}>Remise</Text>
+              <Text style={[styles.tableHeaderText, styles.colTotal]}>Total</Text>
+            </View>
+            {items.map((item, index) => {
+              const qty = item.quantity || 0;
+              const price = item.prix_unitaire || 0;
+              const remise = item.remise || 0;
+              const totalItem = qty * price - remise;
+              return (
+                <View style={[styles.tableRow, index % 2 === 1 ? styles.tableRowAlt : null]} key={index}>
+                  <Text style={[styles.tableText, styles.colDesignation]}>
+                    {item.product_name || item.product?.name || 'Produit inconnu'}
+                  </Text>
+                  <Text style={[styles.tableText, styles.colRef]}>
+                    {item.product_reference || item.product?.reference || '-'}
+                  </Text>
+                  <Text style={[styles.tableText, styles.colQte]}>{qty}</Text>
+                  <Text style={[styles.tableText, styles.colPrix]}>{formatCurrency(price)}</Text>
+                  <Text style={[styles.tableText, styles.colRemise]}>{formatCurrency(remise)}</Text>
+                  <Text style={[styles.tableText, styles.colTotal]}>{formatCurrency(totalItem)}</Text>
+                </View>
+              );
+            })}
+          </>
+        )}
+
+        {/* Totaux */}
+        <View style={styles.totalsBox}>
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Sous-total</Text>
+            <Text style={styles.totalValue}>{formatCurrency(sousTotal)}</Text>
+          </View>
+          {remiseTotale > 0 && (
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Remise</Text>
+              <Text style={styles.totalValue}>- {formatCurrency(remiseTotale)}</Text>
+            </View>
+          )}
+          <View style={styles.totalFinal}>
+            <Text style={styles.totalFinalLabel}>TOTAL TTC</Text>
+            <Text style={styles.totalFinalValue}>{formatCurrency(totalFinal)}</Text>
+          </View>
+        </View>
+
+        {/* Conditions générales */}
+        {data.conditions && (
+          <View style={styles.notesBox}>
+            <Text style={styles.notesLabel}>Conditions générales</Text>
+            <Text style={styles.notesText}>{data.conditions}</Text>
+          </View>
+        )}
+
+        {/* Notes */}
+        {data.notes && (
+          <View style={styles.notesBox}>
+            <Text style={styles.notesLabel}>Notes</Text>
+            <Text style={styles.notesText}>{data.notes}</Text>
+          </View>
+        )}
+
+        {/* Signatures */}
+        <View style={styles.signature}>
+          <View style={styles.signatureBlock}>
+            <View style={styles.signatureLine} />
+            <Text style={styles.signatureLabel}>Signature du client</Text>
+            <Text style={styles.signatureSub}>Nom et date</Text>
+          </View>
+          <View style={styles.signatureBlock}>
+            <View style={styles.signatureLine} />
+            <Text style={styles.signatureLabel}>Signature de l'entreprise</Text>
+            <Text style={styles.signatureSub}>{company.name}</Text>
+          </View>
+        </View>
+
+        {/* Pied de page */}
+        <View style={styles.footer} fixed>
+          <Text style={styles.footerText}>
+            {company.name} - {company.address} - Tél: {company.phone}
+          </Text>
+          <Text style={styles.footerText}>RCCM: {company.rccm} | Capital: {company.capital}</Text>
+          <Text style={styles.footerText}>Généré le {formatDate(new Date().toISOString())}</Text>
+        </View>
+      </Page>
+    </Document>
+  );
+};
+
+// ================================================================
+// FONCTION DE TÉLÉCHARGEMENT
+// ================================================================
+import { pdf } from '@react-pdf/renderer';
+
+/**
+ * Télécharge le devis au format PDF
+ * @param {Object} devis - Les données du devis
+ * @param {string} filename - Nom du fichier (optionnel)
+ * @returns {Promise<void>}
+ */
+export const downloadDevisPDF = async (devis, filename = null) => {
+  try {
+    if (!devis || typeof devis !== 'object') {
+      throw new Error('Les données du devis sont invalides');
     }
 
-    // ========== TABLEAU DES ARTICLES ==========
-    const items = devis.items || [];
-    if (items.length === 0) {
-      // Aucun article : afficher un message
-      doc.setFontSize(9);
-      doc.setTextColor(100, 100, 100);
-      doc.text('Aucun article dans ce devis.', margins.left, y + 5);
-      y += 15;
-    } else {
-      const tableHeaders = ['Désignation', 'Réf.', 'Qté', 'Prix unit.', 'Remise', 'Total'];
-      const colWidths = [55, 25, 15, 25, 20, 25];
-      let startX = margins.left;
-      let tableY = y;
+    // Générer le blob
+    const blob = await pdf(<DevisPDF devis={devis} />).toBlob();
 
-      // En-tête du tableau
-      doc.setFillColor(80, 80, 80);
-      doc.rect(startX, tableY, contentWidth, 7, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(7);
-      doc.setFont('helvetica', 'bold');
-      let xPos = startX;
-      tableHeaders.forEach((header, i) => {
-        doc.text(header, xPos + 2, tableY + 4.5);
-        xPos += colWidths[i];
-      });
-      tableY += 7;
+    // Créer un lien de téléchargement
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename || `Devis_${devis.reference || 'sans_ref'}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 
-      // Lignes
-      doc.setTextColor(0, 0, 0);
-      doc.setFont('helvetica', 'normal');
-      let totalSous = 0;
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        const qty = item.quantity || 0;
-        const price = item.prix_unitaire || 0;
-        const remise = item.remise || 0;
-        const totalItem = (qty * price) - remise;
-        totalSous += totalItem;
-
-        const row = [
-          (item.product_name || '').substring(0, 30),
-          (item.product_reference || '').substring(0, 10),
-          qty.toString(),
-          formatCurrency(price),
-          formatCurrency(remise),
-          formatCurrency(totalItem)
-        ];
-        let lineHeight = 5;
-        for (let j = 0; j < row.length; j++) {
-          const x = startX + (colWidths.slice(0, j).reduce((a, b) => a + b, 0));
-          doc.text(row[j], x + 2, tableY + 3.5);
-        }
-        tableY += lineHeight;
-
-        // Saut de page si nécessaire
-        if (tableY > pageHeight - margins.bottom - 50) {
-          doc.addPage();
-          tableY = margins.top;
-          // Réimprimer l'en-tête
-          doc.setFillColor(80, 80, 80);
-          doc.rect(startX, tableY, contentWidth, 7, 'F');
-          doc.setTextColor(255, 255, 255);
-          xPos = startX;
-          tableHeaders.forEach((header, idx) => {
-            doc.text(header, xPos + 2, tableY + 4.5);
-            xPos += colWidths[idx];
-          });
-          tableY += 7;
-          doc.setTextColor(0, 0, 0);
-        }
-      }
-      y = tableY + 5;
-
-      // ========== TOTAUX ==========
-      const remiseTotale = devis.remise || 0;
-      const totalFinal = devis.total || totalSous;
-      doc.setDrawColor(160, 160, 160);
-      doc.rect(margins.left, y, contentWidth, 25, 'S');
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(70, 70, 70);
-      doc.text('RÉCAPITULATIF', pageWidth / 2, y + 5, { align: 'center' });
-      doc.setFontSize(7.5);
-      let ty = y + 10;
-      doc.setFont('helvetica', 'bold');
-      doc.text('Sous-total :', margins.left + 10, ty);
-      doc.setFont('helvetica', 'normal');
-      doc.text(formatCurrency(totalSous), margins.left + 35, ty);
-      ty += 5;
-      if (remiseTotale > 0) {
-        doc.setFont('helvetica', 'bold');
-        doc.text('Remise :', margins.left + 10, ty);
-        doc.setFont('helvetica', 'normal');
-        doc.text(`- ${formatCurrency(remiseTotale)}`, margins.left + 35, ty);
-        ty += 5;
-      }
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.text('TOTAL TTC :', margins.left + 10, ty);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(0, 0, 0);
-      doc.text(formatCurrency(totalFinal), margins.left + 35, ty);
-      y += 28;
-    }
-
-    // ========== CONDITIONS ET NOTES ==========
-    if (devis.conditions) {
-      const condLines = doc.splitTextToSize(devis.conditions, contentWidth - 10);
-      const nh = Math.max(10, condLines.length * 4 + 6);
-      doc.setDrawColor(160, 160, 160);
-      doc.rect(margins.left, y, contentWidth, nh, 'S');
-      doc.setFillColor(248, 248, 248);
-      doc.rect(margins.left, y, contentWidth, 5, 'F');
-      doc.setFontSize(6.5);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(70, 70, 70);
-      doc.text('CONDITIONS GÉNÉRALES', margins.left + 5, y + 3.5);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(80, 80, 80);
-      doc.text(condLines, margins.left + 5, y + 8);
-      y += nh + 5;
-    }
-    if (devis.notes) {
-      const noteLines = doc.splitTextToSize(devis.notes, contentWidth - 10);
-      const nh = Math.max(10, noteLines.length * 4 + 6);
-      doc.setDrawColor(160, 160, 160);
-      doc.rect(margins.left, y, contentWidth, nh, 'S');
-      doc.setFillColor(248, 248, 248);
-      doc.rect(margins.left, y, contentWidth, 5, 'F');
-      doc.setFontSize(6.5);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(70, 70, 70);
-      doc.text('NOTES', margins.left + 5, y + 3.5);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(80, 80, 80);
-      doc.text(noteLines, margins.left + 5, y + 8);
-      y += nh + 5;
-    }
-
-    // ========== SIGNATURES ==========
-    const signY = y + 4;
-    doc.setDrawColor(160, 160, 160);
-    doc.line(margins.left, signY, pageWidth - margins.right, signY);
-    doc.setFontSize(7);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(70, 70, 70);
-    doc.text('VALIDATION', pageWidth / 2, signY + 4, { align: 'center' });
-
-    const sigW = (contentWidth - 12) / 2;
-    const sigH = 22;
-    const sigTop = signY + 7;
-    // Signature client
-    doc.rect(margins.left, sigTop, sigW, sigH, 'S');
-    doc.setFontSize(6);
-    doc.setFont('helvetica', 'bold');
-    doc.text('LE CLIENT', margins.left + sigW / 2, sigTop + 4, { align: 'center' });
-    doc.setFont('helvetica', 'normal');
-    doc.text('Nom et signature', margins.left + 4, sigTop + 11);
-    doc.text('Date: _______________', margins.left + 4, sigTop + 17);
-    // Signature entreprise
-    const sigRight = margins.left + sigW + 12;
-    doc.rect(sigRight, sigTop, sigW, sigH, 'S');
-    doc.setFont('helvetica', 'bold');
-    doc.text('L\'ENTREPRISE', sigRight + sigW / 2, sigTop + 4, { align: 'center' });
-    doc.setFont('helvetica', 'normal');
-    doc.text(company.name, sigRight + 4, sigTop + 11);
-    doc.text('Signature et cachet', sigRight + 4, sigTop + 17);
-
-    // ========== PIED DE PAGE ==========
-    const footY = pageHeight - margins.bottom - 6;
-    doc.setDrawColor(200, 200, 200);
-    doc.line(margins.left, footY - 3, pageWidth - margins.right, footY - 3);
-    doc.setFontSize(5.5);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(100, 100, 100);
-    doc.text(`${company.name} - ${company.address} - Tél: ${company.phone}`, pageWidth / 2, footY, { align: 'center' });
-    doc.text(`RCCM: ${company.rccm} | Capital: ${company.capital}`, pageWidth / 2, footY + 3.5, { align: 'center' });
-    doc.text(`Généré le ${formatDate(new Date().toISOString())}`, pageWidth / 2, footY + 7, { align: 'center' });
-
-    doc.save(`Devis_${devis.reference || 'sans_ref'}.pdf`);
     return true;
   } catch (error) {
-    console.error('Erreur DevisPDF:', error);
+    console.error('Erreur lors du téléchargement du devis PDF :', error);
     throw error;
   }
 };
 
+// Export par défaut du composant (pour compatibilité et utilisation dans d'autres composants)
 export default DevisPDF;

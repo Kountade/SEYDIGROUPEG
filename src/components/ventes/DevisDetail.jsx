@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
-import DevisPDF from './DevisPDF';
+import { downloadDevisPDF } from './DevisPDF';
 import { 
   ArrowLeft, Send, Check, Ban, ShoppingCart, Printer, 
   Edit, AlertCircle, CheckCircle, Clock, X, 
@@ -84,12 +84,14 @@ const DevisDetail = () => {
     }
   };
 
+  // ✅ Génération PDF avec downloadDevisPDF
   const handleGeneratePDF = async () => {
     setGeneratingPDF(true);
     try {
-      await DevisPDF(devis);
+      await downloadDevisPDF(devis);
       showNotification('PDF généré avec succès', 'success');
     } catch (error) {
+      console.error(error);
       showNotification('Erreur lors de la génération du PDF', 'error');
     } finally {
       setGeneratingPDF(false);

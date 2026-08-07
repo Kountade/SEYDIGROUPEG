@@ -2,12 +2,12 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
-import FacturePDF from './FacturePDF';
+import { downloadFacturePDF } from './FacturePDF';
 import {
   FileText, Eye, CheckCircle, XCircle, Clock, Search,
   RefreshCw, Filter, Calendar, AlertCircle, DollarSign,
   ChevronLeft, ChevronRight, Plus, AlertTriangle,
-  ArrowUpDown, ChevronUp, ChevronDown, Trash2, Receipt, Printer, TrendingUp, TrendingDown
+  ArrowUpDown, ChevronUp, ChevronDown, Trash2, Receipt, Printer, TrendingUp, TrendingDown, X
 } from 'lucide-react';
 
 const FacturesList = () => {
@@ -50,12 +50,12 @@ const FacturesList = () => {
     setLoading(true);
     try {
       const response = await AxiosInstance.get('/factures/');
-      const data = response.data;
+      const data = response.data || [];
       setFactures(data);
       
-      const totalMontant = data.reduce((sum, f) => sum + (f.total_ttc || 0), 0);
-      const totalPaye = data.reduce((sum, f) => sum + (f.montant_paye || 0), 0);
-      const totalRestant = data.reduce((sum, f) => sum + (f.montant_restant || 0), 0);
+      const totalMontant = data.reduce((sum, f) => sum + (parseFloat(f.total_ttc) || 0), 0);
+      const totalPaye = data.reduce((sum, f) => sum + (parseFloat(f.montant_paye) || 0), 0);
+      const totalRestant = data.reduce((sum, f) => sum + (parseFloat(f.montant_restant) || 0), 0);
       const payee = data.filter(f => f.status === 'paid').length;
       const partiellement_payee = data.filter(f => f.status === 'partially_paid').length;
       const en_retard = data.filter(f => f.status === 'overdue').length;
@@ -86,11 +86,14 @@ const FacturesList = () => {
     setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 4000);
   };
 
+  // ✅ Génération PDF : récupère la facture complète avec items
   const handleGeneratePDF = async (facture, e) => {
     e.stopPropagation();
     setGeneratingPDF(true);
     try {
-      await FacturePDF(facture);
+      // Récupérer la facture complète avec ses articles
+      const response = await AxiosInstance.get(`/factures/${facture.id}/`);
+      await downloadFacturePDF(response.data);
       showNotification('PDF généré avec succès', 'success');
     } catch (error) {
       console.error('Erreur:', error);
@@ -128,8 +131,8 @@ const FacturesList = () => {
   };
 
   const getPaymentProgress = (facture) => {
-    const total = facture.total_ttc || 0;
-    const paye = facture.montant_paye || 0;
+    const total = parseFloat(facture.total_ttc) || 0;
+    const paye = parseFloat(facture.montant_paye) || 0;
     if (total === 0) return 0;
     return (paye / total) * 100;
   };
@@ -200,8 +203,8 @@ const FacturesList = () => {
   };
 
   const PaymentProgressBar = ({ facture }) => {
-    const total = facture.total_ttc || 0;
-    const paye = facture.montant_paye || 0;
+    const total = parseFloat(facture.total_ttc) || 0;
+    const paye = parseFloat(facture.montant_paye) || 0;
     const percent = total === 0 ? 0 : (paye / total) * 100;
     const reste = total - paye;
     if (total === 0) return null;

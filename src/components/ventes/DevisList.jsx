@@ -2,15 +2,15 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
-import DevisPDF from './DevisPDF';
+import { downloadDevisPDF } from './DevisPDF';
 import {
   FileText, Eye, CheckCircle, XCircle, Clock, Search,
   RefreshCw, Filter, AlertCircle,
   ChevronLeft, ChevronRight, Plus, AlertTriangle,
-  ArrowUpDown, ChevronUp, ChevronDown, Trash2, Printer,
+  Trash2, Printer,
   Send, Check, Ban, ShoppingCart, Edit, X,
-  Grid3x3, Table2, LayoutGrid, List, MoreVertical,
-  Calendar, User, DollarSign, Hash, FileCheck
+  Grid3x3, Table2, MoreVertical,
+  Calendar, User, DollarSign
 } from 'lucide-react';
 
 const DevisList = () => {
@@ -27,7 +27,6 @@ const DevisList = () => {
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
   const [sortField, setSortField] = useState('date_creation');
   const [sortDirection, setSortDirection] = useState('desc');
-  const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [generatingPDF, setGeneratingPDF] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
   const [viewMode, setViewMode] = useState('grid');
@@ -100,11 +99,13 @@ const DevisList = () => {
     setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 4000);
   };
 
+  // ✅ Génération PDF : récupère le devis complet avec items
   const handleGeneratePDF = async (devis, e) => {
     e.stopPropagation();
     setGeneratingPDF(true);
     try {
-      await DevisPDF(devis);
+      const response = await AxiosInstance.get(`/devis/${devis.id}/`);
+      await downloadDevisPDF(response.data);
       showNotification('PDF généré avec succès', 'success');
     } catch (error) {
       console.error(error);
@@ -312,7 +313,6 @@ const DevisList = () => {
           >
             <Filter className="w-4 h-4" />
             Filtres
-            {showFilters ? <ChevronRight className="w-3 h-3" /> : <ChevronLeft className="w-3 h-3" />}
           </button>
           
           <div className={`${showFilters ? 'flex' : 'hidden'} sm:flex flex-col sm:flex-row gap-3`}>
