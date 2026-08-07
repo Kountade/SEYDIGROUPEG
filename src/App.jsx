@@ -158,7 +158,9 @@ import TresorerieJournaliere from './components/tresorerie/TresorerieJournaliere
 import PriceHistory from './components/achats/PriceHistory'
 
 import Lots from './components/inventaire/Lots'
- 
+
+
+import Stats from './components/grh/Stats'
 
 import Bilan from './components/comptabilite/Bilan'
 
@@ -196,7 +198,7 @@ function App() {
 <Route path="/analyses" element={<Analyses />} />
 
 
-
+      <Route path="/stats" element={<Stats />} />
 
 <Route path="dashboard/comptabilite" element={<DashboardComptable />} />
 

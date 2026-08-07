@@ -242,7 +242,7 @@ const Payroll = () => {
             <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
           </div>
           <div className="stat-title text-xs sm:text-sm font-semibold">Net total</div>
-          <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{formatNumber(stats.totalNet)} €</div>
+          <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{formatNumber(stats.totalNet)} GNF</div>
         </div>
         
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
@@ -250,7 +250,7 @@ const Payroll = () => {
             <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
           </div>
           <div className="stat-title text-xs sm:text-sm font-semibold">Payé</div>
-          <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{formatNumber(stats.paid)} €</div>
+          <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{formatNumber(stats.paid)} GNF</div>
         </div>
         
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
@@ -397,9 +397,9 @@ const Payroll = () => {
                           <span>{monthLabel} {payroll.year}</span>
                         </div>
                       </td>
-                      <td className="font-medium">{formatNumber(payroll.gross_salary)} €</td>
+                      <td className="font-medium">{formatNumber(payroll.gross_salary)} GNF</td>
                       <td>
-                        <span className="font-bold text-primary">{formatNumber(payroll.net_salary)} €</span>
+                        <span className="font-bold text-primary">{formatNumber(payroll.net_salary)} GNF</span>
                       </td>
                       <td>
                         <div className={`badge ${status.bgColor} ${status.textColor} gap-1`}>

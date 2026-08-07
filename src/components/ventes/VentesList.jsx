@@ -80,15 +80,14 @@ const VentesList = () => {
   const [currentUser, setCurrentUser] = useState(null)
   const [userRoles, setUserRoles] = useState({ est_pdg: false, est_chef_agence: false })
   
-  // Modals
+  // Modals (conservés pour les autres actions)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [venteToDelete, setVenteToDelete] = useState(null)
   const [showApproveModal, setShowApproveModal] = useState(false)
   const [venteToApprove, setVenteToApprove] = useState(null)
   const [rejectReason, setRejectReason] = useState('')
   const [showRejectModal, setShowRejectModal] = useState(false)
-  const [showDetailsModal, setShowDetailsModal] = useState(false)
-  const [selectedVente, setSelectedVente] = useState(null)
+  // ❌ SUPPRESSION : showDetailsModal et selectedVente supprimés
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' })
   
   // Statistiques
@@ -431,7 +430,7 @@ const VentesList = () => {
         </div>
       )}
 
-      {/* ===== MODALS ===== */}
+      {/* ===== MODALS (conservées pour Approbation, Rejet, Suppression) ===== */}
 
       {/* Modal Approbation */}
       {showApproveModal && venteToApprove && (
@@ -525,145 +524,7 @@ const VentesList = () => {
         </div>
       )}
 
-      {/* Modal Détails */}
-      {showDetailsModal && selectedVente && (
-        <div className="modal modal-open">
-          <div className="modal-box w-11/12 max-w-2xl">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="font-bold text-2xl flex items-center gap-2">
-                <FileText className="w-6 h-6 text-primary" />
-                Détails de la vente
-              </h3>
-              <button className="btn btn-sm btn-circle btn-ghost" onClick={() => setShowDetailsModal(false)}>
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-base-content/50">Référence</p>
-                  <p className="font-mono font-bold text-lg">{selectedVente.reference}</p>
-                </div>
-                {getStatusBadge(selectedVente.status)}
-              </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div>
-                  <p className="text-xs text-base-content/50">Client</p>
-                  <p className="font-semibold">{selectedVente.client_nom || 'Anonyme'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-base-content/50">Vendeur</p>
-                  <p>{selectedVente.vendeur_nom}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-base-content/50">Date</p>
-                  <p>{formatDate(selectedVente.date_vente)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-base-content/50">Agence</p>
-                  <p>{selectedVente.agence_nom}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-base-content/50">Type</p>
-                  <p className="capitalize flex items-center gap-1">
-                    {getTypeIcon(selectedVente.type_vente)}
-                    {selectedVente.type_vente}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-base-content/50">Paiement</p>
-                  {getPaymentStatusBadge(selectedVente)}
-                </div>
-              </div>
-
-              <div className="divider my-2"></div>
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div>
-                  <p className="text-xs text-base-content/50">Sous-total</p>
-                  <p className="font-medium">{formatPrice(selectedVente.sous_total)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-base-content/50">TVA (18%)</p>
-                  <p className="font-medium">{formatPrice(selectedVente.tva)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-base-content/50">Total</p>
-                  <p className="font-bold text-primary text-lg">{formatPrice(selectedVente.total)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-base-content/50">Montant payé</p>
-                  <p className="font-semibold text-success">{formatPrice(selectedVente.montant_paye)}</p>
-                </div>
-              </div>
-
-              {selectedVente.montant_du > 0 && (
-                <div className="bg-error/10 rounded-xl p-3 border border-error/20">
-                  <p className="text-sm text-error flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4" />
-                    Reste à payer: <span className="font-bold">{formatPrice(selectedVente.montant_du)}</span>
-                  </p>
-                </div>
-              )}
-
-              {selectedVente.notes && (
-                <div className="bg-base-200 rounded-xl p-3">
-                  <p className="text-xs text-base-content/50">Notes</p>
-                  <p className="text-sm mt-1">{selectedVente.notes}</p>
-                </div>
-              )}
-
-              {selectedVente.motif_rejet && (
-                <div className="bg-error/10 rounded-xl p-3 border border-error/20">
-                  <p className="text-xs text-error/70">Motif du rejet</p>
-                  <p className="text-sm text-error mt-1">{selectedVente.motif_rejet}</p>
-                </div>
-              )}
-            </div>
-
-            <div className="modal-action flex-wrap gap-2">
-              {/* ✅ Bouton Ticket POS */}
-              {canGenerateTicket(selectedVente) && (
-                <button
-                  className="btn btn-secondary gap-2"
-                  onClick={() => { setShowDetailsModal(false); handleGenerateTicket(selectedVente) }}
-                  disabled={generatingTicket === selectedVente.id}
-                >
-                  {generatingTicket === selectedVente.id ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Receipt className="w-4 h-4" />
-                  )}
-                  Ticket POS
-                </button>
-              )}
-              {canGenerateBonLivraison(selectedVente) && (
-                <button
-                  className="btn btn-info gap-2"
-                  onClick={() => { setShowDetailsModal(false); handleGenerateBonLivraison(selectedVente) }}
-                  disabled={generatingBl === selectedVente.id}
-                >
-                  {generatingBl === selectedVente.id ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Truck className="w-4 h-4" />
-                  )}
-                  Bon de livraison
-                </button>
-              )}
-              <button 
-                className="btn btn-primary gap-2" 
-                onClick={() => { setShowDetailsModal(false); navigate(`/ventes/${selectedVente.id}`) }}
-              >
-                <Eye className="w-4 h-4" /> Voir détails complets
-              </button>
-              <button className="btn btn-ghost" onClick={() => setShowDetailsModal(false)}>Fermer</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ❌ Modal Détails SUPPRIMÉE - le bouton Détails redirige directement vers la page de détail */}
 
       {/* ===== EN-TÊTE ===== */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -965,10 +826,10 @@ const VentesList = () => {
                             </>
                           )}
 
-                          {/* Détails */}
+                          {/* ✅ Détails : redirection directe vers la page de détail */}
                           <button
                             className="btn btn-ghost btn-xs"
-                            onClick={() => { setSelectedVente(vente); setShowDetailsModal(true) }}
+                            onClick={() => navigate(`/ventes/${vente.id}`)}
                             title="Détails"
                           >
                             <Eye className="w-3 h-3" />
@@ -1092,9 +953,10 @@ const VentesList = () => {
                           </button>
                         </>
                       )}
+                      {/* ✅ Détails : redirection directe vers la page de détail */}
                       <button
                         className="btn btn-ghost btn-xs"
-                        onClick={() => { setSelectedVente(vente); setShowDetailsModal(true) }}
+                        onClick={() => navigate(`/ventes/${vente.id}`)}
                         title="Détails"
                       >
                         <Eye className="w-3 h-3" />

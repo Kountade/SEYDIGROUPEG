@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
-import PaiementPdf from './PaiementPdf'
+import { downloadPaiementPDF } from './PaiementPdf'
 import {
   CreditCard, ArrowLeft, Edit, Trash2, AlertCircle,
   DollarSign, Calendar, FileText, User, Phone, Mail,
@@ -61,7 +61,7 @@ const PaiementDetail = () => {
     if (!paiement) return
     setPdfLoading(true)
     try {
-      await PaiementPdf(paiement)
+      await downloadPaiementPDF(paiement)
     } catch (err) {
       console.error(err)
       alert('Erreur lors de la génération du PDF')

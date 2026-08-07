@@ -1,578 +1,695 @@
-// src/pages/transferts/TransfertPdf.jsx
-import jsPDF from 'jspdf'
-import logoSvg from '../../assets/logo.svg'
+// src/components/transferts/TransfertPdf.jsx
+import React from 'react';
+import {
+  Document,
+  Page,
+  Text,
+  View,
+  StyleSheet,
+  Font,
+  Image,
+} from '@react-pdf/renderer';
+import { pdf } from '@react-pdf/renderer';
+import logoSvg from '../../assets/logo.svg';
 
-const TransfertPdf = async (transfer) => {
-  if (!transfer || typeof transfer !== 'object') {
-    throw new Error('Données du transfert invalides')
-  }
+// Enregistrer les polices (comme dans ExpensePDF)
+Font.register({
+  family: 'Helvetica',
+  fonts: [{ src: 'https://fonts.gstatic.com/s/helvetica/v12/...' }],
+});
 
+// ================================================================
+// STYLES – identiques à ExpensePDF (adaptés pour Transfert)
+// ================================================================
+const styles = StyleSheet.create({
+  page: {
+    padding: 40,
+    fontSize: 10,
+    fontFamily: 'Helvetica',
+    backgroundColor: '#FFFFFF',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingBottom: 15,
+    borderBottomWidth: 2,
+    borderBottomColor: '#1a237e',
+    borderBottomStyle: 'solid',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  logo: {
+    width: 50,
+    height: 50,
+    marginRight: 12,
+  },
+  companyInfo: {
+    flexDirection: 'column',
+  },
+  companyName: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1a237e',
+    fontFamily: 'Helvetica',
+    letterSpacing: 1,
+  },
+  companySub: {
+    fontSize: 8,
+    color: '#546e7a',
+    marginTop: 1,
+  },
+  headerRight: {
+    textAlign: 'right',
+  },
+  documentTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#1a237e',
+    fontFamily: 'Helvetica',
+    letterSpacing: 2,
+  },
+  documentRef: {
+    fontSize: 9,
+    color: '#546e7a',
+    marginTop: 2,
+  },
+  infoGrid: {
+    flexDirection: 'row',
+    marginBottom: 15,
+    padding: 12,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderStyle: 'solid',
+  },
+  infoCol: {
+    flex: 1,
+    flexDirection: 'column',
+    paddingHorizontal: 4,
+  },
+  infoLabel: {
+    fontSize: 7,
+    color: '#78909c',
+    marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  infoValue: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#1a237e',
+  },
+  sectionTitle: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#1a237e',
+    marginTop: 15,
+    marginBottom: 8,
+    paddingBottom: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+    borderBottomStyle: 'solid',
+    fontFamily: 'Helvetica',
+    letterSpacing: 0.5,
+  },
+  statusBadge: {
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 3,
+    alignSelf: 'flex-start',
+  },
+  statusDraft: {
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#9e9e9e',
+    borderStyle: 'solid',
+  },
+  statusPending: {
+    backgroundColor: '#fff3e0',
+    borderWidth: 1,
+    borderColor: '#ff9800',
+    borderStyle: 'solid',
+  },
+  statusApproved: {
+    backgroundColor: '#e3f2fd',
+    borderWidth: 1,
+    borderColor: '#2196f3',
+    borderStyle: 'solid',
+  },
+  statusRejected: {
+    backgroundColor: '#ffebee',
+    borderWidth: 1,
+    borderColor: '#f44336',
+    borderStyle: 'solid',
+  },
+  statusInTransit: {
+    backgroundColor: '#e8f5e9',
+    borderWidth: 1,
+    borderColor: '#4caf50',
+    borderStyle: 'solid',
+  },
+  statusPartial: {
+    backgroundColor: '#fff3e0',
+    borderWidth: 1,
+    borderColor: '#ff9800',
+    borderStyle: 'solid',
+  },
+  statusCompleted: {
+    backgroundColor: '#e8f5e9',
+    borderWidth: 1,
+    borderColor: '#4caf50',
+    borderStyle: 'solid',
+  },
+  statusCancelled: {
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#9e9e9e',
+    borderStyle: 'solid',
+  },
+  statusText: {
+    fontSize: 8,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  statusTextDraft: { color: '#757575' },
+  statusTextPending: { color: '#ff9800' },
+  statusTextApproved: { color: '#2196f3' },
+  statusTextRejected: { color: '#f44336' },
+  statusTextInTransit: { color: '#4caf50' },
+  statusTextPartial: { color: '#ff9800' },
+  statusTextCompleted: { color: '#4caf50' },
+  statusTextCancelled: { color: '#757575' },
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#1a237e',
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    marginTop: 5,
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 4,
+  },
+  tableHeaderText: {
+    fontSize: 8,
+    fontWeight: 'bold',
+    color: '#ffffff',
+  },
+  tableRow: {
+    flexDirection: 'row',
+    paddingVertical: 5,
+    paddingHorizontal: 4,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#e0e0e0',
+    borderBottomStyle: 'solid',
+    backgroundColor: '#ffffff',
+  },
+  tableRowAlt: {
+    backgroundColor: '#f8f9fa',
+  },
+  colRef: { width: '15%', paddingRight: 4 },
+  colDesignation: { width: '30%', paddingRight: 4 },
+  colQte: { width: '10%', textAlign: 'center' },
+  colRecu: { width: '10%', textAlign: 'center' },
+  colPrix: { width: '15%', textAlign: 'right', paddingRight: 4 },
+  colTotal: { width: '20%', textAlign: 'right', paddingRight: 4 },
+  tableText: {
+    fontSize: 8,
+    color: '#212121',
+  },
+  totalsBox: {
+    marginTop: 15,
+    padding: 12,
+    backgroundColor: '#e8eaf6',
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#c5cae9',
+    borderStyle: 'solid',
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+  },
+  totalRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingVertical: 2,
+  },
+  totalLabel: {
+    fontSize: 9,
+    fontWeight: 'bold',
+    color: '#1a237e',
+    marginRight: 20,
+  },
+  totalValue: {
+    fontSize: 9,
+    color: '#1a237e',
+    width: 80,
+    textAlign: 'right',
+  },
+  totalFinal: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 4,
+    paddingTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: '#1a237e',
+    borderTopStyle: 'solid',
+  },
+  totalFinalLabel: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#1a237e',
+    marginRight: 20,
+  },
+  totalFinalValue: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#1a237e',
+    width: 80,
+    textAlign: 'right',
+  },
+  notesBox: {
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: '#fff3e0',
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#ffcc80',
+    borderStyle: 'solid',
+  },
+  notesLabel: {
+    fontSize: 8,
+    color: '#e65100',
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  notesText: {
+    fontSize: 9,
+    color: '#424242',
+    marginTop: 2,
+  },
+  rejectionBox: {
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: '#ffebee',
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#f44336',
+    borderStyle: 'solid',
+  },
+  rejectionLabel: {
+    fontSize: 8,
+    color: '#c62828',
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  rejectionText: {
+    fontSize: 9,
+    color: '#424242',
+    marginTop: 2,
+  },
+  signature: {
+    marginTop: 15,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  signatureBlock: {
+    textAlign: 'center',
+    width: '45%',
+  },
+  signatureLine: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#424242',
+    borderBottomStyle: 'solid',
+    marginBottom: 4,
+    paddingTop: 10,
+  },
+  signatureLabel: {
+    fontSize: 8,
+    color: '#546e7a',
+  },
+  signatureSub: {
+    fontSize: 7,
+    color: '#78909c',
+    marginTop: 2,
+  },
+  footer: {
+    position: 'absolute',
+    bottom: 30,
+    left: 40,
+    right: 40,
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+    borderTopStyle: 'solid',
+    paddingTop: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  footerText: {
+    fontSize: 7,
+    color: '#78909c',
+  },
+  watermark: {
+    position: 'absolute',
+    bottom: 150,
+    left: 50,
+    right: 50,
+    textAlign: 'center',
+    fontSize: 40,
+    color: 'rgba(26, 35, 126, 0.05)',
+    fontFamily: 'Helvetica',
+    transform: 'rotate(-30deg)',
+  },
+  emptyItems: {
+    padding: 10,
+    backgroundColor: '#fafafa',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderStyle: 'solid',
+    borderRadius: 4,
+    marginTop: 5,
+  },
+  emptyItemsText: {
+    fontSize: 9,
+    color: '#78909c',
+    textAlign: 'center',
+  },
+});
+
+// ================================================================
+// UTILITAIRES (identique à ExpensePDF)
+// ================================================================
+const formatNumber = (n) => {
+  if (!n && n !== 0) return '0';
+  const num = typeof n === 'string' ? parseFloat(n) : n;
+  if (isNaN(num)) return '0';
+  return Math.round(num).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+};
+
+const formatCurrency = (amt) => `${formatNumber(amt)} FCFA`;
+
+const formatDate = (dateString) => {
+  if (!dateString) return '-';
   try {
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    
-    // === CONFIGURATION ===
-    const pageWidth = 210
-    const margins = { left: 15, right: 15, top: 15, bottom: 15 }
-    const contentWidth = pageWidth - margins.left - margins.right
-    let y = margins.top
-
-    // === COULEURS ===
-    const primaryColor = '#2563eb'
-    const secondaryColor = '#475569'
-    const successColor = '#059669'
-    const warningColor = '#d97706'
-    const errorColor = '#dc2626'
-    const black = '#000000'
-    const gray = '#64748b'
-    const lightGray = '#f1f5f9'
-    const borderColor = '#e2e8f0'
-
-    // === FONCTIONS ===
-    const formatNumber = (n) => {
-      const num = parseFloat(n) || 0
-      return new Intl.NumberFormat('fr-FR').format(num)
-    }
-    
-    const formatCurrency = (amount) => {
-      const num = parseFloat(amount) || 0
-      return `${formatNumber(num)} FCFA`
-    }
-    
-    const formatDate = (dateString) => {
-      if (!dateString) return '-'
-      try {
-        const date = new Date(dateString)
-        if (isNaN(date.getTime())) return '-'
-        return date.toLocaleDateString('fr-FR', { 
-          day: '2-digit', 
-          month: '2-digit', 
-          year: 'numeric'
-        })
-      } catch { return '-' }
-    }
-
-    const formatDateTime = (dateString) => {
-      if (!dateString) return '-'
-      try {
-        const date = new Date(dateString)
-        if (isNaN(date.getTime())) return '-'
-        return date.toLocaleDateString('fr-FR', { 
-          day: '2-digit', 
-          month: '2-digit', 
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        })
-      } catch { return '-' }
-    }
-
-    const getStatusConfig = (status) => {
-      const configs = {
-        draft: { label: 'BROUILLON', color: gray, bg: lightGray },
-        pending_approval: { label: 'EN ATTENTE', color: warningColor, bg: '#fef3c7' },
-        approved: { label: 'APPROUVÉ', color: primaryColor, bg: '#dbeafe' },
-        rejected: { label: 'REJETÉ', color: errorColor, bg: '#fee2e2' },
-        in_transit: { label: 'EN TRANSIT', color: successColor, bg: '#d1fae5' },
-        partial: { label: 'RÉCEPTION PARTIELLE', color: warningColor, bg: '#fef3c7' },
-        completed: { label: 'TERMINÉ', color: successColor, bg: '#d1fae5' },
-        cancelled: { label: 'ANNULÉ', color: errorColor, bg: '#fee2e2' }
-      }
-      return configs[status] || configs.draft
-    }
-
-    // === DONNÉES ===
-    const items = transfer.items || []
-    const fromAgence = transfer.from_agence || {}
-    const toAgence = transfer.to_agence || {}
-    const fromWarehouse = transfer.from_warehouse || {}
-    const toWarehouse = transfer.to_warehouse || {}
-    const statusConfig = getStatusConfig(transfer.status)
-    
-    const totalQuantity = items.reduce((sum, item) => sum + (parseFloat(item.quantity) || 0), 0)
-    const totalReceived = items.reduce((sum, item) => sum + (parseFloat(item.quantity_received) || 0), 0)
-    const totalAmount = items.reduce((sum, item) => sum + ((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0)), 0)
-
-    // === LOGO ===
-    const loadLogo = (src) => new Promise((resolve) => {
-      const img = new Image()
-      img.crossOrigin = 'Anonymous'
-      img.onload = () => {
-        const canvas = document.createElement('canvas')
-        canvas.width = img.width
-        canvas.height = img.height
-        canvas.getContext('2d').drawImage(img, 0, 0)
-        resolve(canvas.toDataURL('image/png'))
-      }
-      img.onerror = () => resolve(null)
-      img.src = src
-    })
-
-    const logoData = await loadLogo(logoSvg)
-
-    // ============================================================
-    // EN-TÊTE
-    // ============================================================
-    
-    if (logoData) {
-      doc.addImage(logoData, 'PNG', margins.left, y, 35, 17)
-    } else {
-      doc.setFontSize(14)
-      doc.setFont('helvetica', 'bold')
-      doc.setTextColor(black)
-      doc.text('SEYDI GROUP', margins.left, y + 6)
-      doc.setFontSize(9)
-      doc.setFont('helvetica', 'normal')
-      doc.setTextColor(black)
-      doc.text('SEYDI GROUP SARL', margins.left, y + 12)
-      doc.text('Solutions Digitales', margins.left, y + 17)
-    }
-
-    const companyBox = { x: pageWidth - margins.right - 75, y: y, w: 75, h: 30 }
-    doc.setDrawColor(borderColor)
-    doc.setLineWidth(0.2)
-    doc.rect(companyBox.x, companyBox.y, companyBox.w, companyBox.h, 'S')
-    
-    doc.setFontSize(9)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(black)
-    doc.text('SOCIÉTÉ', companyBox.x + companyBox.w / 2, companyBox.y + 4, { align: 'center' })
-    
-    doc.setFont('helvetica', 'normal')
-    doc.setTextColor(black)
-    doc.text('SEYDI GROUP SARL', companyBox.x + 3, companyBox.y + 9)
-    doc.text('Dakar, Sénégal', companyBox.x + 3, companyBox.y + 14)
-    doc.text('+221 33 123 45 67', companyBox.x + 3, companyBox.y + 19)
-    doc.setFontSize(8)
-    doc.text('contact@seydigroup.com', companyBox.x + 3, companyBox.y + 24)
-
-    y = companyBox.y + companyBox.h + 5
-
-    // ============================================================
-    // TITRE PRINCIPAL (sans trait bleu avant)
-    // ============================================================
-    doc.setFontSize(16)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(primaryColor)
-    doc.text('BON DE TRANSFERT DE STOCK', pageWidth / 2, y, { align: 'center' })
-    y += 6
-
-    doc.setFontSize(9)
-    doc.setFont('helvetica', 'normal')
-    doc.setTextColor(secondaryColor)
-    doc.text('Document de transfert entre entrepôts', pageWidth / 2, y, { align: 'center' })
-    y += 6
-
-    doc.setFontSize(12)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(primaryColor)
-    doc.text(`Réf: ${transfer.reference || 'N° TRANSFERT'}`, pageWidth / 2, y, { align: 'center' })
-    y += 8
-
-    // Trait bleu après le titre (uniquement celui-ci)
-    doc.setDrawColor(primaryColor)
-    doc.setLineWidth(0.5)
-    doc.line(margins.left, y, pageWidth - margins.right, y)
-    y += 6
-
-    // ============================================================
-    // STATUT
-    // ============================================================
-    const statusBox = { x: margins.left, y: y, w: contentWidth, h: 9 }
-    doc.setFillColor(statusConfig.bg)
-    doc.rect(statusBox.x, statusBox.y, statusBox.w, statusBox.h, 'F')
-    doc.setDrawColor(statusConfig.color)
-    doc.setLineWidth(0.3)
-    doc.rect(statusBox.x, statusBox.y, statusBox.w, statusBox.h, 'S')
-    
-    doc.setFontSize(10)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(statusConfig.color)
-    doc.text(`STATUT: ${statusConfig.label}`, pageWidth / 2, y + 6, { align: 'center' })
-    y += 12
-
-    // ============================================================
-    // INFORMATIONS GÉNÉRALES
-    // ============================================================
-    const infoBox = { x: margins.left, y: y, w: contentWidth, h: 24 }
-    doc.setDrawColor(borderColor)
-    doc.setLineWidth(0.2)
-    doc.rect(infoBox.x, infoBox.y, infoBox.w, infoBox.h, 'S')
-    
-    const midX = infoBox.x + infoBox.w / 2
-    doc.line(midX, infoBox.y, midX, infoBox.y + infoBox.h)
-
-    let infoY = infoBox.y + 4
-    doc.setFontSize(9)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(black)
-    doc.text('GÉNÉRAL', infoBox.x + 4, infoY)
-    infoY += 5
-    
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(black)
-    doc.text('Date création :', infoBox.x + 4, infoY)
-    doc.setFont('helvetica', 'normal')
-    doc.text(formatDate(transfer.created_at), infoBox.x + 35, infoY)
-    infoY += 5
-    
-    doc.setFont('helvetica', 'bold')
-    doc.text('Dernière modif :', infoBox.x + 4, infoY)
-    doc.setFont('helvetica', 'normal')
-    doc.text(formatDate(transfer.updated_at), infoBox.x + 35, infoY)
-
-    infoY = infoBox.y + 4
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(black)
-    doc.text('DOCUMENT', midX + 4, infoY)
-    infoY += 5
-    
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(black)
-    doc.text('Type :', midX + 4, infoY)
-    doc.setFont('helvetica', 'normal')
-    doc.text('Transfert de stock', midX + 20, infoY)
-    infoY += 5
-    
-    doc.setFont('helvetica', 'bold')
-    doc.text('Généré le :', midX + 4, infoY)
-    doc.setFont('helvetica', 'normal')
-    doc.text(formatDate(new Date()), midX + 20, infoY)
-
-    y = infoBox.y + infoBox.h + 6
-
-    // ============================================================
-    // AGENCES
-    // ============================================================
-    const agenceBox = { x: margins.left, y: y, w: contentWidth, h: 38 }
-    doc.setDrawColor(borderColor)
-    doc.setLineWidth(0.2)
-    doc.rect(agenceBox.x, agenceBox.y, agenceBox.w, agenceBox.h, 'S')
-    
-    const agenceMidX = agenceBox.x + agenceBox.w / 2
-    doc.line(agenceMidX, agenceBox.y, agenceMidX, agenceBox.y + agenceBox.h)
-
-    let agenceY = agenceBox.y + 4
-    
-    // Agence source
-    doc.setFontSize(9)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(primaryColor)
-    doc.text('AGENCE SOURCE', agenceBox.x + 4, agenceY)
-    agenceY += 6
-    
-    doc.setFontSize(8)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(black)
-    doc.text('Nom :', agenceBox.x + 4, agenceY)
-    doc.setFont('helvetica', 'normal')
-    doc.text(fromAgence.nom || 'N/A', agenceBox.x + 25, agenceY)
-    agenceY += 5
-    
-    doc.setFont('helvetica', 'bold')
-    doc.text('Type :', agenceBox.x + 4, agenceY)
-    doc.setFont('helvetica', 'normal')
-    doc.text(fromAgence.type_agence === 'principale' ? 'Principale' : 'Secondaire', agenceBox.x + 25, agenceY)
-    agenceY += 5
-    
-    doc.setFont('helvetica', 'bold')
-    doc.text('Entrepôt :', agenceBox.x + 4, agenceY)
-    doc.setFont('helvetica', 'normal')
-    doc.text(fromWarehouse.name || 'N/A', agenceBox.x + 25, agenceY)
-
-    // Agence destination
-    agenceY = agenceBox.y + 4
-    doc.setFontSize(9)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(primaryColor)
-    doc.text('AGENCE DESTINATION', agenceMidX + 4, agenceY)
-    agenceY += 6
-    
-    doc.setFontSize(8)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(black)
-    doc.text('Nom :', agenceMidX + 4, agenceY)
-    doc.setFont('helvetica', 'normal')
-    doc.text(toAgence.nom || 'N/A', agenceMidX + 25, agenceY)
-    agenceY += 5
-    
-    doc.setFont('helvetica', 'bold')
-    doc.text('Type :', agenceMidX + 4, agenceY)
-    doc.setFont('helvetica', 'normal')
-    doc.text(toAgence.type_agence === 'principale' ? 'Principale' : 'Secondaire', agenceMidX + 25, agenceY)
-    agenceY += 5
-    
-    doc.setFont('helvetica', 'bold')
-    doc.text('Entrepôt :', agenceMidX + 4, agenceY)
-    doc.setFont('helvetica', 'normal')
-    doc.text(toWarehouse.name || 'N/A', agenceMidX + 25, agenceY)
-
-    y = agenceBox.y + agenceBox.h + 6
-
-    // ============================================================
-    // TABLEAU DES ARTICLES - Ordre: RÉFÉRENCE puis DÉSIGNATION
-    // ============================================================
-    const cols = {
-      reference: { w: 35, align: 'center' },
-      designation: { w: 65, align: 'left' },
-      qte: { w: 22, align: 'center' },
-      recu: { w: 22, align: 'center' },
-      pu: { w: 32, align: 'right' },
-      total: { w: 34, align: 'right' }
-    }
-    
-    let currentX = margins.left
-    const posRef = currentX
-    currentX += cols.reference.w
-    const posDesignation = currentX
-    currentX += cols.designation.w
-    const posQte = currentX
-    currentX += cols.qte.w
-    const posRecu = currentX
-    currentX += cols.recu.w
-    const posPu = currentX
-    currentX += cols.pu.w
-    const posTotal = currentX
-    
-    const rowH = 8
-    const tableTop = y
-
-    // En-tête du tableau
-    doc.setFillColor(lightGray)
-    doc.rect(margins.left, tableTop, contentWidth, rowH, 'F')
-    doc.setDrawColor(borderColor)
-    doc.setLineWidth(0.1)
-    doc.rect(margins.left, tableTop, contentWidth, rowH, 'S')
-    doc.line(posDesignation, tableTop, posDesignation, tableTop + rowH)
-    doc.line(posQte, tableTop, posQte, tableTop + rowH)
-    doc.line(posRecu, tableTop, posRecu, tableTop + rowH)
-    doc.line(posPu, tableTop, posPu, tableTop + rowH)
-    doc.line(posTotal, tableTop, posTotal, tableTop + rowH)
-
-    doc.setFontSize(8)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(black)
-    const headerY = tableTop + rowH / 2 + 1.5
-    doc.text('RÉFÉRENCE', posRef + cols.reference.w / 2, headerY, { align: 'center' })
-    doc.text('DÉSIGNATION', posDesignation + 2, headerY)
-    doc.text('QTÉ', posQte + cols.qte.w / 2, headerY, { align: 'center' })
-    doc.text('REÇU', posRecu + cols.recu.w / 2, headerY, { align: 'center' })
-    doc.text('PRIX U.', posPu + cols.pu.w - 3, headerY, { align: 'right' })
-    doc.text('TOTAL', posTotal + cols.total.w - 3, headerY, { align: 'right' })
-
-    y = tableTop + rowH
-
-    doc.setFontSize(8)
-    doc.setFont('helvetica', 'normal')
-
-    if (items.length) {
-      items.forEach((item, index) => {
-        const reference = (item.product?.reference || '-').substring(0, 15)
-        const designation = (item.product?.name || item.product_name || '-').substring(0, 35)
-        const qty = parseFloat(item.quantity) || 0
-        const received = parseFloat(item.quantity_received) || 0
-        const price = parseFloat(item.unit_price) || 0
-        const total = qty * price
-
-        doc.rect(margins.left, y, contentWidth, rowH, 'S')
-        doc.line(posDesignation, y, posDesignation, y + rowH)
-        doc.line(posQte, y, posQte, y + rowH)
-        doc.line(posRecu, y, posRecu, y + rowH)
-        doc.line(posPu, y, posPu, y + rowH)
-        doc.line(posTotal, y, posTotal, y + rowH)
-
-        const cellY = y + rowH / 2 + 1.5
-        doc.text(reference, posRef + cols.reference.w / 2, cellY, { align: 'center' })
-        doc.text(designation, posDesignation + 2, cellY)
-        doc.text(formatNumber(qty), posQte + cols.qte.w / 2, cellY, { align: 'center' })
-        doc.text(formatNumber(received), posRecu + cols.recu.w / 2, cellY, { align: 'center' })
-        doc.text(formatNumber(price), posPu + cols.pu.w - 3, cellY, { align: 'right' })
-        doc.setFont('helvetica', 'bold')
-        doc.text(formatNumber(total), posTotal + cols.total.w - 3, cellY, { align: 'right' })
-        doc.setFont('helvetica', 'normal')
-
-        y += rowH
-      })
-    } else {
-      doc.rect(margins.left, y, contentWidth, rowH, 'S')
-      doc.text('Aucun article', margins.left + contentWidth / 2, y + rowH / 2 + 1.5, { align: 'center' })
-      y += rowH
-    }
-
-    y += 3
-    doc.setDrawColor(borderColor)
-    doc.setLineWidth(0.2)
-    doc.line(margins.left, y, pageWidth - margins.right, y)
-    y += 4
-
-    // ============================================================
-    // RÉCAPITULATIF
-    // ============================================================
-    const recapBox = { x: margins.left, y: y, w: contentWidth, h: 35 }
-    doc.setDrawColor(borderColor)
-    doc.setLineWidth(0.2)
-    doc.rect(recapBox.x, recapBox.y, recapBox.w, recapBox.h, 'S')
-    
-    const recapMidX = recapBox.x + recapBox.w * 0.5
-    doc.line(recapMidX, recapBox.y, recapMidX, recapBox.y + recapBox.h)
-
-    let ry = recapBox.y + 4
-    doc.setFontSize(9)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(black)
-    doc.text('RÉCAPITULATIF', recapBox.x + recapBox.w / 2, ry, { align: 'center' })
-    ry += 6
-
-    doc.setFontSize(8)
-    
-    doc.setFont('helvetica', 'bold')
-    doc.text('Articles :', recapBox.x + 5, ry)
-    doc.setFont('helvetica', 'normal')
-    doc.text(`${items.length} article(s)`, recapBox.x + 40, ry)
-    ry += 5
-
-    doc.setFont('helvetica', 'bold')
-    doc.text('Qté totale :', recapBox.x + 5, ry)
-    doc.setFont('helvetica', 'normal')
-    doc.text(`${formatNumber(totalQuantity)} unités`, recapBox.x + 40, ry)
-    ry += 5
-
-    doc.setFont('helvetica', 'bold')
-    doc.text('Qté reçue :', recapBox.x + 5, ry)
-    doc.setFont('helvetica', 'normal')
-    const receivedPercent = totalQuantity > 0 ? (totalReceived / totalQuantity * 100).toFixed(1) : 0
-    doc.text(`${formatNumber(totalReceived)} (${receivedPercent}%)`, recapBox.x + 40, ry)
-
-    ry = recapBox.y + 4
-    ry += 6
-    ry += 5
-    ry += 5
-    
-    doc.setFont('helvetica', 'bold')
-    doc.text('Taux réception :', recapMidX + 5, ry)
-    doc.setFont('helvetica', 'normal')
-    const completionPercent = totalQuantity > 0 ? (totalReceived / totalQuantity * 100).toFixed(1) : 0
-    doc.text(`${completionPercent}%`, recapMidX + 45, ry)
-    ry += 6
-
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(primaryColor)
-    doc.text('VALEUR TOTALE :', recapMidX + 5, ry)
-    doc.setFontSize(9)
-    doc.setFont('helvetica', 'bold')
-    doc.text(formatCurrency(totalAmount), recapMidX + 45, ry)
-
-    y = recapBox.y + recapBox.h + 5
-
-    // ============================================================
-    // NOTES
-    // ============================================================
-    if (transfer.notes) {
-      const notesLines = doc.splitTextToSize(transfer.notes, contentWidth - 10)
-      const notesBoxH = Math.min(20, notesLines.length * 4 + 8)
-      if (y + notesBoxH < 270) {
-        doc.setDrawColor(borderColor)
-        doc.setLineWidth(0.2)
-        doc.rect(margins.left, y, contentWidth, notesBoxH, 'S')
-        
-        doc.setFontSize(7)
-        doc.setFont('helvetica', 'bold')
-        doc.setTextColor(black)
-        doc.text('NOTES', margins.left + 4, y + 4)
-        
-        doc.setFont('helvetica', 'normal')
-        doc.setTextColor(gray)
-        doc.text(notesLines, margins.left + 4, y + 8)
-        y += notesBoxH + 4
-      }
-    }
-
-    // Motif de rejet
-    if (transfer.status === 'rejected' && transfer.rejected_reason) {
-      const reasonLines = doc.splitTextToSize(transfer.rejected_reason, contentWidth - 10)
-      const reasonBoxH = Math.min(16, reasonLines.length * 4 + 8)
-      if (y + reasonBoxH < 270) {
-        doc.setFillColor('#fee2e2')
-        doc.rect(margins.left, y, contentWidth, reasonBoxH, 'F')
-        doc.setDrawColor(errorColor)
-        doc.setLineWidth(0.3)
-        doc.rect(margins.left, y, contentWidth, reasonBoxH, 'S')
-        
-        doc.setFontSize(7)
-        doc.setFont('helvetica', 'bold')
-        doc.setTextColor(errorColor)
-        doc.text('MOTIF DU REJET', margins.left + 4, y + 4)
-        
-        doc.setFont('helvetica', 'normal')
-        doc.setTextColor(black)
-        doc.text(reasonLines, margins.left + 4, y + 8)
-        y += reasonBoxH + 4
-      }
-    }
-
-    // ============================================================
-    // SIGNATURES
-    // ============================================================
-    if (y + 25 < 280) {
-      const signatureY = y
-      
-      doc.setDrawColor(borderColor)
-      doc.setLineWidth(0.2)
-      doc.line(margins.left, signatureY, pageWidth - margins.right, signatureY)
-      y += 4
-      
-      doc.setFontSize(8)
-      doc.setFont('helvetica', 'bold')
-      doc.setTextColor(black)
-      doc.text('SIGNATURES', pageWidth / 2, signatureY + 4, { align: 'center' })
-      
-      const signBoxW = (contentWidth - 10) / 2
-      
-      doc.setDrawColor(borderColor)
-      doc.setLineWidth(0.2)
-      doc.rect(margins.left, signatureY + 7, signBoxW, 18, 'S')
-      doc.setFontSize(6)
-      doc.setFont('helvetica', 'normal')
-      doc.setTextColor(gray)
-      doc.text('Cachet et signature de l\'agence source', margins.left + signBoxW / 2, signatureY + 13, { align: 'center' })
-      doc.text('Date: _____________', margins.left + signBoxW / 2, signatureY + 20, { align: 'center' })
-      
-      doc.rect(margins.left + signBoxW + 10, signatureY + 7, signBoxW, 18, 'S')
-      doc.text('Cachet et signature de l\'agence destination', margins.left + signBoxW + 10 + signBoxW / 2, signatureY + 13, { align: 'center' })
-      doc.text('Date: _____________', margins.left + signBoxW + 10 + signBoxW / 2, signatureY + 20, { align: 'center' })
-      
-      y = signatureY + 28
-    }
-
-    // ============================================================
-    // PIED DE PAGE
-    // ============================================================
-    const footerY = 287
-    doc.setDrawColor(borderColor)
-    doc.setLineWidth(0.2)
-    doc.line(margins.left, footerY - 8, pageWidth - margins.right, footerY - 8)
-    
-    doc.setFontSize(7)
-    doc.setTextColor(gray)
-    doc.setFont('helvetica', 'normal')
-    doc.text('SEYDI GROUP SARL - Dakar, Sénégal - Tél: +221 33 123 45 67', pageWidth / 2, footerY - 4, { align: 'center' })
-    doc.text(`Document généré le ${formatDateTime(new Date())}`, pageWidth / 2, footerY, { align: 'center' })
-    doc.text('Ce document fait foi de transfert de stock entre les deux agences', pageWidth / 2, footerY + 4, { align: 'center' })
-
-    const pageCount = doc.internal.getNumberOfPages()
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i)
-      doc.setFontSize(7)
-      doc.setTextColor(gray)
-      doc.text(`Page ${i}/${pageCount}`, pageWidth - margins.right, footerY + 4, { align: 'right' })
-    }
-
-    doc.save(`Transfert_${transfer.reference || 'transfert'}.pdf`)
-    return true
-
-  } catch (error) {
-    console.error('Erreur TransfertPdf:', error)
-    throw error
+    const date = new Date(dateString);
+    return date.toLocaleDateString('fr-FR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  } catch {
+    return dateString;
   }
-}
+};
 
-export default TransfertPdf
+const formatDateTime = (dateString) => {
+  if (!dateString) return '-';
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('fr-FR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return dateString;
+  }
+};
+
+const getStatusInfo = (status) => {
+  const map = {
+    draft: { label: 'Brouillon', style: styles.statusDraft, textStyle: styles.statusTextDraft },
+    pending_approval: { label: 'En attente', style: styles.statusPending, textStyle: styles.statusTextPending },
+    approved: { label: 'Approuvé', style: styles.statusApproved, textStyle: styles.statusTextApproved },
+    rejected: { label: 'Rejeté', style: styles.statusRejected, textStyle: styles.statusTextRejected },
+    in_transit: { label: 'En transit', style: styles.statusInTransit, textStyle: styles.statusTextInTransit },
+    partial: { label: 'Réception partielle', style: styles.statusPartial, textStyle: styles.statusTextPartial },
+    completed: { label: 'Terminé', style: styles.statusCompleted, textStyle: styles.statusTextCompleted },
+    cancelled: { label: 'Annulé', style: styles.statusCancelled, textStyle: styles.statusTextCancelled },
+  };
+  return map[status] || map.draft;
+};
+
+// ================================================================
+// COMPOSANT PRINCIPAL – TransfertPDF (identique à ExpensePDF)
+// ================================================================
+const TransfertPDF = ({ transfer }) => {
+  const data = transfer || {};
+  const items = data.items || [];
+  const fromAgence = data.from_agence || {};
+  const toAgence = data.to_agence || {};
+  const fromWarehouse = data.from_warehouse || {};
+  const toWarehouse = data.to_warehouse || {};
+  const statusInfo = getStatusInfo(data.status);
+
+  const company = {
+    name: 'SEYDI GROUP SARL',
+    address: 'Dakar, Sénégal',
+    phone: '+221 33 123 45 67',
+    email: 'contact@seydigroup.com',
+    rccm: 'SN DKR 2023 B 123',
+    capital: '10 000 000 FCFA',
+  };
+
+  // Totaux
+  const totalQuantity = items.reduce((sum, item) => sum + (parseFloat(item.quantity) || 0), 0);
+  const totalReceived = items.reduce((sum, item) => sum + (parseFloat(item.quantity_received) || 0), 0);
+  const totalAmount = items.reduce((sum, item) => sum + ((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0)), 0);
+  const completionPercent = totalQuantity > 0 ? ((totalReceived / totalQuantity) * 100).toFixed(1) : 0;
+
+  return (
+    <Document>
+      <Page size="A4" style={styles.page}>
+        <Text style={styles.watermark}>BON DE TRANSFERT</Text>
+
+        {/* En-tête SEYDI GROUP SARL avec logo */}
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <Image src={logoSvg} style={styles.logo} />
+            <View style={styles.companyInfo}>
+              <Text style={styles.companyName}>SEYDI GROUP SARL</Text>
+              <Text style={styles.companySub}>Capital social : 10 000 000 FCFA</Text>
+              <Text style={styles.companySub}>N° RCCM : SN DKR 2023 B 123</Text>
+              <Text style={styles.companySub}>DAKAR, SÉNÉGAL</Text>
+            </View>
+          </View>
+          <View style={styles.headerRight}>
+            <Text style={styles.documentTitle}>BON DE TRANSFERT</Text>
+            <Text style={styles.documentRef}>N° {data.reference || 'Sans référence'}</Text>
+            <Text style={styles.documentRef}>
+              Émis le {formatDate(new Date().toISOString())}
+            </Text>
+          </View>
+        </View>
+
+        {/* Informations générales + statut */}
+        <View style={styles.infoGrid}>
+          <View style={styles.infoCol}>
+            <Text style={styles.infoLabel}>Date création</Text>
+            <Text style={styles.infoValue}>{formatDate(data.created_at)}</Text>
+          </View>
+          <View style={styles.infoCol}>
+            <Text style={styles.infoLabel}>Dernière modif.</Text>
+            <Text style={styles.infoValue}>{formatDate(data.updated_at)}</Text>
+          </View>
+          <View style={styles.infoCol}>
+            <Text style={styles.infoLabel}>Type</Text>
+            <Text style={styles.infoValue}>Transfert de stock</Text>
+          </View>
+          <View style={styles.infoCol}>
+            <Text style={styles.infoLabel}>Statut</Text>
+            <View style={[styles.statusBadge, statusInfo.style]}>
+              <Text style={[styles.statusText, statusInfo.textStyle]}>{statusInfo.label}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Agences */}
+        <Text style={styles.sectionTitle}>AGENCES</Text>
+        <View style={{ flexDirection: 'row', marginBottom: 10 }}>
+          <View style={{ flex: 1, paddingRight: 10 }}>
+            <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#1a237e' }}>AGENCE SOURCE</Text>
+            <View style={{ marginTop: 5 }}>
+              <Text style={styles.clientRow}>
+                <Text style={styles.clientLabel}>Nom :</Text>
+                <Text style={styles.clientValue}>{fromAgence.nom || 'N/A'}</Text>
+              </Text>
+              <Text style={styles.clientRow}>
+                <Text style={styles.clientLabel}>Type :</Text>
+                <Text style={styles.clientValue}>{fromAgence.type_agence === 'principale' ? 'Principale' : 'Secondaire'}</Text>
+              </Text>
+              <Text style={styles.clientRowLast}>
+                <Text style={styles.clientLabel}>Entrepôt :</Text>
+                <Text style={styles.clientValue}>{fromWarehouse.name || 'N/A'}</Text>
+              </Text>
+            </View>
+          </View>
+          <View style={{ flex: 1, paddingLeft: 10 }}>
+            <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#1a237e' }}>AGENCE DESTINATION</Text>
+            <View style={{ marginTop: 5 }}>
+              <Text style={styles.clientRow}>
+                <Text style={styles.clientLabel}>Nom :</Text>
+                <Text style={styles.clientValue}>{toAgence.nom || 'N/A'}</Text>
+              </Text>
+              <Text style={styles.clientRow}>
+                <Text style={styles.clientLabel}>Type :</Text>
+                <Text style={styles.clientValue}>{toAgence.type_agence === 'principale' ? 'Principale' : 'Secondaire'}</Text>
+              </Text>
+              <Text style={styles.clientRowLast}>
+                <Text style={styles.clientLabel}>Entrepôt :</Text>
+                <Text style={styles.clientValue}>{toWarehouse.name || 'N/A'}</Text>
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Articles */}
+        <Text style={styles.sectionTitle}>ARTICLES</Text>
+        {items.length === 0 ? (
+          <View style={styles.emptyItems}>
+            <Text style={styles.emptyItemsText}>Aucun article dans ce transfert.</Text>
+          </View>
+        ) : (
+          <>
+            <View style={styles.tableHeader}>
+              <Text style={[styles.tableHeaderText, styles.colRef]}>Réf.</Text>
+              <Text style={[styles.tableHeaderText, styles.colDesignation]}>Désignation</Text>
+              <Text style={[styles.tableHeaderText, styles.colQte]}>Qté</Text>
+              <Text style={[styles.tableHeaderText, styles.colRecu]}>Reçu</Text>
+              <Text style={[styles.tableHeaderText, styles.colPrix]}>Prix U.</Text>
+              <Text style={[styles.tableHeaderText, styles.colTotal]}>Total</Text>
+            </View>
+            {items.map((item, index) => {
+              const qty = parseFloat(item.quantity) || 0;
+              const received = parseFloat(item.quantity_received) || 0;
+              const price = parseFloat(item.unit_price) || 0;
+              const total = qty * price;
+              return (
+                <View style={[styles.tableRow, index % 2 === 1 ? styles.tableRowAlt : null]} key={index}>
+                  <Text style={[styles.tableText, styles.colRef]}>
+                    {item.product?.reference || '-'}
+                  </Text>
+                  <Text style={[styles.tableText, styles.colDesignation]}>
+                    {item.product?.name || item.product_name || 'Produit inconnu'}
+                  </Text>
+                  <Text style={[styles.tableText, styles.colQte]}>{qty}</Text>
+                  <Text style={[styles.tableText, styles.colRecu]}>{received}</Text>
+                  <Text style={[styles.tableText, styles.colPrix]}>{formatCurrency(price)}</Text>
+                  <Text style={[styles.tableText, styles.colTotal]}>{formatCurrency(total)}</Text>
+                </View>
+              );
+            })}
+          </>
+        )}
+
+        {/* Totaux */}
+        <View style={styles.totalsBox}>
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Articles</Text>
+            <Text style={styles.totalValue}>{items.length}</Text>
+          </View>
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Qté totale</Text>
+            <Text style={styles.totalValue}>{formatNumber(totalQuantity)}</Text>
+          </View>
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Qté reçue</Text>
+            <Text style={styles.totalValue}>{formatNumber(totalReceived)} ({completionPercent}%)</Text>
+          </View>
+          <View style={styles.totalFinal}>
+            <Text style={styles.totalFinalLabel}>VALEUR TOTALE</Text>
+            <Text style={styles.totalFinalValue}>{formatCurrency(totalAmount)}</Text>
+          </View>
+        </View>
+
+        {/* Notes */}
+        {data.notes && (
+          <View style={styles.notesBox}>
+            <Text style={styles.notesLabel}>Notes</Text>
+            <Text style={styles.notesText}>{data.notes}</Text>
+          </View>
+        )}
+
+        {/* Motif de rejet */}
+        {data.status === 'rejected' && data.rejected_reason && (
+          <View style={styles.rejectionBox}>
+            <Text style={styles.rejectionLabel}>Motif du rejet</Text>
+            <Text style={styles.rejectionText}>{data.rejected_reason}</Text>
+          </View>
+        )}
+
+        {/* Signatures */}
+        <View style={styles.signature}>
+          <View style={styles.signatureBlock}>
+            <View style={styles.signatureLine} />
+            <Text style={styles.signatureLabel}>Signature agence source</Text>
+            <Text style={styles.signatureSub}>Cachet et signature</Text>
+          </View>
+          <View style={styles.signatureBlock}>
+            <View style={styles.signatureLine} />
+            <Text style={styles.signatureLabel}>Signature agence destination</Text>
+            <Text style={styles.signatureSub}>Cachet et signature</Text>
+          </View>
+        </View>
+
+        {/* Pied de page */}
+        <View style={styles.footer} fixed>
+          <Text style={styles.footerText}>
+            SEYDI GROUP SARL - DAKAR, SÉNÉGAL
+          </Text>
+          <Text style={styles.footerText}>
+            Tél: (+221) 33 123 45 67 - Email: contact@seydigroup.com
+          </Text>
+          <Text style={styles.footerText}>
+            RCCM: SN DKR 2023 B 123
+          </Text>
+          <Text style={styles.footerText}>
+            Généré le {formatDateTime(new Date().toISOString())}
+          </Text>
+        </View>
+      </Page>
+    </Document>
+  );
+};
+
+// ================================================================
+// FONCTION DE TÉLÉCHARGEMENT (exportée par défaut)
+// ================================================================
+/**
+ * Télécharge le bon de transfert au format PDF
+ * @param {Object} transfer - Les données du transfert
+ * @param {string} filename - Nom du fichier (optionnel)
+ * @returns {Promise<void>}
+ */
+const TransfertPdf = async (transfer, filename = null) => {
+  try {
+    if (!transfer || typeof transfer !== 'object') {
+      throw new Error('Les données du transfert sont invalides');
+    }
+
+    const blob = await pdf(<TransfertPDF transfer={transfer} />).toBlob();
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename || `Transfert_${transfer.reference || 'transfert'}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    return true;
+  } catch (error) {
+    console.error('Erreur lors du téléchargement du bon de transfert :', error);
+    throw error;
+  }
+};
+
+export default TransfertPdf;

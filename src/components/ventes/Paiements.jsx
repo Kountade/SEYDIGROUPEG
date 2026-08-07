@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
-import PaiementPdf from './PaiementPdf'
+import { downloadPaiementPDF } from './PaiementPdf'
 import {
   Plus, Edit, Trash2, Search, RefreshCw, Filter, CreditCard,
   X, AlertCircle, CheckCircle, Eye, MoreVertical, ChevronLeft, ChevronRight,
@@ -118,6 +118,20 @@ const Paiements = () => {
     return 'Anonyme'
   }
 
+  const handleDownloadPDF = async (paiement, id) => {
+    setPdfLoadingId(id)
+    try {
+      // On pourrait aussi récupérer le paiement complet si nécessaire
+      await downloadPaiementPDF(paiement)
+      showNotification('Reçu PDF généré avec succès', 'success')
+    } catch (err) {
+      console.error(err)
+      showNotification('Erreur lors de la génération du PDF', 'error')
+    } finally {
+      setPdfLoadingId(null)
+    }
+  }
+
   const filteredAndSorted = React.useMemo(() => {
     let filtered = paiements.filter(p => {
       const search = searchTerm.toLowerCase()
@@ -158,18 +172,6 @@ const Paiements = () => {
   const paginated = filteredAndSorted.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
 
   const handleViewDetail = (id) => navigate(`/paiements/${id}`)
-
-  const handleDownloadPDF = async (paiement, id) => {
-    setPdfLoadingId(id)
-    try {
-      await PaiementPdf(paiement)
-    } catch (err) {
-      console.error(err)
-      showNotification('Erreur lors de la génération du PDF', 'error')
-    } finally {
-      setPdfLoadingId(null)
-    }
-  }
 
   if (loading) {
     return (
