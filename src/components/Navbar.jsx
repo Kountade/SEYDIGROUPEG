@@ -654,6 +654,10 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       items: [
         { id: 'fournisseurs', text: 'Fournisseurs', icon: Building2, path: '/fournisseurs', permission: canViewSuppliers(), badge: fournisseursCount },
         { id: 'commandes', text: 'Commandes', icon: FileText, path: '/commandes-fournisseurs', permission: canViewPurchases(), badge: achatsALivrer },
+        // ✅ NOUVEAU : Factures Fournisseur
+        { id: 'factures-fournisseur', text: 'Factures Fournisseur', icon: Receipt, path: '/factures-fournisseur', permission: canViewPurchases(), badge: 0 },
+        // ✅ NOUVEAU : Paiement Fournisseur
+        { id: 'paiement-fournisseur', text: 'Paiement Fournisseur', icon: DollarSign, path: '/paiement-fournisseur', permission: canViewPurchases(), badge: 0 },
         { id: 'receptions', text: 'Réceptions', icon: Truck, path: '/receptions', permission: canViewPurchases() },
         { id: 'frais', text: 'Frais de réception', icon: DollarSign, path: '/frais', permission: canViewPurchases() },
         { id: 'catalogue', text: 'Catalogue', icon: ClipboardList, path: '/supplier-catalogs', permission: canViewPurchases() },
