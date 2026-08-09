@@ -1,4 +1,5 @@
 // src/components/achats/CommandesFournisseurs.jsx
+
 import React, { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
@@ -14,22 +15,20 @@ import {
   AlertCircle,
   CheckCircle,
   Eye,
-  MoreVertical,
   ChevronLeft,
   ChevronRight,
   ArrowUpDown,
-  LayoutGrid,
   List,
   Truck,
   Clock,
   DollarSign,
-  Calendar,
-  Building2,
   FileText,
   XCircle,
   Send,
   CheckSquare,
-  Package
+  Package,
+  AlertTriangle,
+  Info
 } from 'lucide-react'
 
 const CommandesFournisseurs = () => {
@@ -55,21 +54,32 @@ const CommandesFournisseurs = () => {
     draft: 0,
     confirmed: 0,
     sent: 0,
+    partially_received: 0,
     received: 0,
     cancelled: 0,
     totalAmount: 0
   })
 
-  // Statuts des commandes
+  // ✅ Statuts des commandes avec couleurs et icônes
   const statusConfig = {
-    draft: { label: 'Brouillon', color: 'neutral', icon: FileText },
-    sent: { label: 'Envoyée', color: 'info', icon: Send },
-    confirmed: { label: 'Confirmée', color: 'primary', icon: CheckCircle },
-    in_transit: { label: 'En transit', color: 'warning', icon: Truck },
-    partially_received: { label: 'Partiellement reçue', color: 'info', icon: Package },
-    received: { label: 'Reçue', color: 'success', icon: CheckSquare },
-    cancelled: { label: 'Annulée', color: 'error', icon: XCircle },
-    rejected: { label: 'Rejetée', color: 'error', icon: XCircle }
+    draft: { label: 'Brouillon', color: 'neutral', icon: FileText, description: 'En attente de validation' },
+    sent: { label: 'Envoyée', color: 'info', icon: Send, description: 'Envoyée au fournisseur' },
+    confirmed: { label: 'Confirmée', color: 'primary', icon: CheckCircle, description: 'Confirmée par le fournisseur' },
+    in_transit: { label: 'En transit', color: 'warning', icon: Truck, description: 'En cours de livraison' },
+    partially_received: { 
+      label: 'Partiellement reçue', 
+      color: 'warning', 
+      icon: Package, 
+      description: 'Une partie des produits a été reçue' 
+    },
+    received: { 
+      label: 'Complètement reçue', 
+      color: 'success', 
+      icon: CheckSquare, 
+      description: 'Tous les produits ont été reçus' 
+    },
+    cancelled: { label: 'Annulée', color: 'error', icon: XCircle, description: 'Commande annulée' },
+    rejected: { label: 'Rejetée', color: 'error', icon: XCircle, description: 'Commande rejetée' }
   }
 
   const urgencyConfig = {
@@ -89,7 +99,6 @@ const CommandesFournisseurs = () => {
         return
       }
       
-      // Essayer d'abord avec /purchase-orders/ puis /commandes-fournisseurs/
       let response
       try {
         response = await AxiosInstance.get('/purchase-orders/')
@@ -102,18 +111,65 @@ const CommandesFournisseurs = () => {
       }
       
       const orders = response.data || []
-      setCommandes(orders)
       
-      // Calculer les statistiques
-      const total = orders.length
-      const draft = orders.filter(o => o.status === 'draft').length
-      const confirmed = orders.filter(o => o.status === 'confirmed').length
-      const sent = orders.filter(o => o.status === 'sent').length
-      const received = orders.filter(o => o.status === 'received').length
-      const cancelled = orders.filter(o => o.status === 'cancelled').length
-      const totalAmount = orders.reduce((sum, o) => sum + (parseFloat(o.total) || 0), 0)
+      // ✅ Enrichir les commandes avec des informations de réception
+      const enrichedOrders = orders.map(order => {
+        const items = order.items || []
+        const totalItems = items.length
+        const fullyReceived = items.filter(item => 
+          (item.quantity_ordered || 0) <= (item.quantity_received || 0)
+        ).length
+        const partiallyReceived = items.filter(item => 
+          (item.quantity_received || 0) > 0 && (item.quantity_ordered || 0) > (item.quantity_received || 0)
+        ).length
+        
+        // ✅ Calculer le pourcentage de réception
+        let receptionPercentage = 0
+        if (totalItems > 0) {
+          const totalOrdered = items.reduce((sum, item) => sum + (item.quantity_ordered || 0), 0)
+          const totalReceived = items.reduce((sum, item) => sum + (item.quantity_received || 0), 0)
+          receptionPercentage = totalOrdered > 0 ? Math.round((totalReceived / totalOrdered) * 100) : 0
+        }
+        
+        return {
+          ...order,
+          reception_stats: {
+            total_items: totalItems,
+            fully_received: fullyReceived,
+            partially_received: partiallyReceived,
+            percentage: receptionPercentage,
+            items: items.map(item => ({
+              ...item,
+              remaining: (item.quantity_ordered || 0) - (item.quantity_received || 0),
+              is_fully_received: (item.quantity_ordered || 0) <= (item.quantity_received || 0),
+              is_partially_received: (item.quantity_received || 0) > 0 && (item.quantity_ordered || 0) > (item.quantity_received || 0)
+            }))
+          }
+        }
+      })
       
-      setStats({ total, draft, confirmed, sent, received, cancelled, totalAmount })
+      setCommandes(enrichedOrders)
+      
+      // ✅ Calculer les statistiques avec partially_received
+      const total = enrichedOrders.length
+      const draft = enrichedOrders.filter(o => o.status === 'draft').length
+      const confirmed = enrichedOrders.filter(o => o.status === 'confirmed').length
+      const sent = enrichedOrders.filter(o => o.status === 'sent').length
+      const partially_received = enrichedOrders.filter(o => o.status === 'partially_received').length
+      const received = enrichedOrders.filter(o => o.status === 'received').length
+      const cancelled = enrichedOrders.filter(o => o.status === 'cancelled').length
+      const totalAmount = enrichedOrders.reduce((sum, o) => sum + (parseFloat(o.total) || 0), 0)
+      
+      setStats({ 
+        total, 
+        draft, 
+        confirmed, 
+        sent, 
+        partially_received,
+        received, 
+        cancelled, 
+        totalAmount 
+      })
       
     } catch (error) {
       console.error('Erreur chargement commandes:', error)
@@ -146,16 +202,6 @@ const CommandesFournisseurs = () => {
     }
   }
 
-  const handleUpdateStatus = async (id, newStatus) => {
-    try {
-      await AxiosInstance.patch(`/purchase-orders/${id}/`, { status: newStatus })
-      showNotification(`Statut de la commande mis à jour avec succès`, 'success')
-      fetchData()
-    } catch (error) {
-      showNotification('Erreur lors de la mise à jour du statut', 'error')
-    }
-  }
-
   const handleSort = (field) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
@@ -165,13 +211,68 @@ const CommandesFournisseurs = () => {
     }
   }
 
-  const getStatusBadge = (status) => {
+  // ✅ Fonction pour afficher la progression de réception
+  const getReceptionProgress = (order) => {
+    if (!order.reception_stats) return null
+    
+    const { percentage, total_items, fully_received, partially_received } = order.reception_stats
+    
+    if (order.status === 'received') {
+      return (
+        <div className="flex items-center gap-2">
+          <div className="w-20 sm:w-32 bg-gray-200 rounded-full h-2">
+            <div className="bg-success rounded-full h-2" style={{ width: '100%' }}></div>
+          </div>
+          <span className="text-xs font-medium text-success">100%</span>
+        </div>
+      )
+    }
+    
+    if (order.status === 'partially_received' || partially_received > 0 || fully_received > 0) {
+      return (
+        <div className="flex items-center gap-2">
+          <div className="w-20 sm:w-32 bg-gray-200 rounded-full h-2">
+            <div className="bg-warning rounded-full h-2" style={{ width: `${percentage}%` }}></div>
+          </div>
+          <span className="text-xs font-medium text-warning">{percentage}%</span>
+          <span className="text-xs text-gray-400 hidden sm:inline">
+            ({fully_received}/{total_items})
+          </span>
+        </div>
+      )
+    }
+    
+    return (
+      <div className="flex items-center gap-2">
+        <div className="w-20 sm:w-32 bg-gray-200 rounded-full h-2">
+          <div className="bg-gray-400 rounded-full h-2" style={{ width: '0%' }}></div>
+        </div>
+        <span className="text-xs font-medium text-gray-400">0%</span>
+      </div>
+    )
+  }
+
+  // ✅ Fonction pour obtenir le badge de statut avec plus d'informations
+  const getStatusBadge = (status, order = null) => {
     const config = statusConfig[status] || statusConfig.draft
     const Icon = config.icon
+    
+    // ✅ Ajouter un indicateur supplémentaire pour les commandes partiellement reçues
+    let extraInfo = null
+    if (status === 'partially_received' && order?.reception_stats) {
+      const { percentage, fully_received, total_items } = order.reception_stats
+      extraInfo = (
+        <span className="text-[10px] ml-1 opacity-75">
+          ({percentage}% - {fully_received}/{total_items})
+        </span>
+      )
+    }
+    
     return (
       <div className={`badge badge-${config.color} gap-1 text-xs`}>
         <Icon className="w-3 h-3" />
         {config.label}
+        {extraInfo}
       </div>
     )
   }
@@ -246,7 +347,6 @@ const CommandesFournisseurs = () => {
     currentPage * itemsPerPage
   )
 
-  // Ajuster itemsPerPage selon la taille de l'écran
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth < 640) {
@@ -344,8 +444,8 @@ const CommandesFournisseurs = () => {
         </div>
       </div>
 
-      {/* Cartes statistiques */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 sm:gap-3 lg:gap-4">
+      {/* ✅ Cartes statistiques avec partially_received */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 sm:gap-3 lg:gap-4">
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
           <div className="stat-figure text-primary"><ShoppingCart className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" /></div>
           <div className="stat-title text-xs sm:text-sm font-semibold">Total</div>
@@ -370,9 +470,16 @@ const CommandesFournisseurs = () => {
           <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{stats.confirmed}</div>
         </div>
         
+        {/* ✅ Nouvelle carte pour Partiellement reçues */}
+        <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
+          <div className="stat-figure text-warning"><Package className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" /></div>
+          <div className="stat-title text-xs sm:text-sm font-semibold">Partiellement reçues</div>
+          <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{stats.partially_received}</div>
+        </div>
+        
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
           <div className="stat-figure text-success"><CheckSquare className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" /></div>
-          <div className="stat-title text-xs sm:text-sm font-semibold">Reçues</div>
+          <div className="stat-title text-xs sm:text-sm font-semibold">Complètement reçues</div>
           <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{stats.received}</div>
         </div>
         
@@ -419,7 +526,7 @@ const CommandesFournisseurs = () => {
           
           <div className={`${showFilters ? 'flex' : 'hidden'} sm:flex flex-col sm:flex-row gap-3`}>
             <select 
-              className="select select-bordered w-full sm:w-40 text-sm"
+              className="select select-bordered w-full sm:w-44 text-sm"
               value={filterStatus}
               onChange={(e) => {
                 setFilterStatus(e.target.value)
@@ -431,8 +538,8 @@ const CommandesFournisseurs = () => {
               <option value="sent">Envoyée</option>
               <option value="confirmed">Confirmée</option>
               <option value="in_transit">En transit</option>
-              <option value="partially_received">Partiellement reçue</option>
-              <option value="received">Reçue</option>
+              <option value="partially_received">⚠️ Partiellement reçue</option>
+              <option value="received">✅ Complètement reçue</option>
               <option value="cancelled">Annulée</option>
             </select>
             
@@ -498,6 +605,7 @@ const CommandesFournisseurs = () => {
                     <th>Date livraison</th>
                     <th>Urgence</th>
                     <th>Statut</th>
+                    <th>Progression</th>
                     <th><button className="flex items-center gap-1 hover:text-primary" onClick={() => handleSort('total')}>Total<ArrowUpDown className="w-3 h-3" /></button></th>
                     <th className="text-right">Actions</th>
                   </tr>
@@ -508,15 +616,47 @@ const CommandesFournisseurs = () => {
                       <td className="font-mono text-sm">{commande.order_number || commande.id}</td>
                       <td><div className="font-medium">{commande.supplier_name || commande.supplier?.company_name}</div></td>
                       <td>{formatDate(commande.order_date)}</td>
-                      <td className={new Date(commande.expected_date) < new Date() ? 'text-warning' : ''}>{formatDate(commande.expected_date)}</td>
+                      <td className={new Date(commande.expected_date) < new Date() ? 'text-warning' : ''}>
+                        {formatDate(commande.expected_date)}
+                        {new Date(commande.expected_date) < new Date() && commande.status !== 'received' && (
+                          <span className="ml-1 text-error text-xs">⚠️</span>
+                        )}
+                      </td>
                       <td>{getUrgencyBadge(commande.urgency)}</td>
-                      <td>{getStatusBadge(commande.status)}</td>
+                      <td>{getStatusBadge(commande.status, commande)}</td>
+                      <td>{getReceptionProgress(commande)}</td>
                       <td className="font-semibold">{formatCurrency(commande.total)}</td>
                       <td className="text-right">
                         <div className="flex justify-end gap-1 sm:gap-2">
-                          <button onClick={() => navigate(`/commandes-fournisseurs/${commande.id}`)} className="btn btn-ghost btn-xs sm:btn-sm" title="Détails"><Eye className="w-3 h-3 sm:w-4 sm:h-4" /></button>
-                          <button onClick={() => navigate(`/commandes-fournisseurs/${commande.id}/edit`)} className="btn btn-ghost btn-xs sm:btn-sm text-primary" title="Modifier" disabled={commande.status === 'received' || commande.status === 'cancelled'}><Edit className="w-3 h-3 sm:w-4 sm:h-4" /></button>
-                          <button className="btn btn-ghost btn-xs sm:btn-sm text-error" onClick={() => { setCommandeToDelete(commande); setShowDeleteModal(true) }} title="Supprimer" disabled={commande.status !== 'draft'}><Trash2 className="w-3 h-3 sm:w-4 sm:h-4" /></button>
+                          <button onClick={() => navigate(`/commandes-fournisseurs/${commande.id}`)} className="btn btn-ghost btn-xs sm:btn-sm" title="Détails">
+                            <Eye className="w-3 h-3 sm:w-4 sm:h-4" />
+                          </button>
+                          {/* ✅ Bouton pour réceptionner si partiellement reçue ou en transit */}
+                          {(commande.status === 'partially_received' || commande.status === 'in_transit' || commande.status === 'sent' || commande.status === 'confirmed') && (
+                            <button 
+                              onClick={() => navigate(`/receptions/nouveau?order=${commande.id}`)} 
+                              className="btn btn-ghost btn-xs sm:btn-sm text-warning" 
+                              title="Réceptionner"
+                            >
+                              <Package className="w-3 h-3 sm:w-4 sm:h-4" />
+                            </button>
+                          )}
+                          <button 
+                            onClick={() => navigate(`/commandes-fournisseurs/${commande.id}/edit`)} 
+                            className="btn btn-ghost btn-xs sm:btn-sm text-primary" 
+                            title="Modifier" 
+                            disabled={commande.status === 'received' || commande.status === 'cancelled'}
+                          >
+                            <Edit className="w-3 h-3 sm:w-4 sm:h-4" />
+                          </button>
+                          <button 
+                            className="btn btn-ghost btn-xs sm:btn-sm text-error" 
+                            onClick={() => { setCommandeToDelete(commande); setShowDeleteModal(true) }} 
+                            title="Supprimer" 
+                            disabled={commande.status !== 'draft'}
+                          >
+                            <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -537,12 +677,28 @@ const CommandesFournisseurs = () => {
                       <option value="6">6</option><option value="9">9</option><option value="12">12</option><option value="24">24</option><option value="48">48</option>
                     </select>
                     <div className="join">
-                      <button className="join-item btn btn-xs sm:btn-sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}><ChevronLeft className="w-3 h-3 sm:w-4 sm:h-4" /></button>
+                      <button className="join-item btn btn-xs sm:btn-sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+                        <ChevronLeft className="w-3 h-3 sm:w-4 sm:h-4" />
+                      </button>
                       {[...Array(Math.min(3, totalPages))].map((_, i) => {
-                        let pageNum; if (totalPages <= 3) { pageNum = i + 1 } else if (currentPage <= 2) { pageNum = i + 1 } else if (currentPage >= totalPages - 1) { pageNum = totalPages - 2 + i } else { pageNum = currentPage - 1 + i }
-                        return (<button key={i} className={`join-item btn btn-xs sm:btn-sm ${currentPage === pageNum ? 'btn-primary' : ''}`} onClick={() => setCurrentPage(pageNum)}>{pageNum}</button>)
+                        let pageNum; 
+                        if (totalPages <= 3) { pageNum = i + 1 } 
+                        else if (currentPage <= 2) { pageNum = i + 1 } 
+                        else if (currentPage >= totalPages - 1) { pageNum = totalPages - 2 + i } 
+                        else { pageNum = currentPage - 1 + i }
+                        return (
+                          <button 
+                            key={i} 
+                            className={`join-item btn btn-xs sm:btn-sm ${currentPage === pageNum ? 'btn-primary' : ''}`} 
+                            onClick={() => setCurrentPage(pageNum)}
+                          >
+                            {pageNum}
+                          </button>
+                        )
                       })}
-                      <button className="join-item btn btn-xs sm:btn-sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}><ChevronRight className="w-3 h-3 sm:w-4 sm:h-4" /></button>
+                      <button className="join-item btn btn-xs sm:btn-sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+                        <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4" />
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -557,7 +713,11 @@ const CommandesFournisseurs = () => {
         <div className="modal modal-open">
           <div className="modal-box w-11/12 max-w-md p-4 sm:p-6">
             <div className="text-center mb-4 sm:mb-6">
-              <div className="avatar placeholder mb-3 sm:mb-4"><div className="bg-error/10 text-error rounded-full w-16 h-16 sm:w-20 sm:h-20"><AlertCircle className="w-8 h-8 sm:w-10 sm:h-10" /></div></div>
+              <div className="avatar placeholder mb-3 sm:mb-4">
+                <div className="bg-error/10 text-error rounded-full w-16 h-16 sm:w-20 sm:h-20">
+                  <AlertCircle className="w-8 h-8 sm:w-10 sm:h-10" />
+                </div>
+              </div>
               <h3 className="font-bold text-lg sm:text-xl mb-2">Confirmer la suppression</h3>
               <p className="text-sm text-base-content/70">Voulez-vous vraiment supprimer la commande ?</p>
               <p className="text-base font-bold text-error mt-2">"{commandeToDelete.order_number}"</p>

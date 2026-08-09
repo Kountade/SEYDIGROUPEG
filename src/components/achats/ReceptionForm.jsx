@@ -1,11 +1,12 @@
+// src/components/achats/ReceptionForm.jsx - COMPLET CORRIGÉ
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
 import {
   Save, X, ArrowLeft, Plus, Minus, Trash2, ShoppingCart,
-  CheckCircle, AlertCircle, Loader2, Building2,
-  Package, DollarSign, FileText, Truck, Calendar,
-  Users, RefreshCw, Filter, Hash
+  CheckCircle, AlertCircle, Loader2, Package,
+  FileText, Truck, History
 } from 'lucide-react';
 
 const ReceptionForm = () => {
@@ -13,53 +14,57 @@ const ReceptionForm = () => {
   const { id } = useParams();
   const isEditMode = !!id;
 
-  // États généraux
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [commandes, setCommandes] = useState([]);
   const [commandeSelected, setCommandeSelected] = useState(null);
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success', details: null });
-
-  // Champs du formulaire
   const [purchaseOrder, setPurchaseOrder] = useState('');
   const [notes, setNotes] = useState('');
-
-  // Items (lignes de produits)
   const [items, setItems] = useState([]);
-
-  // Total
   const [totalValue, setTotalValue] = useState(0);
+  const [totalItemsToReceive, setTotalItemsToReceive] = useState(0);
+  const [generatingInvoice, setGeneratingInvoice] = useState(false);
 
   const showNotification = (message, type = 'success', details = null) => {
     setNotification({ show: true, message, type, details });
     setTimeout(() => setNotification({ show: false, message: '', type: 'success', details: null }), 8000);
   };
 
-  // ============================================================
-  // 1. Chargement des commandes éligibles
-  // ============================================================
+  // ✅ CHARGEMENT DES COMMANDES RÉCEPTIONNABLES
   useEffect(() => {
     const fetchCommandes = async () => {
       setLoading(true);
       try {
-        const response = await AxiosInstance.get('/purchase-orders/');
-        const allOrders = response.data || [];
-
-        // Filtrer les commandes qui peuvent être réceptionnées
-        const eligibleOrders = allOrders.filter(order => {
-          if (order.status === 'draft' || order.status === 'received') {
-            return false;
-          }
-          const hasRemainingItems = order.items?.some(item => {
-            const ordered = item.quantity_ordered || 0;
-            const received = item.quantity_received || 0;
-            return received < ordered;
+        let response;
+        try {
+          response = await AxiosInstance.get('/purchase-orders/receivable/');
+        } catch {
+          response = await AxiosInstance.get('/purchase-orders/');
+        }
+        
+        let allOrders = response.data || [];
+        
+        if (!response.config.url.includes('/receivable/')) {
+          allOrders = allOrders.filter(order => {
+            if (['draft', 'received', 'cancelled', 'rejected'].includes(order.status)) {
+              return false;
+            }
+            const hasRemaining = order.items?.some(item => {
+              return (item.quantity_ordered || 0) > (item.quantity_received || 0);
+            });
+            return hasRemaining;
           });
-          return hasRemainingItems;
+        }
+        
+        const sortedOrders = allOrders.sort((a, b) => {
+          if (a.status === 'partially_received' && b.status !== 'partially_received') return -1;
+          if (a.status !== 'partially_received' && b.status === 'partially_received') return 1;
+          return new Date(b.order_date) - new Date(a.order_date);
         });
-
-        setCommandes(eligibleOrders);
-
+        
+        setCommandes(sortedOrders);
+        
         if (isEditMode) {
           await fetchReception();
         }
@@ -73,62 +78,49 @@ const ReceptionForm = () => {
     fetchCommandes();
   }, [id]);
 
-  // ============================================================
-  // 2. Chargement de la réception en mode édition (avec ses items)
-  // ============================================================
+  // Chargement d'une réception en mode édition
   const fetchReception = async () => {
     try {
       const response = await AxiosInstance.get(`/purchase-receipts/${id}/`);
       const reception = response.data;
-
       setPurchaseOrder(reception.purchase_order?.id || reception.purchase_order || '');
       setNotes(reception.notes || '');
 
-      // Charger les détails de la commande
       if (reception.purchase_order) {
         const orderId = reception.purchase_order.id || reception.purchase_order;
         const orderResponse = await AxiosInstance.get(`/purchase-orders/${orderId}/`);
         const order = orderResponse.data;
         setCommandeSelected(order);
 
-        // Construire les items à partir des items de la réception
         const receptionItems = reception.items || [];
         const orderItems = order.items || [];
 
         const loadedItems = receptionItems.map(recItem => {
-          // Trouver le order_item correspondant
           const orderItem = orderItems.find(oi => oi.id === recItem.order_item);
           if (!orderItem) return null;
 
-          const ordered = orderItem.quantity_ordered || 0;
-          const alreadyReceived = orderItem.quantity_received || 0;
-          // La quantité déjà reçue inclut cette réception, mais on veut le restant avant cette réception ?
-          // Pour simplifier, on utilise le restant calculé à partir de la commande.
-          // Mais pour la modification, on veut que la quantité reçue puisse être ajustée.
-          // On initialise la quantité à la quantité de la réception (pour permettre de la modifier)
-          const qtyReceived = recItem.quantity || 0;
-
           return {
-            id: recItem.id, // ID de la ligne de réception (pour modification)
+            id: recItem.id,
             order_item_id: recItem.order_item,
             product_id: orderItem.product,
-            product_name: orderItem.product_name || orderItem.product?.name || 'Produit',
+            product_name: orderItem.product_name || 'Produit',
             product_reference: orderItem.product_reference || '',
-            quantity_ordered: ordered,
-            quantity_received: alreadyReceived, // total déjà reçu avant cette réception
-            remaining_quantity: ordered - alreadyReceived, // restant avant cette réception
-            quantity: qtyReceived, // quantité de cette réception
+            quantity_ordered: orderItem.quantity_ordered || 0,
+            quantity_received: orderItem.quantity_received || 0,
+            remaining_quantity: (orderItem.quantity_ordered || 0) - (orderItem.quantity_received || 0),
+            quantity: recItem.quantity || 0,
             unit_price: parseFloat(orderItem.unit_price) || 0,
-            total: (parseFloat(orderItem.unit_price) || 0) * qtyReceived,
+            total: (parseFloat(orderItem.unit_price) || 0) * (recItem.quantity || 0),
             quality_ok: recItem.quality_ok !== false,
             lot_number: recItem.lot_number || '',
-            expiry_date: recItem.expiry_date || '', // ✅ date d'expiration récupérée
+            expiry_date: recItem.expiry_date || '',
             notes: recItem.notes || ''
           };
         }).filter(item => item !== null);
 
         setItems(loadedItems);
         calculateTotal(loadedItems);
+        calculateTotalItems(loadedItems);
       }
     } catch (error) {
       console.error('Erreur chargement réception:', error);
@@ -136,14 +128,13 @@ const ReceptionForm = () => {
     }
   };
 
-  // ============================================================
-  // 3. Chargement des détails d'une commande (création)
-  // ============================================================
+  // Chargement des détails d'une commande
   const loadCommandeDetails = async (orderId) => {
     if (!orderId) {
       setCommandeSelected(null);
       setItems([]);
       setTotalValue(0);
+      setTotalItemsToReceive(0);
       return;
     }
 
@@ -152,11 +143,23 @@ const ReceptionForm = () => {
       const response = await AxiosInstance.get(`/purchase-orders/${orderId}/`);
       const order = response.data;
 
-      if (order.status === 'draft' || order.status === 'received') {
-        showNotification(`Cette commande (statut: ${order.status_display || order.status}) ne peut pas être réceptionnée`, 'error');
+      if (order.status === 'draft') {
+        showNotification('Cette commande est un brouillon', 'error');
         setCommandeSelected(null);
         setItems([]);
         setTotalValue(0);
+        setTotalItemsToReceive(0);
+        setPurchaseOrder('');
+        setLoading(false);
+        return;
+      }
+
+      if (order.status === 'received') {
+        showNotification('Cette commande est déjà entièrement reçue', 'warning');
+        setCommandeSelected(null);
+        setItems([]);
+        setTotalValue(0);
+        setTotalItemsToReceive(0);
         setPurchaseOrder('');
         setLoading(false);
         return;
@@ -179,7 +182,7 @@ const ReceptionForm = () => {
             id: item.id,
             order_item_id: item.id,
             product_id: item.product,
-            product_name: item.product_name,
+            product_name: item.product_name || 'Produit',
             product_reference: item.product_reference || '',
             quantity_ordered: ordered,
             quantity_received: received,
@@ -189,13 +192,18 @@ const ReceptionForm = () => {
             total: 0,
             quality_ok: true,
             lot_number: '',
-            expiry_date: '', // ✅ champ ajouté
+            expiry_date: '',
             notes: ''
           };
         });
 
       setItems(loadedItems);
       calculateTotal(loadedItems);
+      calculateTotalItems(loadedItems);
+      
+      if (loadedItems.length === 0) {
+        showNotification('Tous les articles de cette commande ont déjà été reçus', 'info');
+      }
     } catch (error) {
       console.error('Erreur chargement détails commande:', error);
       showNotification('Erreur lors du chargement des détails', 'error');
@@ -204,15 +212,18 @@ const ReceptionForm = () => {
     }
   };
 
-  // ============================================================
-  // 4. Gestion des items
-  // ============================================================
-
+  // Calculs
   const calculateTotal = (itemsList) => {
     const total = itemsList.reduce((sum, item) => sum + (item.total || 0), 0);
     setTotalValue(total);
   };
 
+  const calculateTotalItems = (itemsList) => {
+    const total = itemsList.reduce((sum, item) => sum + (item.quantity || 0), 0);
+    setTotalItemsToReceive(total);
+  };
+
+  // Gestion des quantités
   const handleQuantityChange = (index, newQuantity) => {
     const item = items[index];
     const maxQty = item.remaining_quantity;
@@ -235,6 +246,7 @@ const ReceptionForm = () => {
 
     setItems(updatedItems);
     calculateTotal(updatedItems);
+    calculateTotalItems(updatedItems);
   };
 
   const handleQualityChange = (index, qualityOk) => {
@@ -255,7 +267,6 @@ const ReceptionForm = () => {
     setItems(updatedItems);
   };
 
-  // ✅ Nouvelle fonction pour gérer la date d'expiration
   const handleExpiryChange = (index, expiryDate) => {
     const updatedItems = [...items];
     updatedItems[index] = {
@@ -269,6 +280,7 @@ const ReceptionForm = () => {
     const updatedItems = items.filter((_, i) => i !== index);
     setItems(updatedItems);
     calculateTotal(updatedItems);
+    calculateTotalItems(updatedItems);
   };
 
   const selectAllItems = () => {
@@ -279,6 +291,7 @@ const ReceptionForm = () => {
     }));
     setItems(updatedItems);
     calculateTotal(updatedItems);
+    calculateTotalItems(updatedItems);
   };
 
   const deselectAllItems = () => {
@@ -289,16 +302,16 @@ const ReceptionForm = () => {
     }));
     setItems(updatedItems);
     calculateTotal(updatedItems);
+    calculateTotalItems(updatedItems);
   };
 
-  // ============================================================
-  // 5. Gestion de la commande sélectionnée
-  // ============================================================
+  // Sélection de la commande
   const handleCommandeChange = (e) => {
     const orderId = e.target.value;
     setPurchaseOrder(orderId);
     setItems([]);
     setTotalValue(0);
+    setTotalItemsToReceive(0);
     if (orderId) {
       loadCommandeDetails(orderId);
     } else {
@@ -306,9 +319,40 @@ const ReceptionForm = () => {
     }
   };
 
-  // ============================================================
-  // 6. Soumission de la réception
-  // ============================================================
+  // ✅ GÉNÉRER LA FACTURE
+  const generateInvoice = async (receiptId) => {
+    if (!receiptId) {
+      console.error('❌ ID de réception manquant');
+      return null;
+    }
+
+    setGeneratingInvoice(true);
+    try {
+      console.log('📄 GÉNÉRATION FACTURE POUR ID:', receiptId);
+      const response = await AxiosInstance.post(`/purchase-receipts/${receiptId}/generate_invoice/`);
+      console.log('✅ FACTURE GÉNÉRÉE:', response.data);
+      
+      if (response.data.success) {
+        showNotification(`✅ Facture ${response.data.invoice.invoice_number} créée !`, 'success');
+        return response.data;
+      } else {
+        showNotification('⚠️ ' + (response.data.error || 'Erreur génération'), 'warning');
+        return null;
+      }
+    } catch (error) {
+      console.error('❌ ERREUR GÉNÉRATION FACTURE:', error);
+      if (error.response?.data?.error) {
+        showNotification('⚠️ ' + error.response.data.error, 'warning');
+      } else {
+        showNotification('⚠️ Erreur lors de la génération de la facture', 'warning');
+      }
+      return null;
+    } finally {
+      setGeneratingInvoice(false);
+    }
+  };
+
+  // ✅ SOUMISSION CORRIGÉE
   const handleSubmit = async () => {
     if (!purchaseOrder) {
       showNotification('Veuillez sélectionner une commande', 'error');
@@ -327,47 +371,120 @@ const ReceptionForm = () => {
       purchase_order: parseInt(purchaseOrder),
       notes: notes,
       items: itemsToReceive.map(item => ({
-        order_item: item.order_item_id || item.id, // on envoie l'ID de la ligne de commande
+        order_item: item.order_item_id || item.id,
         quantity: parseInt(item.quantity),
         quality_checked: true,
         quality_ok: item.quality_ok !== false,
         quality_notes: '',
         lot_number: item.lot_number || '',
-        expiry_date: item.expiry_date || null, // ✅ envoi de la date
+        expiry_date: item.expiry_date || null,
         notes: item.notes || ''
       }))
     };
 
+    console.log('📤 PAYLOAD:', payload);
+
     try {
+      let response;
       if (isEditMode) {
-        await AxiosInstance.put(`/purchase-receipts/${id}/`, payload);
+        response = await AxiosInstance.put(`/purchase-receipts/${id}/`, payload);
         showNotification('Réception modifiée avec succès !', 'success');
+        setTimeout(() => navigate('/receptions'), 2000);
       } else {
-        await AxiosInstance.post('/purchase-receipts/', payload);
+        // ✅ CRÉER LA RÉCEPTION
+        response = await AxiosInstance.post('/purchase-receipts/', payload);
+        const newReceiptId = response.data.id;
+        
+        console.log('✅ RÉCEPTION CRÉÉE:', response.data);
+        console.log('📦 ID RÉCEPTION:', newReceiptId);
+        
         showNotification('Réception créée avec succès !', 'success');
+        
+        // ✅ GÉNÉRER LA FACTURE
+        if (newReceiptId) {
+          // Attendre un peu pour que la base de données soit à jour
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          await generateInvoice(newReceiptId);
+        }
+        
+        setTimeout(() => navigate('/receptions'), 3000);
       }
-      setTimeout(() => navigate('/receptions'), 2000);
     } catch (error) {
-      console.error(error);
+      console.error('❌ ERREUR:', error);
       let errorMessage = 'Erreur lors de l\'enregistrement';
-      if (error.response?.data?.purchase_order) {
-        errorMessage = error.response.data.purchase_order.join(', ');
-      } else if (error.response?.data?.error) {
-        errorMessage = error.response.data.error;
-      } else if (error.response?.data?.detail) {
-        errorMessage = error.response.data.detail;
-      } else if (error.response?.data?.non_field_errors) {
-        errorMessage = error.response.data.non_field_errors.join(', ');
+      
+      if (error.response?.data) {
+        const data = error.response.data;
+        if (typeof data === 'string') {
+          errorMessage = data;
+        } else if (data.purchase_order) {
+          errorMessage = data.purchase_order.join(', ');
+        } else if (data.items) {
+          errorMessage = JSON.stringify(data.items);
+        } else if (data.error) {
+          errorMessage = data.error;
+        } else if (data.detail) {
+          errorMessage = data.detail;
+        } else if (data.non_field_errors) {
+          errorMessage = data.non_field_errors.join(', ');
+        } else {
+          errorMessage = JSON.stringify(data);
+        }
       }
+      
       showNotification(errorMessage, 'error', error.response?.data);
     } finally {
       setSubmitting(false);
     }
   };
 
-  const formatPrice = (price) => new Intl.NumberFormat('fr-FR').format(price || 0) + ' FCFA';
+  // Composant d'historique
+  const ReceiptHistory = ({ orderItemId }) => {
+    const [history, setHistory] = useState([]);
 
-  // Vérifier si la commande a des articles à recevoir
+    useEffect(() => {
+      if (orderItemId) {
+        const fetchHistory = async () => {
+          try {
+            const response = await AxiosInstance.get(`/purchase-order-items/${orderItemId}/receipt-history/`);
+            setHistory(response.data || []);
+          } catch (error) {
+            console.error('Erreur chargement historique:', error);
+          }
+        };
+        fetchHistory();
+      }
+    }, [orderItemId]);
+
+    if (history.length === 0) return null;
+
+    return (
+      <details className="mt-2">
+        <summary className="text-xs text-gray-500 cursor-pointer hover:text-primary flex items-center gap-1">
+          <History className="w-3 h-3" />
+          Historique ({history.length})
+        </summary>
+        <div className="mt-2 space-y-1 bg-gray-50 rounded-lg p-2">
+          {history.map((rec, idx) => (
+            <div key={idx} className="text-xs flex flex-wrap gap-2 items-center border-b border-gray-200 py-1.5">
+              <span className="font-medium text-primary">{rec.quantity} unités</span>
+              <span className="text-gray-400">
+                le {new Date(rec.receipt?.created_at || rec.created_at).toLocaleDateString('fr-FR')}
+              </span>
+              <span className={`badge badge-xs ${rec.quality_ok ? 'badge-success' : 'badge-error'}`}>
+                {rec.quality_ok ? '✅ OK' : '❌ Problème'}
+              </span>
+              {rec.lot_number && (
+                <span className="badge badge-ghost badge-xs">Lot: {rec.lot_number}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      </details>
+    );
+  };
+
+  const formatPrice = (price) => new Intl.NumberFormat('fr-FR').format(price || 0) + ' FCFA';
   const hasItemsToReceive = items.some(item => item.quantity > 0);
 
   if (loading && isEditMode) {
@@ -376,7 +493,7 @@ const ReceptionForm = () => {
         <div className="text-center space-y-4">
           <div className="loading loading-spinner loading-lg text-primary"></div>
           <p className="text-base font-medium text-base-content/70 animate-pulse">
-            Chargement de la réception...
+            Chargement...
           </p>
         </div>
       </div>
@@ -385,7 +502,7 @@ const ReceptionForm = () => {
 
   return (
     <div className="w-full py-4 lg:py-6 bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
-      {/* Notification Toast */}
+      {/* Notification */}
       {notification.show && (
         <div className="fixed top-16 lg:top-20 right-3 lg:right-6 z-50 animate-slideDown w-[calc(100%-1.5rem)] lg:w-auto max-w-md">
           <div className={`alert ${notification.type === 'success' ? 'alert-success' : notification.type === 'warning' ? 'alert-warning' : 'alert-error'} shadow-lg`}>
@@ -394,7 +511,7 @@ const ReceptionForm = () => {
             {notification.details && (
               <details className="text-xs">
                 <summary className="cursor-pointer">Détails</summary>
-                <pre className="mt-1 p-1 bg-black/5 rounded">{JSON.stringify(notification.details, null, 2)}</pre>
+                <pre className="mt-1 p-1 bg-black/5 rounded max-h-32 overflow-auto">{JSON.stringify(notification.details, null, 2)}</pre>
               </details>
             )}
             <button className="btn btn-ghost btn-xs btn-circle" onClick={() => setNotification({ show: false, message: '', type: 'success', details: null })}>
@@ -406,7 +523,6 @@ const ReceptionForm = () => {
 
       {/* En-tête */}
       <div className="relative overflow-hidden bg-gradient-to-r from-primary/10 via-primary/5 to-transparent py-5 px-4 lg:px-6">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full filter blur-3xl"></div>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 relative z-10">
           <div>
             <div className="flex items-center gap-3 mb-2">
@@ -418,7 +534,7 @@ const ReceptionForm = () => {
               </h1>
             </div>
             <p className="text-sm text-base-content/60 ml-1">
-              Enregistrez une réception de marchandises
+              {isEditMode ? 'Modifiez les quantités reçues' : 'Enregistrez une réception de marchandises'}
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -437,7 +553,7 @@ const ReceptionForm = () => {
         </div>
       </div>
 
-      {/* Carte principale */}
+      {/* Formulaire */}
       <div className="max-w-full px-4 lg:px-6">
         <div className="bg-white rounded-xl shadow-xl border border-base-200 overflow-hidden">
           <div className="p-4 lg:p-6">
@@ -458,25 +574,20 @@ const ReceptionForm = () => {
                 <option value="">-- Sélectionner une commande --</option>
                 {commandes.map(cmd => (
                   <option key={cmd.id} value={cmd.id}>
-                    {cmd.order_number} - {cmd.supplier?.company_name || cmd.supplier_name} - {new Date(cmd.order_date).toLocaleDateString()} - {cmd.status_display || cmd.status}
+                    {cmd.order_number} - {cmd.supplier?.company_name || cmd.supplier_name} - 
+                    {new Date(cmd.order_date).toLocaleDateString('fr-FR')} - 
+                    {cmd.status === 'partially_received' ? '⚠️ ' : ''}
+                    {cmd.status_display || cmd.status}
+                    {cmd.items && cmd.items.length > 0 && 
+                      ` (${cmd.items.filter(i => (i.quantity_ordered || 0) > (i.quantity_received || 0)).length} article(s) restant(s))`
+                    }
                   </option>
                 ))}
               </select>
-              {loading && (
-                <span className="text-info text-xs mt-1 flex items-center gap-1">
-                  <span className="loading loading-spinner loading-xs"></span>
-                  Chargement...
-                </span>
-              )}
               {commandes.length === 0 && !loading && (
                 <div className="alert alert-warning mt-2 text-sm">
                   <AlertCircle className="w-4 h-4" />
-                  <span>Aucune commande disponible pour réception. Assurez-vous que :</span>
-                  <ul className="list-disc list-inside text-xs">
-                    <li>La commande n'est pas un brouillon</li>
-                    <li>La commande n'est pas déjà totalement reçue</li>
-                    <li>Il reste des articles à recevoir</li>
-                  </ul>
+                  <span>Aucune commande disponible pour réception.</span>
                 </div>
               )}
             </div>
@@ -484,12 +595,12 @@ const ReceptionForm = () => {
             {/* Informations commande */}
             {commandeSelected && (
               <div className="bg-gray-50 rounded-xl p-4 mb-6 border border-gray-200">
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                   <h3 className="font-semibold text-primary flex items-center gap-2">
                     <Truck className="w-4 h-4" />
                     Détails de la commande
                   </h3>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
                       onClick={selectAllItems}
@@ -519,7 +630,7 @@ const ReceptionForm = () => {
                   </div>
                   <div>
                     <span className="text-gray-500">Date commande:</span>
-                    <p>{new Date(commandeSelected.order_date).toLocaleDateString()}</p>
+                    <p>{new Date(commandeSelected.order_date).toLocaleDateString('fr-FR')}</p>
                   </div>
                   <div>
                     <span className="text-gray-500">Statut:</span>
@@ -537,15 +648,19 @@ const ReceptionForm = () => {
               </div>
             )}
 
-            {/* Articles à recevoir */}
+            {/* Articles */}
             {items.length > 0 && (
               <div className="border-t border-base-300 pt-6">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                   <h3 className="font-semibold text-lg flex items-center gap-2">
                     <Package className="w-5 h-5 text-primary" />
                     Articles à recevoir
                     <span className="badge badge-primary badge-sm">{items.length}</span>
                   </h3>
+                  <div className="text-sm text-gray-500">
+                    Total: <span className="font-bold text-primary">{totalItemsToReceive}</span> unités
+                    pour <span className="font-bold text-primary">{formatPrice(totalValue)}</span>
+                  </div>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -561,14 +676,15 @@ const ReceptionForm = () => {
                         <th className="text-right">Prix unit.</th>
                         <th className="text-right">Total</th>
                         <th>Lot</th>
-                        <th>Date expiration</th> {/* ✅ Nouvelle colonne */}
+                        <th>Date expiration</th>
                         <th className="text-center">Qualité</th>
+                        <th>Historique</th>
                         <th></th>
                       </tr>
                     </thead>
                     <tbody>
                       {items.map((item, index) => (
-                        <tr key={item.id || index} className="hover">
+                        <tr key={item.order_item_id || index} className="hover">
                           <td className="font-medium">{item.product_name}</td>
                           <td className="text-xs font-mono">{item.product_reference}</td>
                           <td className="text-center">
@@ -583,6 +699,7 @@ const ReceptionForm = () => {
                           <td className="text-center">
                             <div className="flex items-center justify-center gap-1">
                               <button
+                                type="button"
                                 className="btn btn-ghost btn-xs btn-square"
                                 onClick={() => handleQuantityChange(index, item.quantity - 1)}
                                 disabled={item.quantity <= 0 || submitting}
@@ -599,6 +716,7 @@ const ReceptionForm = () => {
                                 disabled={submitting}
                               />
                               <button
+                                type="button"
                                 className="btn btn-ghost btn-xs btn-square"
                                 onClick={() => handleQuantityChange(index, item.quantity + 1)}
                                 disabled={item.quantity >= item.remaining_quantity || submitting}
@@ -619,7 +737,7 @@ const ReceptionForm = () => {
                               disabled={item.quantity === 0 || submitting}
                             />
                           </td>
-                          <td> {/* ✅ Champ date d'expiration */}
+                          <td>
                             <input
                               type="date"
                               value={item.expiry_date || ''}
@@ -637,6 +755,9 @@ const ReceptionForm = () => {
                               disabled={item.quantity === 0 || submitting}
                             />
                           </td>
+                          <td>
+                            <ReceiptHistory orderItemId={item.order_item_id} />
+                          </td>
                           <td className="text-center">
                             <button
                               type="button"
@@ -652,21 +773,13 @@ const ReceptionForm = () => {
                     </tbody>
                     <tfoot className="bg-gray-50 border-t-2">
                       <tr>
-                        <td colSpan="8" className="text-right font-bold">Valeur totale à recevoir</td>
-                        <td colSpan="3" className="font-bold text-primary text-lg">{formatPrice(totalValue)}</td>
+                        <td colSpan="7" className="text-right font-bold">Valeur totale à recevoir</td>
+                        <td colSpan="5" className="font-bold text-primary text-lg">{formatPrice(totalValue)}</td>
                         <td></td>
                       </tr>
                     </tfoot>
                   </table>
                 </div>
-              </div>
-            )}
-
-            {/* Aucun article message */}
-            {commandeSelected && items.length === 0 && !loading && (
-              <div className="alert alert-info mt-6">
-                <AlertCircle className="w-5 h-5" />
-                <span>Tous les articles de cette commande ont déjà été reçus.</span>
               </div>
             )}
 
@@ -697,11 +810,17 @@ const ReceptionForm = () => {
             <button
               className="btn btn-primary gap-2 shadow-lg hover:shadow-xl transition-all"
               onClick={handleSubmit}
-              disabled={submitting || !hasItemsToReceive}
+              disabled={submitting || !hasItemsToReceive || generatingInvoice}
             >
               {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              {isEditMode ? 'Modifier la réception' : 'Valider la réception'}
+              {isEditMode ? 'Modifier la réception' : 'Valider'}
             </button>
+            {generatingInvoice && (
+              <span className="text-sm text-info flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Génération de la facture...
+              </span>
+            )}
           </div>
         </div>
       </div>
