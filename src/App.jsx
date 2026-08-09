@@ -162,6 +162,14 @@ import Lots from './components/inventaire/Lots'
 
 import Stats from './components/grh/Stats'
 
+
+// ✅ IMPORTS FACTURES ET PAIEMENTS FOURNISSEURS
+import FacturesFournisseurs from './components/achats/FacturesFournisseurs'
+import FacturesFournisseurDetail from './components/achats/FacturesFournisseurDetail'
+import PaiementsFournisseurs from './components/achats/PaiementsFournisseurs'
+import PaiementsFournisseurDetail from './components/achats/PaiementsFournisseurDetail'
+import PaiementsFournisseurForm from './components/achats/PaiementsFournisseurForm'
+
 import Bilan from './components/comptabilite/Bilan'
 
 import AuditLog from './components/audit/AuditLog'
@@ -370,6 +378,16 @@ function App() {
 <Route path="/receptions/:id/edit" element={<ReceptionForm />} />
 <Route path="/receptions/:id" element={<ReceptionDetail />} />
 
+
+                {/* ✅ NOUVELLES ROUTES FACTURES FOURNISSEURS */}
+                <Route path="/factures-fournisseur" element={<FacturesFournisseurs />} />
+                <Route path="/factures-fournisseur/:id" element={<FacturesFournisseurDetail />} />
+                <Route path="/paiement-fournisseur" element={<PaiementsFournisseurs />} />           
+                <Route path="/paiement-fournisseur/nouveau" element={<PaiementsFournisseurForm />} />
+                <Route path="/paiement-fournisseur/:id/edit" element={<PaiementsFournisseurForm />} />
+                  
+                {/*   NOUVELLES ROUTES PAIEMENTS FOURNISSEURS
+                  <Route path="/paiement-fournisseur/:id" element={<PaiementsFournisseurDetail />} />
 
  {/* Gestion des RECEPTIOS */}
 
