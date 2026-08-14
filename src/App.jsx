@@ -157,6 +157,8 @@ import TresorerieJournaliere from './components/tresorerie/TresorerieJournaliere
 
 import PriceHistory from './components/achats/PriceHistory'
 
+import ClientFacturesPDF from './components/ventes/ClientFacturesPDF'
+
 import Lots from './components/inventaire/Lots'
 
 
@@ -213,6 +215,10 @@ function App() {
 <Route path="/plan-comptable" element={<PlanComptable />} />
 <Route path="/plan-comptable/nouveau" element={<PlanComptableForm />} />
 <Route path="/plan-comptable/:id/modifier" element={<PlanComptableForm />} />
+
+
+
+<Route path="/clients/:id/factures-pdf" element={<ClientFacturesPDF />} />
 
 <Route path="/journaux" element={<Journaux />} />
 <Route path="/journaux/nouveau" element={<JournalForm />} />
