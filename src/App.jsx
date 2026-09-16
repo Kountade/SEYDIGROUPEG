@@ -91,7 +91,7 @@ import DevisForm from './components/ventes/DevisForm'
 import DevisDetail from './components/ventes/DevisDetail'
 import DevisPDF from './components/ventes/DevisPDF'
 import Livraison from './components/ventes/Livraison'
-import Dashboard from './components/dashboard/Dashboard'
+
 import Statistiques from './components/dashboard/Statistiques'
 import Analyses from './components/dashboard/Analyses'
 import FraisList from './components/achats/FraisList'
@@ -176,8 +176,7 @@ import Bilan from './components/comptabilite/Bilan'
 
 import AuditLog from './components/audit/AuditLog'
 
-
-
+import DashboardGlobal from './components/dashboard/DashboardGlobal'
 
 
 function App() {
@@ -203,7 +202,7 @@ function App() {
         content={
       <Routes>
             <Route element={<ProtectedRoute/>}> 
-                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/dashboard" element={<DashboardGlobal />} />
 <Route path="/statistiques" element={<Statistiques />} />
 <Route path="/analyses" element={<Analyses />} />
 
