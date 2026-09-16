@@ -1,3 +1,4 @@
+// vite.config.js
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
@@ -5,7 +6,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
   plugins: [
-    react(), 
+    react(),
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
@@ -33,7 +34,17 @@ export default defineConfig({
         ]
       },
       workbox: {
-        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+        // ✅ CORRECTION : 10 MB au lieu de 5 MB (votre bundle fait 5.43 MB)
+        maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
+
+        // ✅ Exclure les très gros fichiers du precache
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+        globIgnores: [
+          '**/node_modules/**/*',
+          '**/background-login-*.jpg',
+          '**/logo-DG-*.svg',
+        ],
+
         runtimeCaching: [
           {
             urlPattern: /\/api\//i,
@@ -64,23 +75,28 @@ export default defineConfig({
               cacheName: 'static-resources'
             }
           }
-        ]
+        ],
+
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
       },
       devOptions: {
-        enabled: true,
+        enabled: false,   // ✅ Désactivé en dev pour éviter les bugs
         type: 'module',
         navigateFallback: 'index.html'
       }
     })
   ],
-  
+
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
-    sourcemap: false
-    // ✅ PAS DE rollupOptions pour éviter les erreurs
+    sourcemap: false,
+    // ✅ Augmenter la limite d'avertissement (évite les warnings)
+    chunkSizeWarningLimit: 6000,
   },
-  
+
   server: {
     proxy: {
       '/api': {
