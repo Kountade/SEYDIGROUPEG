@@ -1,3 +1,4 @@
+
 // src/components/ventes/Livraison.jsx
 import jsPDF from 'jspdf';
 import logoSvg from '../../assets/logo.svg';
@@ -362,7 +363,7 @@ const Livraison = async (vente, options = {}) => {
     y = clientY + 34;
 
     // ================================================================
-    // TABLEAU DES ARTICLES
+    // TABLEAU DES ARTICLES - Réf. AVANT Désignation
     // ================================================================
     doc.setFontSize(11);
     doc.setFont('helvetica', 'bold');
@@ -374,22 +375,23 @@ const Livraison = async (vente, options = {}) => {
     doc.line(margins.left, y, pageWidth - margins.right, y);
     y += 6;
 
-    // Colonnes ajustées
-    const colDescX = margins.left;
-    const colRefX = margins.left + 45;
-    const colQtyX = margins.left + 75;
-    const colPriceX = margins.left + 95;
-    const colRemiseX = margins.left + 118;
-    const colTotalX = pageWidth - margins.right - 2;
+    // ✅ NOUVELLES COLONNES : Réf. | Désignation | Qté | Prix unit. | Remise | Total
+    // Colonnes ajustées : Réf. AVANT Désignation
+    const colRefX = margins.left;                    // Réf. commence à la marge gauche
+    const colDescX = margins.left + 22;              // Désignation après Réf. (22mm)
+    const colQtyX = margins.left + 90;               // Qté après Désignation (68mm)
+    const colPriceX = margins.left + 105;            // Prix unit. après Qté (15mm)
+    const colRemiseX = margins.left + 128;           // Remise après Prix unit. (23mm)
+    const colTotalX = pageWidth - margins.right - 2; // Total aligné à droite
 
     const headerY = y;
     doc.setFillColor(26, 35, 126);
-    doc.roundedRect(colDescX, headerY, contentWidth, 7, 2, 2, 'F');
+    doc.roundedRect(colRefX, headerY, contentWidth, 7, 2, 2, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(7.5);
     doc.setFont('helvetica', 'bold');
-    doc.text('Désignation', colDescX + 3, headerY + 4.5);
     doc.text('Réf.', colRefX + 3, headerY + 4.5);
+    doc.text('Désignation', colDescX + 3, headerY + 4.5);
     doc.text('Qté', colQtyX + 3, headerY + 4.5);
     doc.text('Prix unit.', colPriceX + 3, headerY + 4.5);
     doc.text('Remise', colRemiseX + 3, headerY + 4.5);
@@ -403,7 +405,7 @@ const Livraison = async (vente, options = {}) => {
       doc.setTextColor(150, 150, 150);
       doc.setFontSize(9);
       doc.setFont('helvetica', 'italic');
-      doc.text('Aucun article dans cette commande.', colDescX + 3, currentY + 5);
+      doc.text('Aucun article dans cette commande.', colRefX + 3, currentY + 5);
       currentY += 10;
     } else {
       for (let idx = 0; idx < items.length; idx++) {
@@ -421,12 +423,12 @@ const Livraison = async (vente, options = {}) => {
           
           currentY = margins.top;
           doc.setFillColor(26, 35, 126);
-          doc.roundedRect(colDescX, currentY, contentWidth, 7, 2, 2, 'F');
+          doc.roundedRect(colRefX, currentY, contentWidth, 7, 2, 2, 'F');
           doc.setTextColor(255, 255, 255);
           doc.setFontSize(7.5);
           doc.setFont('helvetica', 'bold');
-          doc.text('Désignation', colDescX + 3, currentY + 4.5);
           doc.text('Réf.', colRefX + 3, currentY + 4.5);
+          doc.text('Désignation', colDescX + 3, currentY + 4.5);
           doc.text('Qté', colQtyX + 3, currentY + 4.5);
           doc.text('Prix unit.', colPriceX + 3, currentY + 4.5);
           doc.text('Remise', colRemiseX + 3, currentY + 4.5);
@@ -434,25 +436,49 @@ const Livraison = async (vente, options = {}) => {
           currentY += 7;
         }
 
+        // Fond alterné
         if (rowIndex % 2 === 0) {
           doc.setFillColor(248, 249, 250);
-          doc.rect(colDescX, currentY - 0.5, contentWidth, 6.5, 'F');
+          doc.rect(colRefX, currentY - 0.5, contentWidth, 6.5, 'F');
         }
 
+        // Lignes verticales
         doc.setDrawColor(224, 224, 224);
         doc.setLineWidth(0.1);
-        doc.line(colDescX, currentY, colDescX, currentY + 6);
         doc.line(colRefX, currentY, colRefX, currentY + 6);
+        doc.line(colDescX, currentY, colDescX, currentY + 6);
         doc.line(colQtyX, currentY, colQtyX, currentY + 6);
         doc.line(colPriceX, currentY, colPriceX, currentY + 6);
         doc.line(colRemiseX, currentY, colRemiseX, currentY + 6);
         doc.line(colTotalX, currentY, colTotalX, currentY + 6);
 
+        // Texte des cellules
         doc.setTextColor(33, 33, 33);
         doc.setFontSize(7.5);
         doc.setFont('helvetica', 'normal');
-        doc.text(productName, colDescX + 3, currentY + 4);
-        doc.text(productRef, colRefX + 3, currentY + 4);
+
+        // Troncature du nom si trop long
+        const maxDescWidth = colQtyX - colDescX - 6;
+        let displayName = productName;
+        if (doc.getTextWidth(displayName) > maxDescWidth) {
+          while (doc.getTextWidth(displayName + '...') > maxDescWidth && displayName.length > 3) {
+            displayName = displayName.slice(0, -1);
+          }
+          displayName += '...';
+        }
+
+        // Troncature de la référence si trop longue
+        const maxRefWidth = colDescX - colRefX - 6;
+        let displayRef = productRef;
+        if (doc.getTextWidth(displayRef) > maxRefWidth) {
+          while (doc.getTextWidth(displayRef + '...') > maxRefWidth && displayRef.length > 3) {
+            displayRef = displayRef.slice(0, -1);
+          }
+          displayRef += '...';
+        }
+
+        doc.text(displayRef, colRefX + 3, currentY + 4);
+        doc.text(displayName, colDescX + 3, currentY + 4);
         doc.text(qty.toString(), colQtyX + 3, currentY + 4);
         doc.text(formatCurrency(price), colPriceX + 3, currentY + 4);
         doc.text(remise > 0 ? formatCurrency(remise) : '-', colRemiseX + 3, currentY + 4);
@@ -474,7 +500,7 @@ const Livraison = async (vente, options = {}) => {
 
     doc.setDrawColor(180, 180, 190);
     doc.setLineWidth(0.3);
-    doc.line(colDescX, currentY, pageWidth - margins.right, currentY);
+    doc.line(colRefX, currentY, pageWidth - margins.right, currentY);
     y = currentY + 5;
 
     // ================================================================

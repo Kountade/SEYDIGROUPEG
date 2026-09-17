@@ -57,7 +57,11 @@ import {
   ClipboardList,
   Receipt,
   FileCheck,
-  Info
+  Info,
+  Wallet,
+  Banknote,
+  Landmark,
+  Smartphone
 } from 'lucide-react'
 
 const VentesList = () => {
@@ -67,10 +71,11 @@ const VentesList = () => {
   const [ventes, setVentes] = useState([])
   const [loading, setLoading] = useState(true)
   const [generatingBl, setGeneratingBl] = useState(null)
-  const [generatingTicket, setGeneratingTicket] = useState(null)  // ✅ État pour le ticket
+  const [generatingTicket, setGeneratingTicket] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterType, setFilterType] = useState('')
+  const [filterPayment, setFilterPayment] = useState('')
   const [dateRange, setDateRange] = useState({ start: '', end: '' })
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(12)
@@ -80,14 +85,26 @@ const VentesList = () => {
   const [currentUser, setCurrentUser] = useState(null)
   const [userRoles, setUserRoles] = useState({ est_pdg: false, est_chef_agence: false })
   
-  // Modals (conservés pour les autres actions)
+  // Modals
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [venteToDelete, setVenteToDelete] = useState(null)
   const [showApproveModal, setShowApproveModal] = useState(false)
   const [venteToApprove, setVenteToApprove] = useState(null)
   const [rejectReason, setRejectReason] = useState('')
   const [showRejectModal, setShowRejectModal] = useState(false)
-  // ❌ SUPPRESSION : showDetailsModal et selectedVente supprimés
+  
+  // ✅ NOUVEAUX ÉTATS POUR LE PAIEMENT
+  const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [venteToPay, setVenteToPay] = useState(null)
+  const [paymentMethod, setPaymentMethod] = useState('especes')
+  const [paymentNotes, setPaymentNotes] = useState('')
+  const [paymentReference, setPaymentReference] = useState('')
+  const [processingPayment, setProcessingPayment] = useState(false)
+  const [destinations, setDestinations] = useState({ caisses: [], comptes_bancaires: [] })
+  const [selectedCaisse, setSelectedCaisse] = useState('')
+  const [selectedCompte, setSelectedCompte] = useState('')
+  const [loadingDestinations, setLoadingDestinations] = useState(false)
+  
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' })
   
   // Statistiques
@@ -99,7 +116,10 @@ const VentesList = () => {
     rejected: 0,
     cancelled: 0,
     totalCA: 0,
-    totalPaid: 0
+    totalPaid: 0,
+    totalUnpaid: 0,
+    countPaid: 0,
+    countUnpaid: 0
   })
 
   // Configuration des statuts
@@ -111,6 +131,16 @@ const VentesList = () => {
     completed: { label: 'Complétée', icon: CheckCircle, color: 'text-green-600', bgColor: 'bg-green-100', borderColor: 'border-green-200' },
     cancelled: { label: 'Annulée', icon: XCircle, color: 'text-gray-500', bgColor: 'bg-gray-100', borderColor: 'border-gray-200' }
   }
+
+  // Configuration des méthodes de paiement
+  const paymentMethods = [
+    { value: 'especes', label: 'Espèces', icon: Banknote, color: 'text-green-600' },
+    { value: 'carte', label: 'Carte bancaire', icon: CreditCard, color: 'text-blue-600' },
+    { value: 'cheque', label: 'Chèque', icon: FileCheck, color: 'text-purple-600' },
+    { value: 'virement', label: 'Virement', icon: Landmark, color: 'text-indigo-600' },
+    { value: 'mobile_money', label: 'Mobile Money', icon: Smartphone, color: 'text-orange-600' },
+    { value: 'autre', label: 'Autre', icon: Wallet, color: 'text-gray-600' }
+  ]
 
   // ============================================================
   // 1. Chargement des données
@@ -145,12 +175,50 @@ const VentesList = () => {
       const totalCA = data.reduce((sum, v) => sum + (parseFloat(v.total) || 0), 0)
       const totalPaid = data.reduce((sum, v) => sum + (parseFloat(v.montant_paye) || 0), 0)
       
-      setStats({ total, pending, approved, completed, rejected, cancelled, totalCA, totalPaid })
+      // Ventes impayées (approuvées ou complétées mais non payées)
+      const unpaidVentes = data.filter(v => 
+        (v.status === 'approved' || v.status === 'completed') && !v.est_paye
+      )
+      const totalUnpaid = unpaidVentes.reduce((sum, v) => 
+        sum + (parseFloat(v.total) - parseFloat(v.montant_paye || 0)), 0
+      )
+      
+      setStats({ 
+        total, pending, approved, completed, rejected, cancelled, 
+        totalCA, totalPaid, totalUnpaid,
+        countPaid: data.filter(v => v.est_paye).length,
+        countUnpaid: unpaidVentes.length
+      })
     } catch (error) {
       console.error('Erreur chargement ventes:', error)
       showNotification('Erreur de chargement des ventes', 'error')
     } finally {
       setLoading(false)
+    }
+  }
+
+  // ✅ Charger les destinations de paiement pour une vente
+  const fetchDestinations = async (venteId) => {
+    setLoadingDestinations(true)
+    try {
+      const response = await AxiosInstance.get(`/ventes/${venteId}/destinations_paiement/`)
+      setDestinations({
+        caisses: response.data.caisses || [],
+        comptes_bancaires: response.data.comptes_bancaires || []
+      })
+      
+      // Sélectionner la caisse par défaut si disponible
+      const defaultCaisse = response.data.caisses?.find(c => c.is_default)
+      if (defaultCaisse) {
+        setSelectedCaisse(defaultCaisse.id)
+      } else if (response.data.caisses?.length > 0) {
+        setSelectedCaisse(response.data.caisses[0].id)
+      }
+    } catch (error) {
+      console.error('Erreur chargement destinations:', error)
+      setDestinations({ caisses: [], comptes_bancaires: [] })
+    } finally {
+      setLoadingDestinations(false)
     }
   }
 
@@ -171,7 +239,103 @@ const VentesList = () => {
   // 3. Actions
   // ============================================================
   
-  // ✅ Générer le ticket POS
+  // ✅ Ouvrir le modal de paiement
+  const openPaymentModal = async (vente) => {
+    setVenteToPay(vente)
+    setPaymentMethod('especes')
+    setPaymentNotes('')
+    setPaymentReference('')
+    setSelectedCaisse('')
+    setSelectedCompte('')
+    setShowPaymentModal(true)
+    await fetchDestinations(vente.id)
+  }
+
+  // ✅ Traiter le paiement automatique
+  const handleMarquerPaye = async () => {
+    if (!venteToPay) return
+    
+    setProcessingPayment(true)
+    try {
+      const payload = {
+        methode: paymentMethod,
+        notes: paymentNotes || `Paiement automatique - Vente ${venteToPay.reference}`,
+        reference_externe: paymentReference
+      }
+      
+      // Ajouter la destination selon la méthode
+      if (paymentMethod === 'especes' || paymentMethod === 'mobile_money') {
+        if (selectedCaisse) {
+          payload.caisse_destination = selectedCaisse
+        }
+      } else {
+        if (selectedCompte) {
+          payload.compte_destination = selectedCompte
+        }
+      }
+      
+      const response = await AxiosInstance.post(
+        `/ventes/${venteToPay.id}/marquer_paye/`, 
+        payload
+      )
+      
+      const { paiement, facture, vente } = response.data
+      
+      showNotification(
+        `✅ Vente ${venteToPay.reference} payée!\n` +
+        `Paiement: ${paiement.reference}\n` +
+        `Facture: ${facture.reference} (${facture.status_display})\n` +
+        `Montant: ${formatPrice(paiement.montant)}`,
+        'success'
+      )
+      
+      // Fermer le modal
+      setShowPaymentModal(false)
+      setVenteToPay(null)
+      
+      // Rafraîchir la liste
+      fetchVentes()
+      
+    } catch (error) {
+      console.error('Erreur paiement:', error)
+      showNotification(
+        error.response?.data?.error || 'Erreur lors du paiement',
+        'error'
+      )
+    } finally {
+      setProcessingPayment(false)
+    }
+  }
+
+  // ✅ Paiement rapide sans modal (raccourci)
+  const handleQuickPay = async (vente) => {
+    if (!window.confirm(
+      `Marquer la vente ${vente.reference} comme payée ?\n\n` +
+      `Montant restant: ${formatPrice(parseFloat(vente.total) - parseFloat(vente.montant_paye || 0))}\n` +
+      `Méthode: Espèces (par défaut)`
+    )) {
+      return
+    }
+    
+    try {
+      const response = await AxiosInstance.post(`/ventes/${vente.id}/marquer_paye/`, {
+        methode: 'especes',
+        notes: `Paiement rapide - Vente ${vente.reference}`
+      })
+      
+      showNotification(
+        `✅ Vente ${vente.reference} payée!\nPaiement: ${response.data.paiement.reference}`,
+        'success'
+      )
+      fetchVentes()
+    } catch (error) {
+      showNotification(
+        error.response?.data?.error || 'Erreur lors du paiement',
+        'error'
+      )
+    }
+  }
+
   const handleGenerateTicket = async (vente) => {
     if (!vente || (vente.status !== 'approved' && vente.status !== 'completed')) {
       showNotification('Seules les ventes approuvées ou complétées peuvent générer un ticket', 'error')
@@ -180,11 +344,9 @@ const VentesList = () => {
     
     setGeneratingTicket(vente.id)
     try {
-      // Récupérer les détails complets de la vente
       const response = await AxiosInstance.get(`/ventes/${vente.id}/`)
       const venteData = response.data
       
-      // Préparer les données pour le ticket
       const ticketData = {
         ...venteData,
         items_data: venteData.items || [],
@@ -280,6 +442,11 @@ const VentesList = () => {
   const canGenerateBonLivraison = (vente) => vente.status === 'approved' || vente.status === 'completed'
   const canGenerateTicket = (vente) => vente.status === 'approved' || vente.status === 'completed'
   const canDelete = (vente) => vente.status === 'draft' || vente.status === 'cancelled'
+  
+  // ✅ Nouvelle permission : marquer comme payé
+  const canMarkAsPaid = (vente) => {
+    return (vente.status === 'approved' || vente.status === 'completed') && !vente.est_paye
+  }
 
   // ============================================================
   // 5. Tri et filtrage
@@ -306,9 +473,20 @@ const VentesList = () => {
       const matchesSearch = reference.includes(search) || clientNom.includes(search)
       const matchesStatus = !filterStatus || vente.status === filterStatus
       const matchesType = !filterType || vente.type_vente === filterType
+      
+      // ✅ Filtre paiement
+      let matchesPayment = true
+      if (filterPayment === 'paid') {
+        matchesPayment = vente.est_paye === true
+      } else if (filterPayment === 'unpaid') {
+        matchesPayment = vente.est_paye === false && (vente.status === 'approved' || vente.status === 'completed')
+      } else if (filterPayment === 'partial') {
+        matchesPayment = parseFloat(vente.montant_paye || 0) > 0 && !vente.est_paye
+      }
+      
       const matchesDateStart = !dateRange.start || new Date(vente.date_vente) >= new Date(dateRange.start)
       const matchesDateEnd = !dateRange.end || new Date(vente.date_vente) <= new Date(dateRange.end)
-      return matchesSearch && matchesStatus && matchesType && matchesDateStart && matchesDateEnd
+      return matchesSearch && matchesStatus && matchesType && matchesPayment && matchesDateStart && matchesDateEnd
     })
 
     filtered.sort((a, b) => {
@@ -336,7 +514,7 @@ const VentesList = () => {
     })
 
     return filtered
-  }, [ventes, searchTerm, filterStatus, filterType, dateRange, sortField, sortDirection])
+  }, [ventes, searchTerm, filterStatus, filterType, filterPayment, dateRange, sortField, sortDirection])
 
   const totalPages = Math.ceil(filteredAndSortedVentes.length / itemsPerPage)
   const paginatedVentes = filteredAndSortedVentes.slice(
@@ -377,7 +555,7 @@ const VentesList = () => {
     if (vente.est_paye) {
       return <span className="badge badge-success gap-1 px-3 py-2 text-xs"><CheckCircle className="w-3 h-3" /> Payé</span>
     }
-    if (vente.montant_paye > 0) {
+    if (parseFloat(vente.montant_paye || 0) > 0) {
       return <span className="badge badge-warning gap-1 px-3 py-2 text-xs"><Clock className="w-3 h-3" /> Partiel</span>
     }
     return <span className="badge badge-error gap-1 px-3 py-2 text-xs"><AlertCircle className="w-3 h-3" /> Impayé</span>
@@ -390,6 +568,11 @@ const VentesList = () => {
       case 'en_ligne': return <Users className="w-4 h-4" />
       default: return <Package className="w-4 h-4" />
     }
+  }
+
+  const getPaymentMethodIcon = (method) => {
+    const config = paymentMethods.find(m => m.value === method)
+    return config ? config.icon : Wallet
   }
 
   // ============================================================
@@ -419,7 +602,7 @@ const VentesList = () => {
             ) : (
               <AlertCircle className="w-5 h-5 flex-shrink-0" />
             )}
-            <span className="font-semibold whitespace-pre-line">{notification.message}</span>
+            <span className="font-semibold whitespace-pre-line text-sm">{notification.message}</span>
             <button
               className="btn btn-ghost btn-xs btn-circle"
               onClick={() => setNotification({ ...notification, show: false })}
@@ -430,7 +613,206 @@ const VentesList = () => {
         </div>
       )}
 
-      {/* ===== MODALS (conservées pour Approbation, Rejet, Suppression) ===== */}
+      {/* ===== MODAL PAIEMENT ===== */}
+      {showPaymentModal && venteToPay && (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-2xl">
+            <div className="text-center mb-6">
+              <div className="avatar placeholder mb-4">
+                <div className="bg-success/10 text-success rounded-full w-20 h-20">
+                  <CreditCard className="w-10 h-10" />
+                </div>
+              </div>
+              <h3 className="font-bold text-2xl mb-2">Marquer comme payé</h3>
+              <p className="text-base-content/70">
+                Vente: <span className="font-semibold font-mono">{venteToPay.reference}</span>
+              </p>
+              {venteToPay.client_nom && (
+                <p className="text-sm text-base-content/60 mt-1">
+                  Client: {venteToPay.client_nom}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              {/* Résumé */}
+              <div className="bg-gradient-to-r from-success/10 to-primary/10 rounded-xl p-4 space-y-2 border border-success/20">
+                <div className="flex justify-between">
+                  <span className="text-base-content/60">Montant total:</span>
+                  <span className="font-bold text-primary">{formatPrice(venteToPay.total)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-base-content/60">Déjà payé:</span>
+                  <span className="font-semibold">{formatPrice(venteToPay.montant_paye)}</span>
+                </div>
+                <div className="flex justify-between border-t border-base-300 pt-2">
+                  <span className="font-semibold">Reste à payer:</span>
+                  <span className="font-bold text-success text-lg">
+                    {formatPrice(parseFloat(venteToPay.total) - parseFloat(venteToPay.montant_paye || 0))}
+                  </span>
+                </div>
+              </div>
+
+              {/* Méthode de paiement - Boutons radio visuels */}
+              <div className="form-control">
+                <label className="label font-medium">Méthode de paiement</label>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  {paymentMethods.map((method) => {
+                    const Icon = method.icon
+                    const isSelected = paymentMethod === method.value
+                    return (
+                      <button
+                        key={method.value}
+                        type="button"
+                        className={`btn btn-sm gap-2 ${isSelected ? 'btn-primary' : 'btn-ghost border border-base-300'}`}
+                        onClick={() => setPaymentMethod(method.value)}
+                      >
+                        <Icon className="w-4 h-4" />
+                        <span className="text-xs">{method.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Destination (Caisse ou Compte) */}
+              {loadingDestinations ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                  <span className="ml-2 text-sm">Chargement des destinations...</span>
+                </div>
+              ) : (
+                <>
+                  {/* Caisse pour espèces/mobile money */}
+                  {(paymentMethod === 'especes' || paymentMethod === 'mobile_money') && destinations.caisses.length > 0 && (
+                    <div className="form-control">
+                      <label className="label font-medium">
+                        <span className="flex items-center gap-2">
+                          <Wallet className="w-4 h-4" />
+                          Caisse de destination
+                        </span>
+                      </label>
+                      <select
+                        className="select select-bordered w-full"
+                        value={selectedCaisse}
+                        onChange={(e) => setSelectedCaisse(e.target.value)}
+                      >
+                        <option value="">Caisse par défaut</option>
+                        {destinations.caisses.map((caisse) => (
+                          <option key={caisse.id} value={caisse.id}>
+                            {caisse.nom} {caisse.code ? `(${caisse.code})` : ''} 
+                            {caisse.is_default ? ' ⭐' : ''}
+                            {caisse.solde_actuel ? ` - Solde: ${formatPrice(caisse.solde_actuel)}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Compte bancaire pour virement/chèque/carte */}
+                  {(paymentMethod === 'virement' || paymentMethod === 'cheque' || paymentMethod === 'carte') && destinations.comptes_bancaires.length > 0 && (
+                    <div className="form-control">
+                      <label className="label font-medium">
+                        <span className="flex items-center gap-2">
+                          <Landmark className="w-4 h-4" />
+                          Compte bancaire de destination
+                        </span>
+                      </label>
+                      <select
+                        className="select select-bordered w-full"
+                        value={selectedCompte}
+                        onChange={(e) => setSelectedCompte(e.target.value)}
+                      >
+                        <option value="">Sélectionner un compte</option>
+                        {destinations.comptes_bancaires.map((compte) => (
+                          <option key={compte.id} value={compte.id}>
+                            {compte.nom} - {compte.banque} ({compte.numero_compte})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Référence externe (optionnel) */}
+              {(paymentMethod === 'cheque' || paymentMethod === 'virement' || paymentMethod === 'mobile_money') && (
+                <div className="form-control">
+                  <label className="label font-medium">
+                    <span className="text-sm">
+                      Référence {paymentMethod === 'cheque' ? 'du chèque' : paymentMethod === 'virement' ? 'du virement' : 'Mobile Money'}
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    className="input input-bordered w-full"
+                    placeholder={paymentMethod === 'cheque' ? 'N° du chèque' : paymentMethod === 'virement' ? 'Référence du virement' : 'N° de transaction'}
+                    value={paymentReference}
+                    onChange={(e) => setPaymentReference(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {/* Notes */}
+              <div className="form-control">
+                <label className="label font-medium">
+                  <span className="text-sm">Notes (optionnel)</span>
+                </label>
+                <textarea
+                  className="textarea textarea-bordered w-full h-20 resize-none"
+                  placeholder="Notes sur le paiement..."
+                  value={paymentNotes}
+                  onChange={(e) => setPaymentNotes(e.target.value)}
+                />
+              </div>
+
+              {/* Info */}
+              <div className="alert alert-info">
+                <Info className="w-5 h-5 flex-shrink-0" />
+                <span className="text-xs">
+                  Une facture sera automatiquement créée (si nécessaire), marquée comme payée, 
+                  et un mouvement de trésorerie sera enregistré.
+                </span>
+              </div>
+            </div>
+
+            <div className="modal-action">
+              <button 
+                className="btn btn-ghost" 
+                onClick={() => { 
+                  setShowPaymentModal(false)
+                  setVenteToPay(null)
+                  setPaymentMethod('especes')
+                  setPaymentNotes('')
+                  setPaymentReference('')
+                  setSelectedCaisse('')
+                  setSelectedCompte('')
+                }}
+                disabled={processingPayment}
+              >
+                Annuler
+              </button>
+              <button 
+                className="btn btn-success gap-2" 
+                onClick={handleMarquerPaye}
+                disabled={processingPayment}
+              >
+                {processingPayment ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Traitement...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-4 h-4" />
+                    Confirmer le paiement
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Approbation */}
       {showApproveModal && venteToApprove && (
@@ -524,8 +906,6 @@ const VentesList = () => {
         </div>
       )}
 
-      {/* ❌ Modal Détails SUPPRIMÉE - le bouton Détails redirige directement vers la page de détail */}
-
       {/* ===== EN-TÊTE ===== */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
@@ -563,7 +943,7 @@ const VentesList = () => {
       </div>
 
       {/* ===== STATISTIQUES ===== */}
-      <div className="grid grid-cols-2 lg:grid-cols-7 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4">
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300">
           <div className="stat-figure text-primary"><ShoppingCart className="w-8 h-8" /></div>
           <div className="stat-title text-sm font-semibold">Total</div>
@@ -609,8 +989,16 @@ const VentesList = () => {
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300">
           <div className="stat-figure text-success"><CreditCard className="w-8 h-8" /></div>
           <div className="stat-title text-sm font-semibold">Payé</div>
-          <div className="stat-value text-2xl font-black">{formatPrice(stats.totalPaid)}</div>
-          <div className="stat-desc">Montant encaissé</div>
+          <div className="stat-value text-2xl font-black text-success">{formatPrice(stats.totalPaid)}</div>
+          <div className="stat-desc">{stats.countPaid} ventes payées</div>
+        </div>
+        
+        {/* ✅ Nouvelle statistique : Impayés */}
+        <div className="stat bg-base-100 rounded-xl shadow-md border border-error/30">
+          <div className="stat-figure text-error"><AlertCircle className="w-8 h-8" /></div>
+          <div className="stat-title text-sm font-semibold">Impayés</div>
+          <div className="stat-value text-2xl font-black text-error">{formatPrice(stats.totalUnpaid)}</div>
+          <div className="stat-desc">{stats.countUnpaid} ventes impayées</div>
         </div>
       </div>
 
@@ -656,6 +1044,18 @@ const VentesList = () => {
               <option value="en_ligne">En ligne</option>
             </select>
 
+            {/* ✅ Nouveau filtre paiement */}
+            <select
+              className="select select-bordered min-w-[150px]"
+              value={filterPayment}
+              onChange={(e) => { setFilterPayment(e.target.value); setCurrentPage(1) }}
+            >
+              <option value="">Tous paiements</option>
+              <option value="paid">✅ Payé</option>
+              <option value="partial">⏳ Partiel</option>
+              <option value="unpaid">❌ Impayé</option>
+            </select>
+
             <div className="flex gap-2">
               <input
                 type="date"
@@ -678,6 +1078,7 @@ const VentesList = () => {
               onClick={() => {
                 setFilterStatus('')
                 setFilterType('')
+                setFilterPayment('')
                 setSearchTerm('')
                 setDateRange({ start: '', end: '' })
                 setCurrentPage(1)
@@ -711,7 +1112,7 @@ const VentesList = () => {
             <ShoppingCart className="w-20 h-20 mx-auto mb-4 text-base-content/30" />
             <p className="text-xl font-semibold text-base-content/50">Aucune vente trouvée</p>
             <p className="text-base text-base-content/40 mt-2">
-              {searchTerm || filterStatus || filterType || dateRange.start || dateRange.end
+              {searchTerm || filterStatus || filterType || filterPayment || dateRange.start || dateRange.end
                 ? 'Essayez de modifier vos critères de recherche'
                 : 'Commencez par créer votre première vente'}
             </p>
@@ -774,7 +1175,18 @@ const VentesList = () => {
                       <td>{getPaymentStatusBadge(vente)}</td>
                       <td>
                         <div className="flex justify-end gap-1 flex-wrap">
-                          {/* ✅ Ticket POS */}
+                          {/* ✅ Bouton Marquer comme payé */}
+                          {canMarkAsPaid(vente) && (
+                            <button
+                              className="btn btn-ghost btn-xs text-success hover:bg-success/10"
+                              onClick={() => openPaymentModal(vente)}
+                              title="Marquer comme payé"
+                            >
+                              <CreditCard className="w-3 h-3" />
+                            </button>
+                          )}
+
+                          {/* Ticket POS */}
                           {canGenerateTicket(vente) && (
                             <button
                               className="btn btn-ghost btn-xs text-secondary"
@@ -826,7 +1238,7 @@ const VentesList = () => {
                             </>
                           )}
 
-                          {/* ✅ Détails : redirection directe vers la page de détail */}
+                          {/* Détails */}
                           <button
                             className="btn btn-ghost btn-xs"
                             onClick={() => navigate(`/ventes/${vente.id}`)}
@@ -860,7 +1272,11 @@ const VentesList = () => {
               {paginatedVentes.map((vente) => (
                 <div
                   key={vente.id}
-                  className="bg-base-200 rounded-xl p-6 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 border border-base-300 group"
+                  className={`bg-base-200 rounded-xl p-6 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 border group ${
+                    !vente.est_paye && (vente.status === 'approved' || vente.status === 'completed')
+                      ? 'border-error/30'
+                      : 'border-base-300'
+                  }`}
                 >
                   <div className="flex items-start justify-between mb-4">
                     <div>
@@ -884,6 +1300,14 @@ const VentesList = () => {
                       <span className="text-sm text-base-content/60">Montant</span>
                       <span className="font-bold text-primary">{formatPrice(vente.total)}</span>
                     </div>
+                    {!vente.est_paye && parseFloat(vente.montant_paye || 0) > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-base-content/60">Reste dû</span>
+                        <span className="font-bold text-error">
+                          {formatPrice(parseFloat(vente.total) - parseFloat(vente.montant_paye))}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-base-content/60">Date</span>
                       <span className="text-sm">{formatDate(vente.date_vente)}</span>
@@ -906,7 +1330,18 @@ const VentesList = () => {
                       {vente.items?.length || 0} article{(vente.items?.length || 0) > 1 ? 's' : ''}
                     </span>
                     <div className="flex gap-1">
-                      {/* ✅ Ticket POS */}
+                      {/* ✅ Bouton Marquer comme payé */}
+                      {canMarkAsPaid(vente) && (
+                        <button
+                          className="btn btn-ghost btn-xs text-success hover:bg-success/10"
+                          onClick={() => openPaymentModal(vente)}
+                          title="Marquer comme payé"
+                        >
+                          <CreditCard className="w-3 h-3" />
+                        </button>
+                      )}
+
+                      {/* Ticket POS */}
                       {canGenerateTicket(vente) && (
                         <button
                           className="btn btn-ghost btn-xs text-secondary"
@@ -921,6 +1356,8 @@ const VentesList = () => {
                           )}
                         </button>
                       )}
+                      
+                      {/* Bon de livraison */}
                       {canGenerateBonLivraison(vente) && (
                         <button
                           className="btn btn-ghost btn-xs text-info"
@@ -935,6 +1372,8 @@ const VentesList = () => {
                           )}
                         </button>
                       )}
+                      
+                      {/* Approbation */}
                       {vente.status === 'pending_approval' && canApprove() && (
                         <>
                           <button
@@ -953,7 +1392,8 @@ const VentesList = () => {
                           </button>
                         </>
                       )}
-                      {/* ✅ Détails : redirection directe vers la page de détail */}
+                      
+                      {/* Détails */}
                       <button
                         className="btn btn-ghost btn-xs"
                         onClick={() => navigate(`/ventes/${vente.id}`)}
@@ -961,6 +1401,8 @@ const VentesList = () => {
                       >
                         <Eye className="w-3 h-3" />
                       </button>
+                      
+                      {/* Supprimer */}
                       {canDelete(vente) && (
                         <button
                           className="btn btn-ghost btn-xs text-error"
