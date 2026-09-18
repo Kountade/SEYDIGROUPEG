@@ -1,12 +1,13 @@
 // src/components/pos/PointDeVente.jsx
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
 import {
   Plus, Minus, Trash2, Search, RefreshCw, Filter, ShoppingCart, X,
   AlertCircle, CheckCircle, ChevronLeft, ChevronRight, ArrowUpDown,
   LayoutGrid, List, Tag, Package, AlertTriangle, DollarSign,
-  Warehouse, User, Users, Phone, Mail, Barcode, Receipt, Loader
+  Warehouse, User, Users, Phone, Mail, Barcode, Receipt, Loader,
+  Building2, MapPin, Star
 } from 'lucide-react'
 
 const PointDeVente = () => {
@@ -14,7 +15,7 @@ const PointDeVente = () => {
   const searchInputRef = useRef(null)
 
   // ============================================================
-  // ÉTATS
+  // ÉTATS PRINCIPAUX
   // ============================================================
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -31,6 +32,14 @@ const PointDeVente = () => {
   const [loadingUser, setLoadingUser] = useState(true)
   const [notes, setNotes] = useState('')
 
+  // ============================================================
+  // ÉTATS POUR LA GESTION MULTI-AGENCES / MULTI-ENTREPÔTS
+  // ============================================================
+  const [agences, setAgences] = useState([])
+  const [selectedAgenceFilter, setSelectedAgenceFilter] = useState(null)
+  const [warehouses, setWarehouses] = useState([])
+  const [loadingWarehouses, setLoadingWarehouses] = useState(false)
+
   // Lots
   const [lotsByProduct, setLotsByProduct] = useState({})
   const [loadingLots, setLoadingLots] = useState({})
@@ -43,7 +52,7 @@ const PointDeVente = () => {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [categories, setCategories] = useState([])
-  const [showOnlyAvailable, setShowOnlyAvailable] = useState(true) // ✅ NOUVEAU : filtre disponibilité
+  const [showOnlyAvailable, setShowOnlyAvailable] = useState(true)
 
   // Vue
   const [viewMode, setViewMode] = useState('grid')
@@ -93,18 +102,17 @@ const PointDeVente = () => {
   }
 
   // ============================================================
-  // ✅ VÉRIFICATION DISPONIBILITÉ PRODUIT
+  // VÉRIFICATION DISPONIBILITÉ PRODUIT
   // ============================================================
   const isProductAvailable = (product) => {
     if (!product) return false
     const stock = safeNumber(product.stock_quantity, 0)
     const price = safeNumber(product.sale_price, 0)
-    // Disponible = stock > 0 ET prix > 0
     return stock > 0 && price > 0
   }
 
   // ============================================================
-  // ✅ BADGE DE STATUT AMÉLIORÉ (rupture / prix manquant / stock faible / dispo)
+  // BADGE DE STATUT
   // ============================================================
   const getStatusBadge = (product) => {
     const stock = safeNumber(product?.stock_quantity, 0)
@@ -112,7 +120,6 @@ const PointDeVente = () => {
     const price = safeNumber(product?.sale_price, 0)
     const hasPrice = product?.has_price !== false && price > 0
 
-    // ❌ Pas de prix → rupture
     if (!hasPrice) {
       return (
         <div className="badge badge-error gap-1 font-semibold">
@@ -122,7 +129,6 @@ const PointDeVente = () => {
       )
     }
 
-    // ❌ Stock 0 → rupture
     if (stock <= 0) {
       return (
         <div className="badge badge-error gap-1 font-semibold">
@@ -132,7 +138,6 @@ const PointDeVente = () => {
       )
     }
 
-    // ⚠️ Stock faible
     if (minLevel > 0 && stock <= minLevel) {
       return (
         <div className="badge badge-warning gap-1 font-semibold">
@@ -142,7 +147,6 @@ const PointDeVente = () => {
       )
     }
 
-    // ✅ Disponible
     return (
       <div className="badge badge-success gap-1 font-semibold">
         <CheckCircle className="w-3 h-3" />
@@ -152,7 +156,41 @@ const PointDeVente = () => {
   }
 
   // ============================================================
-  // 1. Chargement de l'utilisateur, agence, entrepôt
+  // CHARGEMENT DES ENTREPÔTS
+  // ============================================================
+  const fetchWarehouses = async (agenceId = null) => {
+    setLoadingWarehouses(true)
+    try {
+      const targetAgenceId = agenceId || agence?.id
+
+      let url = '/warehouses/'
+      const params = new URLSearchParams()
+
+      if (targetAgenceId) {
+        params.append('agence', targetAgenceId)
+      }
+      params.append('is_active', 'true')
+
+      if (params.toString()) {
+        url += `?${params.toString()}`
+      }
+
+      const response = await AxiosInstance.get(url)
+      const warehousesList = Array.isArray(response.data) ? response.data : []
+      setWarehouses(warehousesList)
+
+      return warehousesList
+    } catch (error) {
+      console.error('Erreur chargement entrepôts:', error)
+      setWarehouses([])
+      return []
+    } finally {
+      setLoadingWarehouses(false)
+    }
+  }
+
+  // ============================================================
+  // CHARGEMENT INITIAL UTILISATEUR + AGENCES + ENTREPÔTS
   // ============================================================
   useEffect(() => {
     const fetchCurrentUser = async () => {
@@ -162,60 +200,97 @@ const PointDeVente = () => {
         setCurrentUser(userData)
 
         const agencesDeLUtilisateur = userData.agences || []
+
         if (agencesDeLUtilisateur.length > 0) {
+          setAgences(agencesDeLUtilisateur)
           const agenceUtilisateur = agencesDeLUtilisateur[0]
           setAgence(agenceUtilisateur)
-          await fetchEntrepot(agenceUtilisateur.id)
+          setSelectedAgenceFilter(agenceUtilisateur.id)
+
+          // ✅ Charger les entrepôts de cette agence
+          const list = await fetchWarehouses(agenceUtilisateur.id)
+
+          // Sélectionner l'entrepôt par défaut
+          if (list.length > 0) {
+            const defaultWarehouse = list.find(w => w.is_default) || list[0]
+            setEntrepot(defaultWarehouse)
+          }
         } else {
+          // Fallback : charger toutes les agences
           try {
             const agencesRes = await AxiosInstance.get('/agences/')
             const agencesList = Array.isArray(agencesRes.data) ? agencesRes.data : []
             if (agencesList.length > 0) {
+              setAgences(agencesList)
               setAgence(agencesList[0])
-              await fetchEntrepot(agencesList[0].id)
-            } else {
-              setLoadingUser(false)
+              setSelectedAgenceFilter(agencesList[0].id)
+              const list = await fetchWarehouses(agencesList[0].id)
+              if (list.length > 0) {
+                const defaultWarehouse = list.find(w => w.is_default) || list[0]
+                setEntrepot(defaultWarehouse)
+              }
             }
           } catch (e) {
             console.error('Erreur agences:', e)
-            setLoadingUser(false)
           }
         }
 
+        // Catégories
         try {
           const catRes = await AxiosInstance.get('/categories/')
           setCategories(Array.isArray(catRes.data) ? catRes.data : [])
         } catch (e) {
           console.warn('Catégories non chargées:', e)
         }
+
       } catch (error) {
         console.error('Erreur users/me:', error)
         showNotification('Erreur de chargement du profil', 'error')
+      } finally {
         setLoadingUser(false)
       }
     }
     fetchCurrentUser()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const fetchEntrepot = async (agenceId) => {
-    try {
-      const response = await AxiosInstance.get(`/warehouses/?agence=${agenceId}`)
-      const warehouses = Array.isArray(response.data) ? response.data : []
-      const defaultWarehouse = warehouses.find(w => w.is_default) || warehouses[0]
-      if (defaultWarehouse) {
-        setEntrepot(defaultWarehouse)
-      } else {
-        console.warn('Aucun entrepôt trouvé pour cette agence')
-      }
-    } catch (error) {
-      console.error('Erreur warehouses:', error)
-    } finally {
-      setLoadingUser(false)
+  // ============================================================
+  // CHANGEMENT D'AGENCE (PDG/DRH)
+  // ============================================================
+  const handleAgenceChange = async (agenceId) => {
+    const newAgence = agences.find(a => a.id === parseInt(agenceId))
+    if (!newAgence) return
+
+    setAgence(newAgence)
+    setSelectedAgenceFilter(newAgence.id)
+    setEntrepot(null)
+    setItems([])
+
+    const newWarehouses = await fetchWarehouses(newAgence.id)
+
+    if (newWarehouses.length > 0) {
+      const defaultWarehouse = newWarehouses.find(w => w.is_default) || newWarehouses[0]
+      setEntrepot(defaultWarehouse)
     }
+
+    showNotification(`Agence changée : ${newAgence.nom}`, 'success')
   }
 
   // ============================================================
-  // 2. Chargement des produits
+  // CHANGEMENT D'ENTREPÔT
+  // ============================================================
+  const handleEntrepotChange = (warehouseId) => {
+    const newEntrepot = warehouses.find(w => w.id === parseInt(warehouseId))
+    if (!newEntrepot) return
+
+    setEntrepot(newEntrepot)
+    setItems([])
+
+    showNotification(`Entrepôt changé : ${newEntrepot.name}`, 'success')
+  }
+
+  // ============================================================
+  // CHARGEMENT DES PRODUITS (selon entrepôt)
   // ============================================================
   useEffect(() => {
     if (!entrepot?.id) return
@@ -248,7 +323,6 @@ const PointDeVente = () => {
               base.wholesale_price = priceRes.data?.wholesale_price != null
                 ? safeNumber(priceRes.data.wholesale_price) : null
               base.has_wholesale = !!priceRes.data?.has_wholesale
-              // Si pas de prix retourné, marquer has_price = false
               if (!priceRes.data?.sale_price || safeNumber(priceRes.data.sale_price) <= 0) {
                 base.has_price = false
               }
@@ -287,10 +361,11 @@ const PointDeVente = () => {
     }
 
     fetchProductsWithPrices()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entrepot])
 
   // ============================================================
-  // 3. Chargement des clients
+  // CHARGEMENT DES CLIENTS
   // ============================================================
   useEffect(() => {
     const fetchClients = async () => {
@@ -305,7 +380,7 @@ const PointDeVente = () => {
   }, [])
 
   // ============================================================
-  // 4. Chargement des lots
+  // CHARGEMENT DES LOTS
   // ============================================================
   const fetchLotsForProduct = async (productId) => {
     const pid = safeInt(productId)
@@ -330,7 +405,7 @@ const PointDeVente = () => {
   }
 
   // ============================================================
-  // 5. Panier
+  // PANIER
   // ============================================================
   const isProductAlreadyAdded = (productId) => {
     const pid = safeInt(productId)
@@ -343,7 +418,6 @@ const PointDeVente = () => {
       return
     }
 
-    // ✅ Vérifier disponibilité (stock > 0 ET prix > 0)
     if (!isProductAvailable(product)) {
       const stock = safeNumber(product.stock_quantity, 0)
       const price = safeNumber(product.sale_price, 0)
@@ -448,7 +522,7 @@ const PointDeVente = () => {
   }
 
   // ============================================================
-  // 6. Totaux
+  // TOTAUX
   // ============================================================
   useEffect(() => {
     const subtotal = items.reduce(
@@ -458,7 +532,7 @@ const PointDeVente = () => {
   }, [items])
 
   // ============================================================
-  // 7. Soumission
+  // SOUMISSION
   // ============================================================
   const handleSubmit = async () => {
     if (items.length === 0) {
@@ -467,6 +541,10 @@ const PointDeVente = () => {
     }
     if (!agence?.id) {
       showNotification('Agence non trouvée', 'error')
+      return
+    }
+    if (!entrepot?.id) {
+      showNotification('Veuillez sélectionner un entrepôt', 'error')
       return
     }
 
@@ -522,17 +600,15 @@ const PointDeVente = () => {
   }
 
   // ============================================================
-  // 8. Filtrage / tri / pagination
+  // FILTRAGE / TRI / PAGINATION
   // ============================================================
-  const filteredProducts = React.useMemo(() => {
+  const filteredProducts = useMemo(() => {
     let filtered = Array.isArray(products) ? products : []
 
-    // ✅ Filtre disponibilité (stock + prix)
     if (showOnlyAvailable) {
       filtered = filtered.filter(p => isProductAvailable(p))
     }
 
-    // Recherche
     if (searchTerm) {
       const term = searchTerm.toLowerCase()
       filtered = filtered.filter(p =>
@@ -543,7 +619,6 @@ const PointDeVente = () => {
       )
     }
 
-    // Catégorie
     if (selectedCategory !== 'all') {
       filtered = filtered.filter(p => safeInt(p.category) === safeInt(selectedCategory))
     }
@@ -551,7 +626,7 @@ const PointDeVente = () => {
     return filtered
   }, [products, searchTerm, selectedCategory, showOnlyAvailable])
 
-  const sortedProducts = React.useMemo(() => {
+  const sortedProducts = useMemo(() => {
     const sorted = [...filteredProducts]
     sorted.sort((a, b) => {
       let aVal = a[sortField] ?? ''
@@ -576,13 +651,12 @@ const PointDeVente = () => {
     currentPage * itemsPerPage
   )
 
-  // Compteur de produits indisponibles (pour info)
-  const unavailableCount = React.useMemo(() => {
+  const unavailableCount = useMemo(() => {
     return (products || []).filter(p => !isProductAvailable(p)).length
   }, [products])
 
   // ============================================================
-  // 9. Composant Image produit (sans mutation DOM)
+  // COMPOSANT IMAGE PRODUIT
   // ============================================================
   const ProductImage = ({ src, alt, className }) => {
     const [errored, setErrored] = useState(false)
@@ -605,9 +679,9 @@ const PointDeVente = () => {
   }
 
   // ============================================================
-  // 10. Loading
+  // LOADING
   // ============================================================
-  if (loadingUser || loading) {
+  if (loadingUser) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-200px)]">
         <div className="text-center space-y-6">
@@ -621,7 +695,7 @@ const PointDeVente = () => {
   }
 
   // ============================================================
-  // 11. RENDU
+  // RENDU
   // ============================================================
   return (
     <div className="space-y-6 p-4 lg:p-6">
@@ -670,35 +744,146 @@ const PointDeVente = () => {
         </div>
       </div>
 
-      {/* Entrepôt + Client */}
+      {/* ============================================================ */}
+      {/* SÉLECTEURS AGENCE + ENTREPÔT + CLIENT */}
+      {/* ============================================================ */}
       <div className="bg-base-100 rounded-xl shadow-md border border-base-300 p-4 lg:p-6">
-        <div className="flex flex-col lg:flex-row gap-4">
-          <div className="flex-1 flex items-center gap-3">
-            <Warehouse className="w-5 h-5 text-primary" />
-            <div className="bg-gray-100 rounded-lg p-2 px-3 border border-gray-200 h-12 flex items-center flex-1 max-w-xs">
-              <p className="font-medium">{entrepot?.name || 'Entrepôt principal'}</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+
+          {/* ✅ SÉLECTEUR D'AGENCE (visible si plusieurs agences) */}
+          {agences.length > 1 && (
+            <div className="flex items-center gap-3">
+              <Building2 className="w-5 h-5 text-primary flex-shrink-0" />
+              <div className="flex-1">
+                <label className="label py-0">
+                  <span className="label-text text-xs font-medium text-base-content/60">
+                    Agence
+                  </span>
+                </label>
+                <select
+                  className="select select-bordered w-full"
+                  value={selectedAgenceFilter || ''}
+                  onChange={(e) => handleAgenceChange(e.target.value)}
+                  disabled={submitting}
+                >
+                  <option value="">Sélectionner une agence</option>
+                  {agences.map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.nom} {a.type_agence ? `(${a.type_agence})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* ✅ SÉLECTEUR D'ENTREPÔT (toujours visible) */}
+          <div className="flex items-center gap-3">
+            <Warehouse className="w-5 h-5 text-primary flex-shrink-0" />
+            <div className="flex-1">
+              <label className="label py-0">
+                <span className="label-text text-xs font-medium text-base-content/60">
+                  Entrepôt {warehouses.length > 0 && `(${warehouses.length})`}
+                </span>
+              </label>
+
+              {loadingWarehouses ? (
+                <div className="flex items-center gap-2 bg-base-200 rounded-lg px-3 h-12 border border-base-300">
+                  <Loader className="w-4 h-4 animate-spin text-primary" />
+                  <span className="text-sm text-base-content/60">Chargement...</span>
+                </div>
+              ) : warehouses.length === 0 ? (
+                <div className="bg-error/10 rounded-lg px-3 h-12 border border-error/30 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-error" />
+                  <span className="text-sm text-error font-medium">Aucun entrepôt</span>
+                </div>
+              ) : (
+                <select
+                  className="select select-bordered w-full"
+                  value={entrepot?.id || ''}
+                  onChange={(e) => handleEntrepotChange(e.target.value)}
+                  disabled={submitting || warehouses.length === 1}
+                >
+                  {warehouses.length > 1 && (
+                    <option value="">Sélectionner un entrepôt</option>
+                  )}
+                  {warehouses.map(w => (
+                    <option key={w.id} value={w.id}>
+                      {w.name} {w.is_default ? '⭐' : ''} {w.code ? `(${w.code})` : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
           </div>
-          <div className="flex-1 flex items-center gap-3">
-            <User className="w-5 h-5 text-primary" />
-            <button
-              className="btn btn-outline flex-1 gap-2"
-              onClick={() => setShowClientModal(true)}
-            >
-              {selectedClient
-                ? `${selectedClient.nom || ''} ${selectedClient.prenom || ''}`.trim()
-                : 'Client anonyme'}
-            </button>
-            {selectedClient && (
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => setSelectedClient(null)}
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
+
+          {/* Client */}
+          <div className="flex items-center gap-3">
+            <User className="w-5 h-5 text-primary flex-shrink-0" />
+            <div className="flex-1">
+              <label className="label py-0">
+                <span className="label-text text-xs font-medium text-base-content/60">
+                  Client
+                </span>
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="btn btn-outline flex-1 gap-2 justify-start"
+                  onClick={() => setShowClientModal(true)}
+                  disabled={submitting}
+                >
+                  <span className="truncate">
+                    {selectedClient
+                      ? `${selectedClient.nom || ''} ${selectedClient.prenom || ''}`.trim()
+                      : 'Client anonyme'}
+                  </span>
+                </button>
+                {selectedClient && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setSelectedClient(null)}
+                    disabled={submitting}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
+
+        {/* ✅ Bandeau info entrepôt sélectionné */}
+        {entrepot && (
+          <div className="mt-4 pt-4 border-t border-base-300 flex flex-wrap items-center gap-4 text-xs">
+            <div className="flex items-center gap-1.5 text-base-content/70">
+              <Warehouse className="w-3.5 h-3.5 text-primary" />
+              <span className="font-medium">Entrepôt :</span>
+              <span className="font-bold text-primary">{entrepot.name}</span>
+              {entrepot.code && (
+                <span className="text-base-content/40 font-mono">({entrepot.code})</span>
+              )}
+              {entrepot.is_default && (
+                <span className="badge badge-warning badge-xs gap-1">
+                  <Star className="w-2.5 h-2.5" /> Par défaut
+                </span>
+              )}
+            </div>
+            {entrepot.city && (
+              <div className="flex items-center gap-1.5 text-base-content/60">
+                <MapPin className="w-3.5 h-3.5" />
+                <span>{entrepot.city}{entrepot.country ? `, ${entrepot.country}` : ''}</span>
+              </div>
+            )}
+            {agence && (
+              <div className="flex items-center gap-1.5 text-base-content/60">
+                <Building2 className="w-3.5 h-3.5" />
+                <span>Agence : <strong className="text-base-content/80">{agence.nom}</strong></span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Filtres */}
@@ -755,13 +940,12 @@ const PointDeVente = () => {
               <ArrowUpDown className="w-4 h-4" />
             </button>
 
-            {/* ✅ FILTRE DISPONIBILITÉ */}
             <label className="label cursor-pointer gap-2 bg-base-200 px-3 py-2 rounded-lg">
               <span className="label-text text-sm">
-                Disponibles uniquement
+                Disponibles
                 {unavailableCount > 0 && (
                   <span className="badge badge-warning badge-sm ml-1">
-                    {unavailableCount} indispo.
+                    {unavailableCount}
                   </span>
                 )}
               </span>
@@ -810,14 +994,23 @@ const PointDeVente = () => {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Produits */}
         <div className="lg:col-span-3 bg-base-100 rounded-xl shadow-xl border border-base-300 overflow-hidden">
-          {paginatedProducts.length === 0 ? (
+          {loading ? (
+            <div className="flex justify-center items-center py-20">
+              <div className="text-center space-y-3">
+                <Loader className="w-10 h-10 animate-spin text-primary mx-auto" />
+                <p className="text-base-content/60">Chargement des produits...</p>
+              </div>
+            </div>
+          ) : paginatedProducts.length === 0 ? (
             <div className="p-12 text-center">
               <Package className="w-20 h-20 mx-auto mb-4 text-base-content/30" />
               <p className="text-xl font-semibold text-base-content/50">
                 Aucun produit trouvé
               </p>
               <p className="text-base text-base-content/40 mt-2">
-                Essayez de modifier vos critères de recherche
+                {!entrepot
+                  ? 'Sélectionnez un entrepôt pour afficher les produits'
+                  : 'Essayez de modifier vos critères de recherche'}
               </p>
               {showOnlyAvailable && unavailableCount > 0 && (
                 <div className="mt-4">
@@ -873,7 +1066,6 @@ const PointDeVente = () => {
                           {getStatusBadge(product)}
                         </div>
 
-                        {/* ✅ Overlay rupture (stock ou prix) */}
                         {!isAvailable && (
                           <div className="absolute inset-0 bg-black/60 flex items-center justify-center flex-col gap-1">
                             <span className="text-white font-bold text-sm bg-red-500 px-3 py-1 rounded">
@@ -1260,7 +1452,9 @@ const PointDeVente = () => {
                   )}
                 </button>
                 {!entrepot && (
-                  <p className="text-xs text-error text-center mt-2">⚠️ Entrepôt non trouvé</p>
+                  <p className="text-xs text-error text-center mt-2">
+                    ⚠️ Sélectionnez un entrepôt
+                  </p>
                 )}
               </>
             ) : (
