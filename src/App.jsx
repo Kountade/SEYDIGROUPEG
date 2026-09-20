@@ -161,9 +161,13 @@ import ClientFacturesPDF from './components/ventes/ClientFacturesPDF'
 
 import Lots from './components/inventaire/Lots'
 
+// ✅ MODULE INVENTAIRE (une seule fois !)
+import Inventaire from './components/inventaire/Inventaire'
+import InventoryCountsList from './components/inventaire/InventoryCountsList'
+import InventoryCountForm from './components/inventaire/InventoryCountForm'
+import InventoryCountDetail from './components/inventaire/InventoryCountDetail'
 
 import Stats from './components/grh/Stats'
-
 
 // ✅ IMPORTS FACTURES ET PAIEMENTS FOURNISSEURS
 import FacturesFournisseurs from './components/achats/FacturesFournisseurs'
@@ -178,6 +182,7 @@ import AuditLog from './components/audit/AuditLog'
 
 import DashboardGlobal from './components/dashboard/DashboardGlobal'
 
+// ❌ SUPPRIMÉ : import Inventaire from './components/inventaire/Inventaire' (DOUBLON ligne 185)
 
 function App() {
  
@@ -252,43 +257,43 @@ function App() {
 
 <Route path="/tresorerie/dashboard" element={<Tresorerie />} />
 
-  // Caisses - CRUD complet
+  {/* Caisses - CRUD complet */}
           <Route path="/caisses" element={<Caisses />} />
           <Route path="/caisses/nouveau" element={<CaissesForm />} />
           <Route path="/caisses/:id" element={<CaissesDetail />} />
           <Route path="/caisses/:id/edit" element={<CaissesForm />} />
 
-           // Comptes bancaires - CRUD complet
+          {/* Comptes bancaires - CRUD complet */}
           <Route path="/comptes-bancaires" element={<ComptesBancaires />} />
           <Route path="/comptes-bancaires/nouveau" element={<ComptesBancairesForm />} />
           <Route path="/comptes-bancaires/:id" element={<ComptesBancairesDetail />} />
           <Route path="/comptes-bancaires/:id/edit" element={<ComptesBancairesForm />} />
           
-          // Mouvements - CRUD complet
+          {/* Mouvements - CRUD complet */}
           <Route path="/mouvements-tresorerie" element={<MouvementsTresorerie />} />
           <Route path="/mouvements/nouveau" element={<MouvementsTresorerieForm />} />
           <Route path="/mouvements/:id" element={<MouvementsTresorerieDetail />} />
           <Route path="/mouvements/:id/edit" element={<MouvementsTresorerieForm />} />
           
-          // Frais - CRUD complet
+          {/* Frais - CRUD complet */}
           <Route path="/frais" element={<FraisTresorerie />} />
           <Route path="/frais/nouveau" element={<FraisTresorerieForm />} />
           <Route path="/frais/:id" element={<FraisTresorerieDetail />} />
           <Route path="/frais/:id/edit" element={<FraisTresorerieForm />} />
           
-          // Prévisions - CRUD complet
+          {/* Prévisions - CRUD complet */}
           <Route path="/previsions" element={<PrevisionsTresorerie />} />
           <Route path="/previsions/nouveau" element={<PrevisionsTresorerieForm />} />
           <Route path="/previsions/:id" element={<PrevisionsTresorerieDetail />} />
           <Route path="/previsions/:id/edit" element={<PrevisionsTresorerieForm />} />
           
-          // Rapprochements - CRUD complet
+          {/* Rapprochements - CRUD complet */}
           <Route path="/rapprochements" element={<Rapprochements />} />
           <Route path="/rapprochements/nouveau" element={<RapprochementsForm />} />
           <Route path="/rapprochements/:id" element={<RapprochementsDetail />} />
           <Route path="/rapprochements/:id/edit" element={<RapprochementsForm />} />
           
-          // Trésorerie journalière - Lecture seule
+          {/* Trésorerie journalière - Lecture seule */}
           <Route path="/tresorerie-journaliere" element={<TresorerieJournaliere />} />
 
 <Route path="/compte-resultat" element={<CompteResultat />} />
@@ -344,6 +349,34 @@ function App() {
 {/* Gestion des MOUvements de stock */}
 <Route path="/mouvements-stock" element={<MouvementsStock />} />
 <Route path="/mouvements-stock/:id" element={<MouvementStockDetail />} />
+
+
+
+
+
+<Route path="/inventaire" element={<Inventaire />} />
+<Route path="/inventaire/inventory-counts" element={<InventoryCountsList />} />
+<Route path="/inventaire/inventory-counts/nouveau" element={<InventoryCountForm />} />
+<Route path="/inventaire/inventory-counts/:id" element={<InventoryCountDetail />} />
+<Route path="/inventaire/inventory-counts/:id/modifier" element={<InventoryCountForm />} />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
  {/* Gestion des stock */}
