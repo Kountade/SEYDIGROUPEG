@@ -61,7 +61,7 @@ const ProductPricingManager = () => {
   const [viewMode, setViewMode] = useState('list')
   const [sortField, setSortField] = useState('warehouse_name')
   const [sortDirection, setSortDirection] = useState('asc')
-  
+
   // Notification
   const [notification, setNotification] = useState({
     show: false,
@@ -69,13 +69,12 @@ const ProductPricingManager = () => {
     type: 'success'
   })
 
-  // Formulaire
+  // Formulaire (SANS TVA)
   const [formData, setFormData] = useState({
     warehouse_id: '',
     purchase_price: '',
     sale_price: '',
     wholesale_price: '',
-    tax_rate: 20,
     currency: 'XOF'
   })
 
@@ -83,8 +82,7 @@ const ProductPricingManager = () => {
     warehouse_id: '',
     purchase_price: '',
     sale_price: '',
-    wholesale_price: '',
-    tax_rate: ''
+    wholesale_price: ''
   })
 
   // Statistiques
@@ -113,7 +111,7 @@ const ProductPricingManager = () => {
       const pricesData = pricesRes.data || []
       setPrices(pricesData)
       setWarehouses(warehousesRes.data || [])
-      
+
       // Calculer les statistiques
       const total = pricesData.length
       const avgPurchase = total > 0 ? pricesData.reduce((sum, p) => sum + p.purchase_price, 0) / total : 0
@@ -122,9 +120,9 @@ const ProductPricingManager = () => {
       const avgMarginPercent = total > 0 ? pricesData.reduce((sum, p) => {
         return sum + (p.purchase_price > 0 ? ((p.sale_price - p.purchase_price) / p.purchase_price * 100) : 0)
       }, 0) / total : 0
-      
+
       setStats({ total, avgPurchase, avgSale, avgMargin, avgMarginPercent })
-      
+
     } catch (err) {
       console.error('Erreur:', err)
       showNotification('Erreur de chargement des données', 'error')
@@ -154,10 +152,6 @@ const ProductPricingManager = () => {
     if (formData.purchase_price && parseFloat(formData.sale_price) < parseFloat(formData.purchase_price)) {
       errors.sale_price = 'Le prix de vente ne peut pas être inférieur au prix d\'achat'
     }
-    if (formData.tax_rate) {
-      const tax = parseInt(formData.tax_rate)
-      if (isNaN(tax) || tax < 0 || tax > 100) errors.tax_rate = 'La TVA doit être comprise entre 0 et 100%'
-    }
     setFormErrors(errors)
     return Object.keys(errors).length === 0
   }
@@ -168,7 +162,6 @@ const ProductPricingManager = () => {
       purchase_price: '',
       sale_price: '',
       wholesale_price: '',
-      tax_rate: 20,
       currency: 'XOF'
     })
     setFormErrors({})
@@ -189,12 +182,11 @@ const ProductPricingManager = () => {
         purchase_price: parseFloat(formData.purchase_price),
         sale_price: parseFloat(formData.sale_price),
         wholesale_price: formData.wholesale_price ? parseFloat(formData.wholesale_price) : null,
-        tax_rate: parseInt(formData.tax_rate) || 20,
         currency: formData.currency
       }
 
       await AxiosInstance.post('/product-prices/set_price/', payload)
-      
+
       showNotification(editingId ? 'Prix modifié avec succès' : 'Prix enregistré avec succès', 'success')
       setShowForm(false)
       resetForm()
@@ -214,7 +206,6 @@ const ProductPricingManager = () => {
       purchase_price: price.purchase_price,
       sale_price: price.sale_price,
       wholesale_price: price.wholesale_price || '',
-      tax_rate: price.tax_rate || 20,
       currency: price.currency || 'XOF'
     })
     setShowForm(true)
@@ -223,7 +214,7 @@ const ProductPricingManager = () => {
 
   const handleDelete = async (price) => {
     if (!window.confirm(`Êtes-vous sûr de vouloir supprimer le prix pour "${price.warehouse_name}" ?`)) return
-    
+
     setSubmitting(true)
     try {
       await AxiosInstance.post('/product-prices/set_price/', {
@@ -231,7 +222,6 @@ const ProductPricingManager = () => {
         warehouse_id: price.warehouse,
         purchase_price: 0,
         sale_price: 0,
-        tax_rate: 20,
         currency: 'XOF'
       })
       showNotification('Prix supprimé avec succès', 'success')
@@ -278,7 +268,7 @@ const ProductPricingManager = () => {
   // Filtrage et tri
   const filteredPrices = React.useMemo(() => {
     let filtered = prices.filter(price => {
-      const matchesSearch = searchTerm === '' || 
+      const matchesSearch = searchTerm === '' ||
         price.warehouse_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         price.warehouse_code?.toLowerCase().includes(searchTerm.toLowerCase())
       const matchesWarehouse = selectedWarehouse === 'all' || price.warehouse === parseInt(selectedWarehouse)
@@ -288,17 +278,17 @@ const ProductPricingManager = () => {
     filtered.sort((a, b) => {
       let aVal = a[sortField] || ''
       let bVal = b[sortField] || ''
-      
+
       if (['purchase_price', 'sale_price', 'wholesale_price'].includes(sortField)) {
         aVal = parseFloat(aVal) || 0
         bVal = parseFloat(bVal) || 0
       }
-      
+
       if (sortField === 'warehouse_name') {
         aVal = (a.warehouse_name || '').toLowerCase()
         bVal = (b.warehouse_name || '').toLowerCase()
       }
-      
+
       if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1
       if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1
       return 0
@@ -358,7 +348,7 @@ const ProductPricingManager = () => {
               <AlertCircle className="w-5 h-5" />
             )}
             <span className="font-semibold">{notification.message}</span>
-            <button 
+            <button
               className="btn btn-ghost btn-xs btn-circle"
               onClick={() => setNotification({ ...notification, show: false })}
             >
@@ -371,8 +361,8 @@ const ProductPricingManager = () => {
       {/* En-tête */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div className="flex items-center gap-4">
-          <button 
-            onClick={() => navigate(`/produits/${id}`)} 
+          <button
+            onClick={() => navigate(`/produits/${id}`)}
             className="btn btn-ghost btn-circle btn-lg"
           >
             <ArrowLeft className="w-6 h-6" />
@@ -396,11 +386,11 @@ const ProductPricingManager = () => {
             </div>
           </div>
         </div>
-        
+
         <div className="flex flex-wrap gap-3">
-          <button 
-            onClick={refreshData} 
-            disabled={refreshing} 
+          <button
+            onClick={refreshData}
+            disabled={refreshing}
             className="btn btn-outline gap-2"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
@@ -433,7 +423,7 @@ const ProductPricingManager = () => {
               </div>
             </div>
           </div>
-          
+
           <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Entrepôt */}
@@ -540,25 +530,6 @@ const ProductPricingManager = () => {
                   <span className="text-error text-xs mt-1">{formErrors.wholesale_price}</span>
                 )}
               </div>
-
-              {/* TVA */}
-              <div className="form-control">
-                <label className="label font-medium">TVA (%)</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  className={`input input-bordered w-full ${formErrors.tax_rate ? 'input-error' : ''}`}
-                  value={formData.tax_rate}
-                  onChange={(e) => {
-                    setFormData({ ...formData, tax_rate: e.target.value })
-                    setFormErrors({ ...formErrors, tax_rate: '' })
-                  }}
-                />
-                {formErrors.tax_rate && (
-                  <span className="text-error text-xs mt-1">{formErrors.tax_rate}</span>
-                )}
-              </div>
             </div>
 
             {/* Aperçu des marges */}
@@ -583,8 +554,8 @@ const ProductPricingManager = () => {
             )}
 
             <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-base-300">
-              <button 
-                className="btn btn-ghost" 
+              <button
+                className="btn btn-ghost"
                 onClick={() => {
                   setShowForm(false)
                   resetForm()
@@ -592,8 +563,8 @@ const ProductPricingManager = () => {
               >
                 Annuler
               </button>
-              <button 
-                className="btn btn-primary gap-2" 
+              <button
+                className="btn btn-primary gap-2"
                 onClick={handleSave}
                 disabled={submitting}
               >
@@ -617,21 +588,21 @@ const ProductPricingManager = () => {
           <div className="stat-value text-3xl font-black">{stats.total}</div>
           <div className="stat-desc">sur {warehouses.length} disponibles</div>
         </div>
-        
+
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300">
           <div className="stat-figure text-secondary"><DollarSign className="w-8 h-8" /></div>
           <div className="stat-title text-sm font-semibold">Prix moyen (vente)</div>
           <div className="stat-value text-2xl font-black">{formatNumber(Math.round(stats.avgSale))}</div>
           <div className="stat-desc">moyenne toutes devises</div>
         </div>
-        
+
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300">
           <div className="stat-figure text-success"><TrendingUp className="w-8 h-8" /></div>
           <div className="stat-title text-sm font-semibold">Marge moyenne</div>
           <div className="stat-value text-2xl font-black text-success">{formatNumber(Math.round(stats.avgMargin))}</div>
           <div className="stat-desc">moyenne toutes devises</div>
         </div>
-        
+
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300">
           <div className="stat-figure text-info"><Percent className="w-8 h-8" /></div>
           <div className="stat-title text-sm font-semibold">Taux de marge</div>
@@ -658,7 +629,7 @@ const ProductPricingManager = () => {
               />
             </div>
           </div>
-          
+
           <div className="flex flex-wrap gap-3">
             <select
               className="select select-bordered min-w-[180px]"
@@ -673,8 +644,8 @@ const ProductPricingManager = () => {
                 <option key={w.id} value={w.id}>{w.name}</option>
               ))}
             </select>
-            
-            <button 
+
+            <button
               className="btn btn-outline gap-2"
               onClick={() => {
                 setSearchTerm('')
@@ -685,15 +656,15 @@ const ProductPricingManager = () => {
               <Filter className="w-4 h-4" />
               Réinitialiser
             </button>
-            
+
             <div className="join">
-              <button 
+              <button
                 className={`join-item btn ${viewMode === 'list' ? 'btn-primary' : 'btn-ghost'}`}
                 onClick={() => setViewMode('list')}
               >
                 <List className="w-4 h-4" />
               </button>
-              <button 
+              <button
                 className={`join-item btn ${viewMode === 'grid' ? 'btn-primary' : 'btn-ghost'}`}
                 onClick={() => setViewMode('grid')}
               >
@@ -713,7 +684,7 @@ const ProductPricingManager = () => {
             <p className="text-base text-base-content/40 mt-2">
               Ce produit n'a pas encore de prix configuré pour les entrepôts
             </p>
-            <button 
+            <button
               className="btn btn-primary mt-6 gap-2"
               onClick={() => setShowForm(true)}
             >
@@ -728,7 +699,7 @@ const ProductPricingManager = () => {
             <p className="text-base text-base-content/40 mt-2">
               Aucun prix ne correspond à vos critères de recherche
             </p>
-            <button 
+            <button
               className="btn btn-outline mt-4 gap-2"
               onClick={() => {
                 setSearchTerm('')
@@ -766,7 +737,6 @@ const ProductPricingManager = () => {
                       Prix gros <SortIcon field="wholesale_price" />
                     </button>
                   </th>
-                  <th>TVA</th>
                   <th>Marge</th>
                   <th className="text-right">Actions</th>
                 </tr>
@@ -774,7 +744,7 @@ const ProductPricingManager = () => {
               <tbody>
                 {paginatedPrices.map((price) => {
                   const { margin, marginPercent } = calculateMargin(price.purchase_price, price.sale_price)
-                  
+
                   return (
                     <tr key={price.id} className="hover">
                       <td>
@@ -791,7 +761,6 @@ const ProductPricingManager = () => {
                       <td className="font-medium">{formatPrice(price.purchase_price, price.currency)}</td>
                       <td className="font-bold text-primary">{formatPrice(price.sale_price, price.currency)}</td>
                       <td>{price.wholesale_price ? formatPrice(price.wholesale_price, price.currency) : '-'}</td>
-                      <td>{price.tax_rate}%</td>
                       <td>
                         <div className="flex flex-col">
                           <span className={`font-semibold ${margin >= 0 ? 'text-success' : 'text-error'}`}>
@@ -802,13 +771,13 @@ const ProductPricingManager = () => {
                       </td>
                       <td>
                         <div className="flex justify-end gap-1">
-                          <button 
+                          <button
                             className="btn btn-ghost btn-xs"
                             onClick={() => handleEdit(price)}
                           >
                             <Edit className="w-3 h-3" />
                           </button>
-                          <button 
+                          <button
                             className="btn btn-ghost btn-xs text-error"
                             onClick={() => handleDelete(price)}
                           >
@@ -828,7 +797,7 @@ const ProductPricingManager = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {paginatedPrices.map((price) => {
                 const { margin, marginPercent } = calculateMargin(price.purchase_price, price.sale_price)
-                
+
                 return (
                   <div key={price.id} className="bg-base-200 rounded-xl p-6 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 border border-base-300">
                     <div className="flex items-start justify-between mb-4">
@@ -851,7 +820,7 @@ const ProductPricingManager = () => {
                         </ul>
                       </div>
                     </div>
-                    
+
                     <div className="space-y-3">
                       <div className="flex items-center justify-between p-2 bg-base-100 rounded-lg">
                         <span className="text-sm text-base-content/60">Prix d'achat</span>
@@ -868,7 +837,7 @@ const ProductPricingManager = () => {
                         </div>
                       )}
                     </div>
-                    
+
                     <div className="pt-3 mt-3 border-t border-base-300">
                       <div className="flex items-center justify-between">
                         <span className="text-sm text-base-content/60">Marge</span>
@@ -878,10 +847,6 @@ const ProductPricingManager = () => {
                           </span>
                           <span className="badge badge-ghost">{marginPercent.toFixed(1)}%</span>
                         </div>
-                      </div>
-                      <div className="flex items-center justify-between mt-1">
-                        <span className="text-sm text-base-content/60">TVA</span>
-                        <span className="font-medium">{price.tax_rate}%</span>
                       </div>
                       <div className="flex items-center justify-between mt-1">
                         <span className="text-sm text-base-content/60">Devise</span>
@@ -904,9 +869,9 @@ const ProductPricingManager = () => {
                 {Math.min(currentPage * itemsPerPage, filteredPrices.length)} sur{' '}
                 {filteredPrices.length} prix
               </div>
-              
+
               <div className="flex items-center gap-2">
-                <select 
+                <select
                   className="select select-bordered select-sm"
                   value={itemsPerPage}
                   onChange={(e) => {
@@ -918,16 +883,16 @@ const ProductPricingManager = () => {
                   <option value="25">25 par page</option>
                   <option value="50">50 par page</option>
                 </select>
-                
+
                 <div className="join">
-                  <button 
+                  <button
                     className="join-item btn btn-sm"
                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                     disabled={currentPage === 1}
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
-                  
+
                   {[...Array(Math.min(5, totalPages))].map((_, i) => {
                     let pageNum
                     if (totalPages <= 5) {
@@ -939,7 +904,7 @@ const ProductPricingManager = () => {
                     } else {
                       pageNum = currentPage - 2 + i
                     }
-                    
+
                     return (
                       <button
                         key={i}
@@ -950,8 +915,8 @@ const ProductPricingManager = () => {
                       </button>
                     )
                   })}
-                  
-                  <button 
+
+                  <button
                     className="join-item btn btn-sm"
                     onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                     disabled={currentPage === totalPages}
