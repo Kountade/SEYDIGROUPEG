@@ -1,43 +1,22 @@
 // src/components/tresorerie/Caisses.jsx
-import React, { useEffect, useState } from 'react'
+import React, {
+  useEffect, useState, useCallback, useRef, useMemo
+} from 'react'
 import { useNavigate } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
 import {
-  Plus,
-  Edit,
-  Trash2,
-  Search,
-  RefreshCw,
-  Filter,
-  X,
-  AlertCircle,
-  CheckCircle,
-  Eye,
-  MoreVertical,
-  ChevronLeft,
-  ChevronRight,
-  ArrowUpDown,
-  LayoutGrid,
-  List,
-  Coins,
-  Wallet,
-  Store,
-  User,
-  Clock,
-  Settings,
-  DollarSign,
-  TrendingUp,
-  TrendingDown,
-  Shield,
-  Building2,
-  UserCheck,
-  UserX
+  Plus, Edit, Trash2, Search, RefreshCw, Filter, X, AlertCircle,
+  CheckCircle, Eye, MoreVertical, ChevronLeft, ChevronRight,
+  LayoutGrid, List, Coins, Wallet, Clock, DollarSign,
+  Shield, Building2, Loader2, ArrowUpDown
 } from 'lucide-react'
 
 const Caisses = () => {
   const navigate = useNavigate()
+
   const [caisses, setCaisses] = useState([])
   const [loading, setLoading] = useState(true)
+  const [initialLoad, setInitialLoad] = useState(true)
   const [error, setError] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterType, setFilterType] = useState('')
@@ -51,142 +30,67 @@ const Caisses = () => {
   const [sortField, setSortField] = useState('nom')
   const [sortDirection, setSortDirection] = useState('asc')
   const [showFilters, setShowFilters] = useState(false)
-  const [stats, setStats] = useState({ total: 0, actives: 0, inactives: 0 })
+
+  const cacheRef = useRef(new Map())
+  const fetchingRef = useRef(false)
+
+  const unwrap = (data) => Array.isArray(data) ? data : (data?.results || [])
 
   const showNotification = (message, type = 'success') => {
     setNotification({ show: true, message, type })
     setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 4000)
   }
 
-  const fetchData = async () => {
+  // ---------- Fetch avec cache ----------
+  const fetchData = useCallback(async ({ bypassCache = false } = {}) => {
+    const key = 'caisses_list'
+
+    if (!bypassCache && cacheRef.current.has(key)) {
+      setCaisses(cacheRef.current.get(key))
+      setLoading(false)
+      setInitialLoad(false)
+      setError(null)
+      return
+    }
+
+    if (fetchingRef.current) return
+    fetchingRef.current = true
     setLoading(true)
     setError(null)
+
     try {
-      const token = localStorage.getItem('Token')
-      if (!token) {
-        setError('Veuillez vous connecter')
-        setLoading(false)
-        return
+      const response = await AxiosInstance.get('/caisses/?page_size=200')
+      const data = unwrap(response.data).filter(c => c && typeof c === 'object')
+
+      cacheRef.current.set(key, data)
+      if (cacheRef.current.size > 10) {
+        const firstKey = cacheRef.current.keys().next().value
+        cacheRef.current.delete(firstKey)
       }
 
-      const response = await AxiosInstance.get('/caisses/')
-      const data = response.data || []
       setCaisses(data)
-
-      const total = data.length
-      const actives = data.filter(c => c.is_active).length
-      setStats({ total, actives, inactives: total - actives })
-
-    } catch (error) {
-      console.error('Erreur chargement caisses:', error)
+    } catch (err) {
+      console.error('Erreur chargement caisses:', err)
       setError('Erreur de chargement des caisses')
       showNotification('Erreur de chargement des caisses', 'error')
+      setCaisses([])
     } finally {
       setLoading(false)
+      setInitialLoad(false)
+      fetchingRef.current = false
     }
+  }, [])
+
+  const refreshData = async () => {
+    cacheRef.current.clear()
+    await fetchData({ bypassCache: true })
   }
 
   useEffect(() => {
     fetchData()
-  }, [])
+  }, [fetchData])
 
-  const handleDelete = async () => {
-    if (!caisseToDelete) return
-    try {
-      await AxiosInstance.delete(`/caisses/${caisseToDelete.id}/`)
-      showNotification(`Caisse "${caisseToDelete.nom}" supprimée avec succès`, 'success')
-      fetchData()
-      setShowDeleteModal(false)
-      setCaisseToDelete(null)
-    } catch (error) {
-      showNotification('Erreur lors de la suppression', 'error')
-    }
-  }
-
-  const handleSort = (field) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortField(field)
-      setSortDirection('asc')
-    }
-  }
-
-  const getTypeBadge = (type) => {
-    const types = {
-      principale: 'badge-primary',
-      secondaire: 'badge-info',
-      mobile: 'badge-warning',
-      virtuelle: 'badge-secondary'
-    }
-    return (
-      <span className={`badge ${types[type] || 'badge-ghost'} badge-sm`}>
-        {type}
-      </span>
-    )
-  }
-
-  const getStatusBadge = (isActive) => {
-    return isActive ? (
-      <span className="badge badge-success badge-sm gap-1">
-        <CheckCircle className="w-3 h-3" />
-        Active
-      </span>
-    ) : (
-      <span className="badge badge-ghost badge-sm gap-1">
-        <Clock className="w-3 h-3" />
-        Inactive
-      </span>
-    )
-  }
-
-  const formatMontant = (montant) => {
-    if (!montant && montant !== 0) return '0 FCFA'
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'XOF',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(montant)
-  }
-
-  const filteredAndSorted = React.useMemo(() => {
-    let filtered = caisses.filter(c => {
-      const search = searchTerm.toLowerCase()
-      const nom = (c.nom || '').toLowerCase()
-      const code = (c.code || '').toLowerCase()
-      const description = (c.description || '').toLowerCase()
-      
-      const matchesSearch = nom.includes(search) || code.includes(search) || description.includes(search)
-      const matchesType = filterType === '' || c.type_caisse === filterType
-      const matchesStatus = filterStatus === '' || c.is_active === (filterStatus === 'true')
-      
-      return matchesSearch && matchesType && matchesStatus
-    })
-
-    filtered.sort((a, b) => {
-      let aVal = a[sortField] || ''
-      let bVal = b[sortField] || ''
-      
-      if (typeof aVal === 'string') {
-        aVal = aVal.toLowerCase()
-        bVal = bVal.toLowerCase()
-      }
-      
-      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1
-      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1
-      return 0
-    })
-
-    return filtered
-  }, [caisses, searchTerm, filterType, filterStatus, sortField, sortDirection])
-
-  const totalPages = Math.ceil(filteredAndSorted.length / itemsPerPage)
-  const paginatedItems = filteredAndSorted.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  )
-
+  // ---------- Responsive ----------
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth < 640) setItemsPerPage(6)
@@ -198,7 +102,113 @@ const Caisses = () => {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  if (loading) {
+  // ---------- Stats ----------
+  const stats = useMemo(() => {
+    const total = caisses.length
+    const actives = caisses.filter(c => c.is_active).length
+    return { total, actives, inactives: total - actives }
+  }, [caisses])
+
+  // ---------- Actions ----------
+  const handleDelete = async () => {
+    if (!caisseToDelete) return
+    try {
+      await AxiosInstance.delete(`/caisses/${caisseToDelete.id}/`)
+      cacheRef.current.clear()
+      showNotification(`Caisse "${caisseToDelete.nom}" supprimée avec succès`, 'success')
+      fetchData({ bypassCache: true })
+      setShowDeleteModal(false)
+      setCaisseToDelete(null)
+    } catch (err) {
+      showNotification(
+        err.response?.data?.error || err.response?.data?.detail || 'Erreur lors de la suppression',
+        'error'
+      )
+    }
+  }
+
+  const handleSort = (field) => {
+    if (sortField === field) setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    else { setSortField(field); setSortDirection('asc') }
+  }
+
+  // ---------- Filtrage + tri ----------
+  const filteredAndSorted = useMemo(() => {
+    const filtered = caisses.filter(c => {
+      if (!c) return false
+      const search = searchTerm.toLowerCase()
+      const nom = (c.nom || '').toLowerCase()
+      const code = (c.code || '').toLowerCase()
+      const description = (c.description || '').toLowerCase()
+
+      const matchesSearch = nom.includes(search) || code.includes(search) || description.includes(search)
+      const matchesType = filterType === '' || c.type_caisse === filterType
+      const matchesStatus = filterStatus === '' || c.is_active === (filterStatus === 'true')
+
+      return matchesSearch && matchesType && matchesStatus
+    })
+
+    filtered.sort((a, b) => {
+      let aVal = a[sortField] ?? ''
+      let bVal = b[sortField] ?? ''
+      if (typeof aVal === 'string') aVal = aVal.toLowerCase()
+      if (typeof bVal === 'string') bVal = bVal.toLowerCase()
+      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1
+      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1
+      return 0
+    })
+
+    return filtered
+  }, [caisses, searchTerm, filterType, filterStatus, sortField, sortDirection])
+
+  const totalPages = Math.max(1, Math.ceil(filteredAndSorted.length / itemsPerPage))
+  const paginatedItems = useMemo(() => filteredAndSorted.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  ), [filteredAndSorted, currentPage, itemsPerPage])
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(1)
+  }, [totalPages, currentPage])
+
+  // ---------- Helpers ----------
+  const getTypeBadge = (type) => {
+    const types = {
+      principale: 'badge-primary',
+      secondaire: 'badge-info',
+      mobile: 'badge-warning',
+      virtuelle: 'badge-secondary',
+    }
+    return (
+      <span className={`badge ${types[type] || 'badge-ghost'} badge-sm`}>
+        {type}
+      </span>
+    )
+  }
+
+  const getStatusBadge = (isActive) => (
+    isActive ? (
+      <span className="badge badge-success badge-sm gap-1">
+        <CheckCircle className="w-3 h-3" /> Active
+      </span>
+    ) : (
+      <span className="badge badge-ghost badge-sm gap-1">
+        <Clock className="w-3 h-3" /> Inactive
+      </span>
+    )
+  )
+
+  const formatMontant = (montant) => {
+    const n = Number(montant)
+    if (!Number.isFinite(n)) return '0 FCFA'
+    return new Intl.NumberFormat('fr-FR', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(n) + ' FCFA'
+  }
+
+  // ---------- Premier chargement ----------
+  if (initialLoad && loading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
         <div className="text-center space-y-4">
@@ -218,9 +228,8 @@ const Caisses = () => {
           <AlertCircle className="w-16 h-16 text-error mx-auto mb-4" />
           <h2 className="text-xl font-bold text-base-content mb-2">Erreur de chargement</h2>
           <p className="text-base-content/60 mb-4">{error}</p>
-          <button onClick={fetchData} className="btn btn-primary gap-2">
-            <RefreshCw className="w-4 h-4" />
-            Réessayer
+          <button onClick={refreshData} className="btn btn-primary gap-2">
+            <RefreshCw className="w-4 h-4" /> Réessayer
           </button>
         </div>
       </div>
@@ -229,13 +238,28 @@ const Caisses = () => {
 
   return (
     <div className="space-y-4 sm:space-y-6 p-3 sm:p-4 lg:p-6">
-      
+      {/* Spinner overlay */}
+      {loading && !initialLoad && (
+        <div className="fixed top-20 right-6 z-40">
+          <div className="bg-base-100 shadow-lg rounded-full px-4 py-2 flex items-center gap-2 border border-base-300">
+            <Loader2 className="w-3 h-3 animate-spin text-primary" />
+            <span className="text-xs text-base-content/60">Chargement...</span>
+          </div>
+        </div>
+      )}
+
+      {/* Notification */}
       {notification.show && (
         <div className="fixed top-16 right-3 sm:right-6 z-50 animate-slideDown">
           <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-lg text-sm sm:text-base`}>
-            {notification.type === 'success' ? <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5" /> : <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5" />}
+            {notification.type === 'success'
+              ? <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5" />
+              : <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5" />}
             <span className="font-semibold">{notification.message}</span>
-            <button className="btn btn-ghost btn-xs btn-circle" onClick={() => setNotification({ ...notification, show: false })}>
+            <button
+              className="btn btn-ghost btn-xs btn-circle"
+              onClick={() => setNotification({ ...notification, show: false })}
+            >
               <X className="w-3 h-3 sm:w-4 sm:h-4" />
             </button>
           </div>
@@ -246,15 +270,15 @@ const Caisses = () => {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-base-content">
-            💰 Caisses
+            Caisses
           </h1>
           <p className="text-xs sm:text-sm text-base-content/60 mt-1">
             Gérez vos caisses physiques et virtuelles ({stats.total} au total)
           </p>
         </div>
         <div className="flex flex-wrap gap-2 sm:gap-3">
-          <button onClick={fetchData} className="btn btn-sm sm:btn-md btn-outline gap-1 sm:gap-2">
-            <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4" />
+          <button onClick={refreshData} className="btn btn-sm sm:btn-md btn-outline gap-1 sm:gap-2" disabled={loading}>
+            <RefreshCw className={`w-3 h-3 sm:w-4 sm:h-4 ${loading ? 'animate-spin' : ''}`} />
             <span className="hidden xs:inline">Actualiser</span>
           </button>
           <button onClick={() => navigate('/caisses/nouveau')} className="btn btn-sm sm:btn-md btn-primary gap-1 sm:gap-2">
@@ -264,7 +288,7 @@ const Caisses = () => {
         </div>
       </div>
 
-      {/* Statistiques */}
+      {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 lg:gap-4">
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
           <div className="stat-figure text-primary"><Coins className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" /></div>
@@ -298,25 +322,55 @@ const Caisses = () => {
               />
             </div>
           </div>
-          <button onClick={() => setShowFilters(!showFilters)} className="btn btn-outline btn-sm sm:hidden gap-2">
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="btn btn-outline btn-sm sm:hidden gap-2"
+          >
             <Filter className="w-4 h-4" /> Filtres {showFilters ? <ChevronLeft className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
           </button>
           <div className={`${showFilters ? 'flex' : 'hidden'} sm:flex flex-wrap gap-3`}>
-            <select className="select select-bordered w-full sm:w-40 text-sm" value={filterType} onChange={(e) => { setFilterType(e.target.value); setCurrentPage(1) }}>
+            <select
+              className="select select-bordered w-full sm:w-40 text-sm"
+              value={filterType}
+              onChange={(e) => { setFilterType(e.target.value); setCurrentPage(1) }}
+            >
               <option value="">Tous types</option>
               <option value="principale">Principale</option>
               <option value="secondaire">Secondaire</option>
               <option value="mobile">Mobile</option>
               <option value="virtuelle">Virtuelle</option>
             </select>
-            <select className="select select-bordered w-full sm:w-32 text-sm" value={filterStatus} onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1) }}>
+            <select
+              className="select select-bordered w-full sm:w-32 text-sm"
+              value={filterStatus}
+              onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1) }}
+            >
               <option value="">Statut</option>
               <option value="true">Actif</option>
               <option value="false">Inactif</option>
             </select>
-            <button className="btn btn-outline gap-2" onClick={() => { setFilterType(''); setFilterStatus(''); setSearchTerm(''); setCurrentPage(1) }}>
+            <button
+              className="btn btn-outline gap-2"
+              onClick={() => {
+                setFilterType(''); setFilterStatus(''); setSearchTerm(''); setCurrentPage(1)
+              }}
+            >
               <Filter className="w-4 h-4" /> Réinitialiser
             </button>
+            <div className="join ml-auto">
+              <button
+                className={`join-item btn btn-sm ${viewMode === 'grid' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setViewMode('grid')}
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+              <button
+                className={`join-item btn btn-sm ${viewMode === 'list' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setViewMode('list')}
+              >
+                <List className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -331,7 +385,7 @@ const Caisses = () => {
               <Plus className="w-4 h-4" /> Créer une caisse
             </button>
           </div>
-        ) : (
+        ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 p-3 sm:p-4">
             {paginatedItems.map((caisse) => (
               <div key={caisse.id} className="bg-base-200 rounded-xl p-4 hover:shadow-lg transition-all hover:-translate-y-1 border border-base-300">
@@ -346,7 +400,9 @@ const Caisses = () => {
                     </div>
                   </div>
                   <div className="dropdown dropdown-end">
-                    <button className="btn btn-ghost btn-xs btn-circle"><MoreVertical className="w-4 h-4" /></button>
+                    <button className="btn btn-ghost btn-xs btn-circle">
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
                     <ul className="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-44">
                       <li><button onClick={() => navigate(`/caisses/${caisse.id}`)}><Eye className="w-4 h-4" /> Détails</button></li>
                       <li><button onClick={() => navigate(`/caisses/${caisse.id}/edit`)}><Edit className="w-4 h-4" /> Modifier</button></li>
@@ -354,7 +410,7 @@ const Caisses = () => {
                     </ul>
                   </div>
                 </div>
-                
+
                 <div className="space-y-2 mb-3">
                   <div className="flex items-center gap-2 text-sm text-base-content/70">
                     <DollarSign className="w-4 h-4 text-success" />
@@ -363,15 +419,69 @@ const Caisses = () => {
                   <div className="flex flex-wrap gap-1">
                     {getTypeBadge(caisse.type_caisse)}
                     {getStatusBadge(caisse.is_active)}
+                    {caisse.is_default && (
+                      <span className="badge badge-primary badge-sm gap-1">
+                        <Shield className="w-3 h-3" /> Défaut
+                      </span>
+                    )}
                   </div>
                 </div>
-                
+
                 <div className="pt-3 border-t border-base-300 flex items-center justify-between text-xs text-base-content/40">
-                  <span>Créé le {new Date(caisse.created_at).toLocaleDateString('fr-FR')}</span>
+                  <span>Créé le {caisse.created_at ? new Date(caisse.created_at).toLocaleDateString('fr-FR') : '-'}</span>
                   {caisse.responsable_nom && <span>👤 {caisse.responsable_nom}</span>}
                 </div>
               </div>
             ))}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="table w-full">
+              <thead>
+                <tr className="bg-base-200">
+                  <th>
+                    <button className="flex items-center gap-1 hover:text-primary" onClick={() => handleSort('nom')}>
+                      Nom <ArrowUpDown className="w-3 h-3" />
+                    </button>
+                  </th>
+                  <th>Code</th>
+                  <th>Type</th>
+                  <th>
+                    <button className="flex items-center gap-1 hover:text-primary" onClick={() => handleSort('solde_actuel')}>
+                      Solde <ArrowUpDown className="w-3 h-3" />
+                    </button>
+                  </th>
+                  <th>Responsable</th>
+                  <th>Statut</th>
+                  <th className="text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedItems.map(c => (
+                  <tr key={c.id} className="hover">
+                    <td className="font-semibold">{c.nom}</td>
+                    <td className="font-mono text-sm">{c.code}</td>
+                    <td>{getTypeBadge(c.type_caisse)}</td>
+                    <td className="font-bold text-success">{formatMontant(c.solde_actuel)}</td>
+                    <td className="text-sm">{c.responsable_nom || '-'}</td>
+                    <td>{getStatusBadge(c.is_active)}</td>
+                    <td className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <button className="btn btn-ghost btn-xs" onClick={() => navigate(`/caisses/${c.id}`)}>
+                          <Eye className="w-3 h-3" />
+                        </button>
+                        <button className="btn btn-ghost btn-xs" onClick={() => navigate(`/caisses/${c.id}/edit`)}>
+                          <Edit className="w-3 h-3" />
+                        </button>
+                        <button className="btn btn-ghost btn-xs text-error" onClick={() => { setCaisseToDelete(c); setShowDeleteModal(true) }}>
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
 
@@ -383,25 +493,45 @@ const Caisses = () => {
                 {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, filteredAndSorted.length)} sur {filteredAndSorted.length}
               </div>
               <div className="flex items-center gap-2 order-1 sm:order-2">
-                <select className="select select-bordered select-xs sm:select-sm" value={itemsPerPage} onChange={(e) => { setItemsPerPage(parseInt(e.target.value)); setCurrentPage(1) }}>
+                <select
+                  className="select select-bordered select-xs sm:select-sm"
+                  value={itemsPerPage}
+                  onChange={(e) => { setItemsPerPage(parseInt(e.target.value)); setCurrentPage(1) }}
+                >
                   <option value="6">6</option>
                   <option value="9">9</option>
                   <option value="12">12</option>
                   <option value="24">24</option>
                 </select>
                 <div className="join">
-                  <button className="join-item btn btn-xs sm:btn-sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+                  <button
+                    className="join-item btn btn-xs sm:btn-sm"
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                  >
                     <ChevronLeft className="w-3 h-3 sm:w-4 sm:h-4" />
                   </button>
                   {[...Array(Math.min(3, totalPages))].map((_, i) => {
-                    let pageNum = totalPages <= 3 ? i + 1 : currentPage <= 2 ? i + 1 : currentPage >= totalPages - 1 ? totalPages - 2 + i : currentPage - 1 + i
+                    let pageNum
+                    if (totalPages <= 3) pageNum = i + 1
+                    else if (currentPage <= 2) pageNum = i + 1
+                    else if (currentPage >= totalPages - 1) pageNum = totalPages - 2 + i
+                    else pageNum = currentPage - 1 + i
                     return (
-                      <button key={i} className={`join-item btn btn-xs sm:btn-sm ${currentPage === pageNum ? 'btn-primary' : ''}`} onClick={() => setCurrentPage(pageNum)}>
+                      <button
+                        key={i}
+                        className={`join-item btn btn-xs sm:btn-sm ${currentPage === pageNum ? 'btn-primary' : ''}`}
+                        onClick={() => setCurrentPage(pageNum)}
+                      >
                         {pageNum}
                       </button>
                     )
                   })}
-                  <button className="join-item btn btn-xs sm:btn-sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+                  <button
+                    className="join-item btn btn-xs sm:btn-sm"
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                  >
                     <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4" />
                   </button>
                 </div>
@@ -430,6 +560,14 @@ const Caisses = () => {
           </div>
         </div>
       )}
+
+      <style>{`
+        @keyframes slideDown {
+          from { transform: translateY(-20px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        .animate-slideDown { animation: slideDown 0.3s ease-out; }
+      `}</style>
     </div>
   )
 }

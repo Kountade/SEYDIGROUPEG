@@ -1,166 +1,165 @@
 // src/components/tresorerie/Tresorerie.jsx
-import React, { useEffect, useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
 import {
-  Wallet,
-  Coins,
-  PiggyBank,
-  ArrowLeftRight,
-  Receipt,
-  TrendingUp,
-  CheckCircle,
-  Calendar,
-  Plus,
-  RefreshCw,
-  AlertCircle,
-  Check,
-  Loader2,
-  ArrowUpRight,
-  ArrowDownLeft,
-  Banknote,
-  Scale,
-  PieChart,
-  LayoutDashboard,
-  Eye,
-  MoreVertical,
-  Search,
-  Filter,
-  X,
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  Building2,
-  Users,
-  DollarSign,
-  ArrowUpDown,
-  List,
-  Grid3x3,
-  Download,
-  Printer,
-  FileText
+  Wallet, Coins, PiggyBank, ArrowLeftRight, Receipt, TrendingUp,
+  CheckCircle, Calendar, Plus, RefreshCw, AlertCircle, Check,
+  Loader2, X,
 } from 'lucide-react'
+
+const todayLocal = () => {
+  const d = new Date()
+  const off = d.getTimezoneOffset()
+  const local = new Date(d.getTime() - off * 60 * 1000)
+  return local.toISOString().split('T')[0]
+}
+
+const unwrapList = (payload) => Array.isArray(payload) ? payload : (payload?.results || [])
 
 const Tresorerie = () => {
   const navigate = useNavigate()
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [stats, setStats] = useState({
-    solde_global: 0,
-    solde_caisses: 0,
-    solde_banques: 0,
-    nb_caisses: 0,
-    nb_comptes: 0,
-    encaissements_jour: 0,
-    decaissements_jour: 0,
-    flux_jour: 0,
-    previsions_7j: 0,
-    alertes: 0
+    solde_global: 0, solde_caisses: 0, solde_banques: 0,
+    nb_caisses: 0, nb_comptes: 0,
+    encaissements_jour: 0, decaissements_jour: 0, flux_jour: 0,
+    previsions_7j: 0, alertes: 0,
   })
   const [derniersMouvements, setDerniersMouvements] = useState([])
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' })
 
-  const showNotification = (message, type = 'success') => {
+  const abortRef = useRef(null)
+  const notifTimerRef = useRef(null)
+
+  const showNotification = useCallback((message, type = 'success') => {
     setNotification({ show: true, message, type })
-    setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 4000)
-  }
+    if (notifTimerRef.current) clearTimeout(notifTimerRef.current)
+    notifTimerRef.current = setTimeout(
+      () => setNotification({ show: false, message: '', type: 'success' }), 4000
+    )
+  }, [])
 
-  const fetchData = async () => {
-    setLoading(true)
-    setError(null)
+  useEffect(() => {
+    return () => {
+      if (notifTimerRef.current) clearTimeout(notifTimerRef.current)
+      if (abortRef.current) abortRef.current.abort()
+    }
+  }, [])
+
+  const fetchData = useCallback(async () => {
+    if (abortRef.current) abortRef.current.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    setLoading(true); setError(null)
     try {
-      const token = localStorage.getItem('Token')
-      if (!token) {
-        setError('Veuillez vous connecter')
-        setLoading(false)
-        return
-      }
+      const today = todayLocal()
 
-      // Récupérer le solde global
-      const tresorerieRes = await AxiosInstance.get('/tresorerie/').catch(() => ({ data: { solde_final: 0 } }))
-      const soldeGlobal = tresorerieRes.data?.solde_final || 0
+      // ✅ 7 requêtes EN PARALLÈLE + bons endpoints + pagination
+      const [globalRes, caissesRes, comptesRes, mvtJourRes, previsionsRes, alertesRes, derniersRes] = await Promise.all([
+        // ✅ Bon endpoint (TresorerieGlobalView)
+        AxiosInstance.get('/tresorerie-global/', { signal: controller.signal }).catch(() => ({ data: {} })),
+        AxiosInstance.get('/caisses/', { params: { page_size: 200, is_active: true }, signal: controller.signal }).catch(() => ({ data: [] })),
+        AxiosInstance.get('/comptes-bancaires/', { params: { page_size: 200, is_active: true }, signal: controller.signal }).catch(() => ({ data: [] })),
+        // ✅ Bons params : date_debut/date_fin (pas ?date)
+        AxiosInstance.get('/mouvements/', {
+          params: { date_debut: today, date_fin: today, page_size: 500, status: 'effectue' },
+          signal: controller.signal,
+        }).catch(() => ({ data: [] })),
+        AxiosInstance.get('/previsions/', {
+          params: { date_debut: today, page_size: 200, statut: 'valide' },
+          signal: controller.signal,
+        }).catch(() => ({ data: [] })),
+        AxiosInstance.get('/alertes-tresorerie/', { signal: controller.signal }).catch(() => ({ data: [] })),
+        // ✅ page_size (pas limit)
+        AxiosInstance.get('/mouvements/', {
+          params: { page_size: 5, ordering: '-date_mouvement' },
+          signal: controller.signal,
+        }).catch(() => ({ data: [] })),
+      ])
 
-      // Récupérer les caisses
-      const caissesRes = await AxiosInstance.get('/caisses/').catch(() => ({ data: [] }))
-      const caisses = caissesRes.data || []
-      const soldeCaisses = caisses.reduce((sum, c) => sum + (c.solde_actuel || 0), 0)
+      const global = globalRes.data || {}
+      const soldeGlobal = Number(global.solde_global) || 0
+      const soldeCaissesFromGlobal = Number(global.solde_caisses) || 0
+      const soldeBanquesFromGlobal = Number(global.solde_banques) || 0
+      const nbCaissesFromGlobal = global.nb_caisses
+      const nbComptesFromGlobal = global.nb_comptes
 
-      // Récupérer les comptes bancaires
-      const comptesRes = await AxiosInstance.get('/comptes-bancaires/').catch(() => ({ data: [] }))
-      const comptes = comptesRes.data || []
-      const soldeBanques = comptes.reduce((sum, c) => sum + (c.solde_actuel || 0), 0)
+      const caisses = unwrapList(caissesRes.data)
+      const comptes = unwrapList(comptesRes.data)
 
-      // Récupérer les mouvements du jour
-      const today = new Date().toISOString().split('T')[0]
-      const mouvementsRes = await AxiosInstance.get(`/mouvements/?date=${today}`).catch(() => ({ data: [] }))
-      const mouvements = mouvementsRes.data || []
-      const encaissements = mouvements.filter(m => m.type_mouvement === 'encaissement').reduce((s, m) => s + (m.montant || 0), 0)
-      const decaissements = mouvements.filter(m => m.type_mouvement === 'decaissement').reduce((s, m) => s + (m.montant || 0), 0)
+      // Fallback côté client si l'endpoint global renvoie 0
+      const soldeCaisses = soldeCaissesFromGlobal || caisses.reduce((s, c) => s + (Number(c.solde_actuel) || 0), 0)
+      const soldeBanques = soldeBanquesFromGlobal || comptes.reduce((s, c) => s + (Number(c.solde_actuel) || 0), 0)
+      const soldeFinal = soldeGlobal || (soldeCaisses + soldeBanques)
 
-      // Récupérer les prévisions
-      const previsionsRes = await AxiosInstance.get('/previsions/').catch(() => ({ data: [] }))
-      const previsions = previsionsRes.data || []
-      const previsions7j = previsions
-        .filter(p => new Date(p.date_debut) >= new Date() && new Date(p.date_debut) <= new Date(Date.now() + 7 * 86400000))
-        .reduce((sum, p) => sum + (p.montant_prevu || 0), 0)
+      const mouvementsJour = unwrapList(mvtJourRes.data)
+      const encaissements = mouvementsJour
+        .filter(m => m.type_mouvement === 'encaissement')
+        .reduce((s, m) => s + (Number(m.montant) || 0), 0)
+      const decaissements = mouvementsJour
+        .filter(m => m.type_mouvement === 'decaissement')
+        .reduce((s, m) => s + (Number(m.montant) || 0), 0)
 
-      // Récupérer les alertes
-      const alertesRes = await AxiosInstance.get('/alertes-tresorerie/').catch(() => ({ data: [] }))
-      const alertes = alertesRes.data || []
+      // ✅ Prévisions 7j filtrées côté serveur (date_debut >= today, <= today+7)
+      const sevenDays = new Date(Date.now() + 7 * 86400000)
+      const sevenDaysLocal = new Date(sevenDays.getTime() - sevenDays.getTimezoneOffset() * 60000).toISOString().split('T')[0]
+      const previsions = unwrapList(previsionsRes.data).filter(p => {
+        const d = p.date_debut
+        return d >= today && d <= sevenDaysLocal
+      })
+      const previsions7j = previsions.reduce((s, p) => s + (Number(p.montant_prevu) || 0), 0)
 
-      // Derniers mouvements
-      const derniersRes = await AxiosInstance.get('/mouvements/?limit=5').catch(() => ({ data: [] }))
-      setDerniersMouvements(derniersRes.data || [])
+      const alertes = unwrapList(alertesRes.data)
+      const alertesActives = alertes.filter(a => a.est_active !== false)
+
+      setDerniersMouvements(unwrapList(derniersRes.data).slice(0, 5))
 
       setStats({
-        solde_global: soldeGlobal,
+        solde_global: soldeFinal,
         solde_caisses: soldeCaisses,
         solde_banques: soldeBanques,
-        nb_caisses: caisses.length,
-        nb_comptes: comptes.length,
+        nb_caisses: nbCaissesFromGlobal ?? caisses.length,
+        nb_comptes: nbComptesFromGlobal ?? comptes.length,
         encaissements_jour: encaissements,
         decaissements_jour: decaissements,
         flux_jour: encaissements - decaissements,
         previsions_7j: previsions7j,
-        alertes: alertes.filter(a => a.est_active).length
+        alertes: alertesActives.length,
       })
-
-    } catch (error) {
-      console.error('Erreur chargement trésorerie:', error)
-      setError('Erreur de chargement de la trésorerie')
+    } catch (err) {
+      if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return
+      console.error('Erreur chargement trésorerie:', err)
+      if (err.response?.status === 401) setError('Session expirée, veuillez vous reconnecter')
+      else if (err.response?.status === 403) setError("Vous n'avez pas les droits pour voir cette page")
+      else setError('Erreur de chargement de la trésorerie')
       showNotification('Erreur de chargement de la trésorerie', 'error')
     } finally {
       setLoading(false)
     }
-  }
+  }, [showNotification])
 
-  useEffect(() => {
-    fetchData()
-  }, [])
+  useEffect(() => { fetchData() }, [fetchData])
 
   const formatMontant = (montant) => {
-    if (!montant && montant !== 0) return '0 FCFA'
+    const n = Number(montant)
+    if (!Number.isFinite(n)) return '0 FCFA'
     return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'XOF',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(montant)
+      minimumFractionDigits: 0, maximumFractionDigits: 0,
+    }).format(n) + ' FCFA'
   }
 
-  const formatDate = (dateString) => {
+  const formatDate = (dateString, withTime = true) => {
     if (!dateString) return '-'
     try {
       return new Date(dateString).toLocaleDateString('fr-FR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        ...(withTime ? { hour: '2-digit', minute: '2-digit' } : {}),
       })
-    } catch {
-      return '-'
-    }
+    } catch { return '-' }
   }
 
   if (loading) {
@@ -184,8 +183,7 @@ const Tresorerie = () => {
           <h2 className="text-xl font-bold text-base-content mb-2">Erreur de chargement</h2>
           <p className="text-base-content/60 mb-4">{error}</p>
           <button onClick={fetchData} className="btn btn-primary gap-2">
-            <RefreshCw className="w-4 h-4" />
-            Réessayer
+            <RefreshCw className="w-4 h-4" /> Réessayer
           </button>
         </div>
       </div>
@@ -194,28 +192,20 @@ const Tresorerie = () => {
 
   return (
     <div className="space-y-4 sm:space-y-6 p-3 sm:p-4 lg:p-6">
-      
-      {/* Notification */}
       {notification.show && (
         <div className="fixed top-16 right-3 sm:right-6 z-50 animate-slideDown">
           <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-lg text-sm sm:text-base`}>
-            {notification.type === 'success' ? (
-              <Check className="w-4 h-4 sm:w-5 sm:h-5" />
-            ) : (
-              <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5" />
-            )}
+            {notification.type === 'success'
+              ? <Check className="w-4 h-4 sm:w-5 sm:h-5" />
+              : <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5" />}
             <span className="font-semibold">{notification.message}</span>
-            <button 
-              className="btn btn-ghost btn-xs btn-circle"
-              onClick={() => setNotification({ ...notification, show: false })}
-            >
+            <button className="btn btn-ghost btn-xs btn-circle" onClick={() => setNotification({ ...notification, show: false })}>
               <X className="w-3 h-3 sm:w-4 sm:h-4" />
             </button>
           </div>
         </div>
       )}
 
-      {/* En-tête */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-base-content bg-gradient-to-r from-success to-primary bg-clip-text text-transparent">
@@ -225,63 +215,44 @@ const Tresorerie = () => {
             Vue d'ensemble des flux financiers et des soldes
           </p>
         </div>
-        
         <div className="flex flex-wrap gap-2 sm:gap-3">
-          <button 
-            onClick={fetchData}
-            className="btn btn-sm sm:btn-md btn-outline gap-1 sm:gap-2"
-          >
-            <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4" />
+          <button onClick={fetchData} className="btn btn-sm sm:btn-md btn-outline gap-1 sm:gap-2" disabled={loading}>
+            <RefreshCw className={`w-3 h-3 sm:w-4 sm:h-4 ${loading ? 'animate-spin' : ''}`} />
             <span className="hidden xs:inline">Actualiser</span>
           </button>
-          <button 
-            onClick={() => navigate('/mouvements/nouveau')}
-            className="btn btn-sm sm:btn-md btn-success gap-1 sm:gap-2"
-          >
+          <button onClick={() => navigate('/mouvements/nouveau')} className="btn btn-sm sm:btn-md btn-success gap-1 sm:gap-2">
             <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
             <span className="hidden xs:inline">Nouveau mouvement</span>
           </button>
         </div>
       </div>
 
-      {/* Cartes de synthèse */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 lg:gap-4">
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
-          <div className="stat-figure text-success">
-            <Wallet className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
-          </div>
+          <div className="stat-figure text-success"><Wallet className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" /></div>
           <div className="stat-title text-xs sm:text-sm font-semibold">Solde global</div>
           <div className={`stat-value text-lg sm:text-2xl lg:text-3xl font-black ${stats.solde_global >= 0 ? 'text-success' : 'text-error'}`}>
             {formatMontant(stats.solde_global)}
           </div>
         </div>
-
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
-          <div className="stat-figure text-info">
-            <Coins className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
-          </div>
+          <div className="stat-figure text-info"><Coins className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" /></div>
           <div className="stat-title text-xs sm:text-sm font-semibold">Caisses</div>
           <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black text-info">
             {formatMontant(stats.solde_caisses)}
           </div>
           <div className="stat-desc text-xs">{stats.nb_caisses} caisse(s)</div>
         </div>
-
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
-          <div className="stat-figure text-primary">
-            <PiggyBank className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
-          </div>
+          <div className="stat-figure text-primary"><PiggyBank className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" /></div>
           <div className="stat-title text-xs sm:text-sm font-semibold">Comptes bancaires</div>
           <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black text-primary">
             {formatMontant(stats.solde_banques)}
           </div>
           <div className="stat-desc text-xs">{stats.nb_comptes} compte(s)</div>
         </div>
-
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
-          <div className="stat-figure text-warning">
-            <ArrowLeftRight className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
-          </div>
+          <div className="stat-figure text-warning"><ArrowLeftRight className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" /></div>
           <div className="stat-title text-xs sm:text-sm font-semibold">Flux du jour</div>
           <div className={`stat-value text-lg sm:text-2xl lg:text-3xl font-black ${stats.flux_jour >= 0 ? 'text-success' : 'text-error'}`}>
             {stats.flux_jour >= 0 ? '+' : ''}{formatMontant(stats.flux_jour)}
@@ -293,67 +264,38 @@ const Tresorerie = () => {
         </div>
       </div>
 
-      {/* Accès rapides */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 sm:gap-3">
-        <button 
-          onClick={() => navigate('/caisses')}
-          className="p-3 sm:p-4 bg-base-100 rounded-xl shadow-md border border-base-200 hover:border-info transition-all text-center group"
-        >
+        <button onClick={() => navigate('/caisses')} className="p-3 sm:p-4 bg-base-100 rounded-xl shadow-md border border-base-200 hover:border-info transition-all text-center group">
           <Coins className="w-6 h-6 sm:w-8 sm:h-8 text-info mx-auto mb-2 group-hover:scale-110 transition-transform" />
           <p className="font-medium text-xs sm:text-sm">Caisses</p>
         </button>
-
-        <button 
-          onClick={() => navigate('/comptes-bancaires')}
-          className="p-3 sm:p-4 bg-base-100 rounded-xl shadow-md border border-base-200 hover:border-primary transition-all text-center group"
-        >
+        <button onClick={() => navigate('/comptes-bancaires')} className="p-3 sm:p-4 bg-base-100 rounded-xl shadow-md border border-base-200 hover:border-primary transition-all text-center group">
           <PiggyBank className="w-6 h-6 sm:w-8 sm:h-8 text-primary mx-auto mb-2 group-hover:scale-110 transition-transform" />
           <p className="font-medium text-xs sm:text-sm">Comptes bancaires</p>
         </button>
-
-        <button 
-          onClick={() => navigate('/mouvements')}
-          className="p-3 sm:p-4 bg-base-100 rounded-xl shadow-md border border-base-200 hover:border-warning transition-all text-center group"
-        >
+        <button onClick={() => navigate('/mouvements')} className="p-3 sm:p-4 bg-base-100 rounded-xl shadow-md border border-base-200 hover:border-warning transition-all text-center group">
           <ArrowLeftRight className="w-6 h-6 sm:w-8 sm:h-8 text-warning mx-auto mb-2 group-hover:scale-110 transition-transform" />
           <p className="font-medium text-xs sm:text-sm">Mouvements</p>
         </button>
-
-        <button 
-          onClick={() => navigate('/previsions')}
-          className="p-3 sm:p-4 bg-base-100 rounded-xl shadow-md border border-base-200 hover:border-success transition-all text-center group"
-        >
+        <button onClick={() => navigate('/previsions')} className="p-3 sm:p-4 bg-base-100 rounded-xl shadow-md border border-base-200 hover:border-success transition-all text-center group">
           <TrendingUp className="w-6 h-6 sm:w-8 sm:h-8 text-success mx-auto mb-2 group-hover:scale-110 transition-transform" />
           <p className="font-medium text-xs sm:text-sm">Prévisions</p>
         </button>
-
-        <button 
-          onClick={() => navigate('/rapprochements')}
-          className="p-3 sm:p-4 bg-base-100 rounded-xl shadow-md border border-base-200 hover:border-secondary transition-all text-center group"
-        >
+        <button onClick={() => navigate('/rapprochements')} className="p-3 sm:p-4 bg-base-100 rounded-xl shadow-md border border-base-200 hover:border-secondary transition-all text-center group">
           <CheckCircle className="w-6 h-6 sm:w-8 sm:h-8 text-secondary mx-auto mb-2 group-hover:scale-110 transition-transform" />
           <p className="font-medium text-xs sm:text-sm">Rapprochements</p>
         </button>
-
-        <button 
-          onClick={() => navigate('/frais')}
-          className="p-3 sm:p-4 bg-base-100 rounded-xl shadow-md border border-base-200 hover:border-error transition-all text-center group"
-        >
+        <button onClick={() => navigate('/frais')} className="p-3 sm:p-4 bg-base-100 rounded-xl shadow-md border border-base-200 hover:border-error transition-all text-center group">
           <Receipt className="w-6 h-6 sm:w-8 sm:h-8 text-error mx-auto mb-2 group-hover:scale-110 transition-transform" />
           <p className="font-medium text-xs sm:text-sm">Frais</p>
         </button>
       </div>
 
-      {/* Derniers mouvements et alertes */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Derniers mouvements */}
         <div className="lg:col-span-2 bg-base-100 rounded-xl shadow-md border border-base-200 p-4">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold">📋 Derniers mouvements</h2>
-            <button 
-              onClick={() => navigate('/mouvements')}
-              className="text-sm text-primary hover:underline"
-            >
+            <button onClick={() => navigate('/mouvements')} className="text-sm text-primary hover:underline">
               Voir tout →
             </button>
           </div>
@@ -371,21 +313,22 @@ const Tresorerie = () => {
               </thead>
               <tbody>
                 {derniersMouvements.length > 0 ? (
-                  derniersMouvements.map((m, idx) => (
-                    <tr key={idx} className="hover">
-                      <td className="text-xs">{formatDate(m.date_mouvement)}</td>
+                  derniersMouvements.map((m) => (
+                    <tr key={m.id} className="hover">
+                      <td className="text-xs whitespace-nowrap">{formatDate(m.date_mouvement)}</td>
                       <td>
-                        <span className={`badge badge-sm ${m.type_mouvement === 'encaissement' ? 'badge-success' : 'badge-error'}`}>
-                          {m.type_mouvement}
+                        <span className={`badge badge-sm ${m.type_mouvement === 'encaissement' ? 'badge-success' : m.type_mouvement === 'decaissement' ? 'badge-error' : 'badge-info'}`}>
+                          {m.type_mouvement_display || m.type_mouvement}
                         </span>
                       </td>
-                      <td className="text-sm truncate max-w-[150px]">{m.libelle}</td>
-                      <td className="text-right font-mono text-sm">
+                      <td className="text-sm truncate max-w-[150px]" title={m.libelle}>{m.libelle}</td>
+                      <td className={`text-right font-mono text-sm ${m.type_mouvement === 'encaissement' ? 'text-success' : m.type_mouvement === 'decaissement' ? 'text-error' : ''}`}>
+                        {m.type_mouvement === 'encaissement' ? '+' : m.type_mouvement === 'decaissement' ? '-' : ''}
                         {formatMontant(m.montant)}
                       </td>
                       <td>
                         <span className={`badge badge-sm ${m.status === 'effectue' ? 'badge-success' : m.status === 'planifie' ? 'badge-warning' : 'badge-ghost'}`}>
-                          {m.status}
+                          {m.status_display || m.status}
                         </span>
                       </td>
                     </tr>
@@ -402,10 +345,8 @@ const Tresorerie = () => {
           </div>
         </div>
 
-        {/* Alertes et infos */}
         <div className="bg-base-100 rounded-xl shadow-md border border-base-200 p-4">
           <h2 className="text-lg font-semibold mb-4">🔔 Alertes</h2>
-          
           <div className="space-y-3">
             {stats.alertes > 0 ? (
               <div className="p-3 bg-warning/10 rounded-xl border border-warning/20">
@@ -414,10 +355,7 @@ const Tresorerie = () => {
                   <div>
                     <p className="font-medium text-sm text-warning">Alertes actives</p>
                     <p className="text-sm text-base-content/60">{stats.alertes} alerte(s) à traiter</p>
-                    <button 
-                      onClick={() => navigate('/alertes')}
-                      className="btn btn-xs btn-warning btn-outline mt-2"
-                    >
+                    <button onClick={() => navigate('/alertes')} className="btn btn-xs btn-warning btn-outline mt-2">
                       Voir les alertes
                     </button>
                   </div>
@@ -467,12 +405,8 @@ const Tresorerie = () => {
               </div>
             </div>
 
-            <button 
-              onClick={() => navigate('/tresorerie-journaliere')}
-              className="w-full btn btn-outline btn-sm gap-2"
-            >
-              <Calendar className="w-4 h-4" />
-              Voir le suivi journalier
+            <button onClick={() => navigate('/tresorerie-journaliere')} className="w-full btn btn-outline btn-sm gap-2">
+              <Calendar className="w-4 h-4" /> Voir le suivi journalier
             </button>
           </div>
         </div>
@@ -483,9 +417,7 @@ const Tresorerie = () => {
           from { opacity: 0; transform: translateY(-10px); }
           to { opacity: 1; transform: translateY(0); }
         }
-        .animate-slideDown {
-          animation: slideDown 0.3s ease-out;
-        }
+        .animate-slideDown { animation: slideDown 0.3s ease-out; }
       `}</style>
     </div>
   )

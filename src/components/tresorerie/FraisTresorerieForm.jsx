@@ -1,170 +1,209 @@
 // src/components/tresorerie/FraisTresorerieForm.jsx
-import React, { useState, useEffect } from 'react'
-import { useNavigate, useParams, Link } from 'react-router-dom'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
 import {
   ArrowLeft, Save, X, AlertCircle, CheckCircle, Loader2,
-  Receipt, DollarSign, Calendar, User, Building2, FileText,
-  Truck, Utensils, Briefcase, Phone, Home, BookOpen, Award,
-  Shield, Wrench, Coffee, Plane, GraduationCap, Stethoscope,
-  Landmark, ShoppingBag, Smartphone, CreditCard, Banknote
+  FileText, Truck, Utensils, Briefcase, Phone, Home, Wrench,
+  Coffee, Plane, GraduationCap, Landmark, ShoppingBag, Shield,
 } from 'lucide-react'
+
+const todayLocal = () => {
+  const d = new Date()
+  const off = d.getTimezoneOffset()
+  const local = new Date(d.getTime() - off * 60 * 1000)
+  return local.toISOString().split('T')[0]
+}
+
+const EMPTY_FORM = {
+  titre: '',
+  agence: '',
+  categorie: 'autre',
+  montant: '',
+  date_frais: todayLocal(),
+  date_paiement: '',
+  beneficiaire: '',
+  piece_justificative: '',
+  mode_paiement: 'especes',
+  status: 'brouillon',
+  notes: '',
+}
+
+const unwrapList = (payload) => Array.isArray(payload) ? payload : (payload?.results || [])
 
 const FraisTresorerieForm = () => {
   const navigate = useNavigate()
   const { id } = useParams()
   const isEdit = !!id
 
-  const [loading, setLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState(null)
-  const [notification, setNotification] = useState({ show: false, message: '', type: 'success' })
+  const [formData, setFormData] = useState(EMPTY_FORM)
   const [agences, setAgences] = useState([])
+  const [caisses, setCaisses] = useState([])
+  const [comptesBancaires, setComptesBancaires] = useState([])
 
-  const [formData, setFormData] = useState({
-    reference: '',
-    titre: '',
-    agence: '',
-    categorie: 'autre',
-    montant: '',
-    date_frais: new Date().toISOString().split('T')[0],
-    date_paiement: '',
-    beneficiaire: '',
-    piece_justificative: '',
-    mode_paiement: 'especes',
-    status: 'brouillon',
-    notes: ''
-  })
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [globalError, setGlobalError] = useState(null)
+  const [fieldErrors, setFieldErrors] = useState({})
+  const [notification, setNotification] = useState({ show: false, message: '', type: 'success' })
+  const [originalStatus, setOriginalStatus] = useState(null)
 
-  const showNotification = (message, type = 'success') => {
+  const abortRef = useRef(null)
+  const redirectTimerRef = useRef(null)
+  const notifTimerRef = useRef(null)
+
+  const showNotification = useCallback((message, type = 'success') => {
     setNotification({ show: true, message, type })
-    setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 4000)
-  }
+    if (notifTimerRef.current) clearTimeout(notifTimerRef.current)
+    notifTimerRef.current = setTimeout(
+      () => setNotification({ show: false, message: '', type: 'success' }),
+      4000
+    )
+  }, [])
 
-  // Charger les données
   useEffect(() => {
-    const loadData = async () => {
-      setLoading(true)
-      try {
-        // Charger les agences
-        const agencesRes = await AxiosInstance.get('/agences/')
-        setAgences(agencesRes.data || [])
+    const controller = new AbortController()
+    abortRef.current = controller
 
-        // Si édition, charger les données du frais
+    const loadData = async () => {
+      setLoading(true); setGlobalError(null)
+      try {
+        const [agencesRes, caissesRes, comptesRes] = await Promise.all([
+          AxiosInstance.get('/agences/', { params: { page_size: 200 }, signal: controller.signal }),
+          AxiosInstance.get('/caisses/', { params: { page_size: 200 }, signal: controller.signal }),
+          AxiosInstance.get('/comptes-bancaires/', { params: { page_size: 200 }, signal: controller.signal }),
+        ])
+        setAgences(unwrapList(agencesRes.data))
+        setCaisses(unwrapList(caissesRes.data))
+        setComptesBancaires(unwrapList(comptesRes.data))
+
         if (isEdit) {
-          const fraisRes = await AxiosInstance.get(`/frais/${id}/`)
-          const data = fraisRes.data
+          const fraisRes = await AxiosInstance.get(`/frais/${id}/`, { signal: controller.signal })
+          const d = fraisRes.data || {}
           setFormData({
-            reference: data.reference || '',
-            titre: data.titre || '',
-            agence: data.agence || '',
-            categorie: data.categorie || 'autre',
-            montant: data.montant || '',
-            date_frais: data.date_frais || new Date().toISOString().split('T')[0],
-            date_paiement: data.date_paiement || '',
-            beneficiaire: data.beneficiaire || '',
-            piece_justificative: data.piece_justificative || '',
-            mode_paiement: data.mode_paiement || 'especes',
-            status: data.status || 'brouillon',
-            notes: data.notes || ''
+            titre: d.titre || '',
+            agence: d.agence || '',
+            categorie: d.categorie || 'autre',
+            montant: d.montant ?? '',
+            date_frais: d.date_frais || todayLocal(),
+            date_paiement: d.date_paiement || '',
+            beneficiaire: d.beneficiaire || '',
+            piece_justificative: d.piece_justificative || '',
+            mode_paiement: d.mode_paiement || 'especes',
+            status: d.status || 'brouillon',
+            notes: d.notes || '',
           })
+          setOriginalStatus(d.status || 'brouillon')
         }
-      } catch (error) {
-        console.error('Erreur chargement:', error)
-        setError('Erreur de chargement des données')
+      } catch (err) {
+        if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return
+        console.error('Erreur chargement:', err)
+        setGlobalError('Erreur de chargement des données')
         showNotification('Erreur de chargement des données', 'error')
       } finally {
         setLoading(false)
       }
     }
     loadData()
-  }, [id, isEdit])
+
+    return () => {
+      controller.abort()
+      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current)
+      if (notifTimerRef.current) clearTimeout(notifTimerRef.current)
+    }
+  }, [id, isEdit, showNotification])
+
+  const caissesFiltrees = useMemo(() => {
+    if (!formData.agence) return caisses
+    return caisses.filter(c => String(c.agence) === String(formData.agence))
+  }, [caisses, formData.agence])
+
+  const comptesFiltres = useMemo(() => {
+    if (!formData.agence) return comptesBancaires
+    return comptesBancaires.filter(c => String(c.agence) === String(formData.agence))
+  }, [comptesBancaires, formData.agence])
 
   const handleChange = (e) => {
-    const { name, value, type, checked } = e.target
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }))
+    const { name, value } = e.target
+    setFormData(prev => ({ ...prev, [name]: value }))
+    if (fieldErrors[name]) {
+      setFieldErrors(prev => { const n = { ...prev }; delete n[name]; return n })
+    }
+  }
+
+  const validate = () => {
+    const errors = {}
+    if (!formData.titre.trim()) errors.titre = 'Le titre est requis'
+    if (!formData.agence) errors.agence = "L'agence est requise"
+    const m = parseFloat(formData.montant)
+    if (!formData.montant || !Number.isFinite(m) || m <= 0) errors.montant = 'Le montant doit être supérieur à 0'
+    if (!formData.beneficiaire.trim()) errors.beneficiaire = 'Le bénéficiaire est requis'
+    if (!formData.date_frais) errors.date_frais = 'La date est requise'
+    return errors
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    setGlobalError(null); setFieldErrors({})
+
+    const clientErrors = validate()
+    if (Object.keys(clientErrors).length > 0) {
+      setFieldErrors(clientErrors)
+      setGlobalError('Veuillez corriger les champs en rouge')
+      return
+    }
+
+    // ✅ Avertissement métier : passer à 'paye' crée un mouvement auto
+    if (formData.status === 'paye' && originalStatus !== 'paye') {
+      const ok = window.confirm(
+        "⚠️ En passant ce frais à 'Payé', un mouvement de décaissement sera automatiquement créé et les soldes de la caisse/compte seront impactés. Continuer ?"
+      )
+      if (!ok) return
+    }
+
     setSaving(true)
-    setError(null)
-
     try {
-      // Validation
-      if (!formData.titre) {
-        setError('Le titre est requis')
-        setSaving(false)
-        return
-      }
-      if (!formData.agence) {
-        setError('L\'agence est requise')
-        setSaving(false)
-        return
-      }
-      if (!formData.montant || parseFloat(formData.montant) <= 0) {
-        setError('Le montant doit être supérieur à 0')
-        setSaving(false)
-        return
-      }
-      if (!formData.beneficiaire) {
-        setError('Le bénéficiaire est requis')
-        setSaving(false)
-        return
-      }
-      if (!formData.date_frais) {
-        setError('La date est requise')
-        setSaving(false)
-        return
+      const payload = {
+        titre: formData.titre,
+        agence: Number(formData.agence),
+        categorie: formData.categorie,
+        montant: parseFloat(formData.montant),
+        date_frais: formData.date_frais,
+        date_paiement: formData.date_paiement || null,
+        beneficiaire: formData.beneficiaire,
+        piece_justificative: formData.piece_justificative || '',
+        mode_paiement: formData.mode_paiement,
+        status: formData.status,
+        notes: formData.notes || '',
       }
 
-      const dataToSend = {
-        ...formData,
-        montant: parseFloat(formData.montant) || 0,
-        agence: parseInt(formData.agence)
-      }
-
-      let response
       if (isEdit) {
-        response = await AxiosInstance.put(`/frais/${id}/`, dataToSend)
+        await AxiosInstance.put(`/frais/${id}/`, payload)
         showNotification('Frais modifié avec succès', 'success')
       } else {
-        response = await AxiosInstance.post('/frais/', dataToSend)
+        await AxiosInstance.post('/frais/', payload)
         showNotification('Frais créé avec succès', 'success')
       }
 
-      setTimeout(() => navigate('/frais'), 1000)
-
-    } catch (error) {
-      console.error('Erreur sauvegarde:', error)
-      const msg = error.response?.data?.message || error.response?.data?.detail || 'Erreur lors de la sauvegarde'
-      setError(msg)
-      showNotification(msg, 'error')
+      redirectTimerRef.current = setTimeout(() => navigate('/frais'), 900)
+    } catch (err) {
+      console.error('Erreur sauvegarde:', err)
+      const data = err.response?.data
+      if (data && typeof data === 'object' && !Array.isArray(data) && !data.detail && !data.error && !data.message) {
+        const fe = {}
+        Object.keys(data).forEach(k => {
+          const v = data[k]
+          fe[k] = Array.isArray(v) ? v[0] : String(v)
+        })
+        setFieldErrors(fe)
+        setGlobalError('Certains champs sont invalides')
+      } else {
+        setGlobalError(data?.detail || data?.error || data?.message || 'Erreur lors de la sauvegarde')
+      }
+      showNotification('Erreur lors de la sauvegarde', 'error')
     } finally {
       setSaving(false)
     }
-  }
-
-  const getCategoryIcon = (category) => {
-    const icons = {
-      transport: <Truck className="w-5 h-5" />,
-      restauration: <Utensils className="w-5 h-5" />,
-      fournitures: <Briefcase className="w-5 h-5" />,
-      communication: <Phone className="w-5 h-5" />,
-      entretien: <Wrench className="w-5 h-5" />,
-      formation: <GraduationCap className="w-5 h-5" />,
-      mission: <Plane className="w-5 h-5" />,
-      representations: <Coffee className="w-5 h-5" />,
-      assurances: <Shield className="w-5 h-5" />,
-      impots: <Landmark className="w-5 h-5" />,
-      loyer: <Home className="w-5 h-5" />,
-      services: <ShoppingBag className="w-5 h-5" />,
-      autre: <FileText className="w-5 h-5" />
-    }
-    return icons[category] || <FileText className="w-5 h-5" />
   }
 
   if (loading) {
@@ -180,14 +219,18 @@ const FraisTresorerieForm = () => {
     )
   }
 
+  const FieldError = ({ name }) => fieldErrors[name] ? (
+    <span className="text-xs text-error mt-1">{fieldErrors[name]}</span>
+  ) : null
+
   return (
     <div className="space-y-4 sm:space-y-6 p-3 sm:p-4 lg:p-6">
-      
-      {/* Notification */}
       {notification.show && (
         <div className="fixed top-16 right-3 sm:right-6 z-50 animate-slideDown">
           <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-lg text-sm sm:text-base`}>
-            {notification.type === 'success' ? <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5" /> : <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5" />}
+            {notification.type === 'success'
+              ? <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5" />
+              : <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5" />}
             <span className="font-semibold">{notification.message}</span>
             <button className="btn btn-ghost btn-xs btn-circle" onClick={() => setNotification({ ...notification, show: false })}>
               <X className="w-3 h-3 sm:w-4 sm:h-4" />
@@ -196,178 +239,97 @@ const FraisTresorerieForm = () => {
         </div>
       )}
 
-      {/* En-tête */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
-        <div className="flex items-center gap-3 sm:gap-4">
-          <button
-            onClick={() => navigate('/frais')}
-            className="btn btn-ghost btn-sm gap-2"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Retour
-          </button>
-          <div>
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-base-content">
-              {isEdit ? '✏️ Modifier le frais' : '📄 Nouveau frais'}
-            </h1>
-            <p className="text-xs sm:text-sm text-base-content/60 mt-1">
-              {isEdit ? 'Modifiez les informations du frais' : 'Créez un nouveau frais'}
-            </p>
-          </div>
+      <div className="flex items-center gap-3 sm:gap-4">
+        <button onClick={() => navigate('/frais')} className="btn btn-ghost btn-sm gap-2">
+          <ArrowLeft className="w-4 h-4" /> Retour
+        </button>
+        <div>
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-base-content">
+            {isEdit ? '✏️ Modifier le frais' : '📄 Nouveau frais'}
+          </h1>
+          <p className="text-xs sm:text-sm text-base-content/60 mt-1">
+            {isEdit ? 'Modifiez les informations du frais' : 'Créez un nouveau frais'}
+          </p>
         </div>
       </div>
 
-      {/* Formulaire */}
       <form onSubmit={handleSubmit} className="bg-base-100 rounded-xl shadow-md border border-base-200 p-4 sm:p-6">
-        {error && (
+        {globalError && (
           <div className="alert alert-error mb-4">
-            <AlertCircle className="w-4 h-4" />
-            <span>{error}</span>
+            <AlertCircle className="w-4 h-4" /><span>{globalError}</span>
           </div>
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Titre */}
-          <div className="form-control">
-            <label className="label">
-              <span className="label-text font-medium">Titre <span className="text-error">*</span></span>
-            </label>
-            <input
-              type="text"
-              name="titre"
-              value={formData.titre}
-              onChange={handleChange}
+          <div className="form-control md:col-span-2">
+            <label className="label"><span className="label-text font-medium">Titre <span className="text-error">*</span></span></label>
+            <input type="text" name="titre" value={formData.titre} onChange={handleChange}
               placeholder="Ex: Achat fournitures bureau"
-              className="input input-bordered w-full"
-              required
-            />
+              className={`input input-bordered w-full ${fieldErrors.titre ? 'input-error' : ''}`} />
+            <FieldError name="titre" />
           </div>
 
-          {/* Agence */}
           <div className="form-control">
-            <label className="label">
-              <span className="label-text font-medium">Agence <span className="text-error">*</span></span>
-            </label>
-            <select
-              name="agence"
-              value={formData.agence}
-              onChange={handleChange}
-              className="select select-bordered w-full"
-              required
-            >
+            <label className="label"><span className="label-text font-medium">Agence <span className="text-error">*</span></span></label>
+            <select name="agence" value={formData.agence} onChange={handleChange}
+              className={`select select-bordered w-full ${fieldErrors.agence ? 'select-error' : ''}`}>
               <option value="">Sélectionner une agence</option>
-              {agences.map(agence => (
-                <option key={agence.id} value={agence.id}>{agence.nom}</option>
-              ))}
+              {agences.map(a => <option key={a.id} value={a.id}>{a.nom}</option>)}
+            </select>
+            <FieldError name="agence" />
+          </div>
+
+          <div className="form-control">
+            <label className="label"><span className="label-text font-medium">Catégorie <span className="text-error">*</span></span></label>
+            <select name="categorie" value={formData.categorie} onChange={handleChange} className="select select-bordered w-full">
+              <option value="transport">Transport</option>
+              <option value="restauration">Restauration</option>
+              <option value="fournitures">Fournitures de bureau</option>
+              <option value="communication">Communication</option>
+              <option value="entretien">Entretien</option>
+              <option value="formation">Formation</option>
+              <option value="mission">Mission</option>
+              <option value="representations">Représentation</option>
+              <option value="assurances">Assurances</option>
+              <option value="impots">Impôts et taxes</option>
+              <option value="loyer">Loyer</option>
+              <option value="services">Services</option>
+              <option value="autre">Autre</option>
             </select>
           </div>
 
-          {/* Catégorie */}
           <div className="form-control">
-            <label className="label">
-              <span className="label-text font-medium">Catégorie <span className="text-error">*</span></span>
-            </label>
-            <div className="flex items-center gap-2">
-              <div className="text-base-content/40">
-                {getCategoryIcon(formData.categorie)}
-              </div>
-              <select
-                name="categorie"
-                value={formData.categorie}
-                onChange={handleChange}
-                className="select select-bordered flex-1"
-                required
-              >
-                <option value="transport">Transport</option>
-                <option value="restauration">Restauration</option>
-                <option value="fournitures">Fournitures de bureau</option>
-                <option value="communication">Communication</option>
-                <option value="entretien">Entretien</option>
-                <option value="formation">Formation</option>
-                <option value="mission">Mission</option>
-                <option value="representations">Représentation</option>
-                <option value="assurances">Assurances</option>
-                <option value="impots">Impôts et taxes</option>
-                <option value="loyer">Loyer</option>
-                <option value="services">Services</option>
-                <option value="autre">Autre</option>
-              </select>
-            </div>
+            <label className="label"><span className="label-text font-medium">Montant <span className="text-error">*</span></span></label>
+            <input type="number" name="montant" value={formData.montant} onChange={handleChange}
+              placeholder="0" step="0.01" min="0"
+              className={`input input-bordered w-full ${fieldErrors.montant ? 'input-error' : ''}`} />
+            <FieldError name="montant" />
           </div>
 
-          {/* Montant */}
           <div className="form-control">
-            <label className="label">
-              <span className="label-text font-medium">Montant <span className="text-error">*</span></span>
-            </label>
-            <input
-              type="number"
-              name="montant"
-              value={formData.montant}
-              onChange={handleChange}
-              placeholder="0"
-              className="input input-bordered w-full"
-              step="0.01"
-              required
-            />
-          </div>
-
-          {/* Date du frais */}
-          <div className="form-control">
-            <label className="label">
-              <span className="label-text font-medium">Date du frais <span className="text-error">*</span></span>
-            </label>
-            <input
-              type="date"
-              name="date_frais"
-              value={formData.date_frais}
-              onChange={handleChange}
-              className="input input-bordered w-full"
-              required
-            />
-          </div>
-
-          {/* Date de paiement */}
-          <div className="form-control">
-            <label className="label">
-              <span className="label-text font-medium">Date de paiement</span>
-            </label>
-            <input
-              type="date"
-              name="date_paiement"
-              value={formData.date_paiement}
-              onChange={handleChange}
-              className="input input-bordered w-full"
-            />
-          </div>
-
-          {/* Bénéficiaire */}
-          <div className="form-control">
-            <label className="label">
-              <span className="label-text font-medium">Bénéficiaire <span className="text-error">*</span></span>
-            </label>
-            <input
-              type="text"
-              name="beneficiaire"
-              value={formData.beneficiaire}
-              onChange={handleChange}
+            <label className="label"><span className="label-text font-medium">Bénéficiaire <span className="text-error">*</span></span></label>
+            <input type="text" name="beneficiaire" value={formData.beneficiaire} onChange={handleChange}
               placeholder="Nom du bénéficiaire"
-              className="input input-bordered w-full"
-              required
-            />
+              className={`input input-bordered w-full ${fieldErrors.beneficiaire ? 'input-error' : ''}`} />
+            <FieldError name="beneficiaire" />
           </div>
 
-          {/* Mode de paiement */}
           <div className="form-control">
-            <label className="label">
-              <span className="label-text font-medium">Mode de paiement</span>
-            </label>
-            <select
-              name="mode_paiement"
-              value={formData.mode_paiement}
-              onChange={handleChange}
-              className="select select-bordered w-full"
-            >
+            <label className="label"><span className="label-text font-medium">Date du frais <span className="text-error">*</span></span></label>
+            <input type="date" name="date_frais" value={formData.date_frais} onChange={handleChange}
+              className={`input input-bordered w-full ${fieldErrors.date_frais ? 'input-error' : ''}`} />
+            <FieldError name="date_frais" />
+          </div>
+
+          <div className="form-control">
+            <label className="label"><span className="label-text font-medium">Date de paiement</span></label>
+            <input type="date" name="date_paiement" value={formData.date_paiement} onChange={handleChange}
+              className="input input-bordered w-full" />
+          </div>
+
+          <div className="form-control">
+            <label className="label"><span className="label-text font-medium">Mode de paiement</span></label>
+            <select name="mode_paiement" value={formData.mode_paiement} onChange={handleChange} className="select select-bordered w-full">
               <option value="especes">Espèces</option>
               <option value="carte">Carte bancaire</option>
               <option value="cheque">Chèque</option>
@@ -377,79 +339,52 @@ const FraisTresorerieForm = () => {
             </select>
           </div>
 
-          {/* Statut */}
           <div className="form-control">
-            <label className="label">
-              <span className="label-text font-medium">Statut</span>
-            </label>
-            <select
-              name="status"
-              value={formData.status}
-              onChange={handleChange}
-              className="select select-bordered w-full"
-            >
+            <label className="label"><span className="label-text font-medium">Statut</span></label>
+            <select name="status" value={formData.status} onChange={handleChange} className="select select-bordered w-full">
               <option value="brouillon">Brouillon</option>
               <option value="en_attente">En attente de validation</option>
               <option value="valide">Validé</option>
-              <option value="paye">Payé</option>
+              <option value="paye">Payé (crée le mouvement)</option>
             </select>
+            {isEdit && originalStatus === 'paye' && formData.status !== 'paye' && (
+              <span className="text-xs text-warning mt-1">
+                ⚠️ Repasser à un autre statut ne supprime pas le mouvement déjà créé
+              </span>
+            )}
           </div>
 
-          {/* Pièce justificative */}
           <div className="form-control">
-            <label className="label">
-              <span className="label-text font-medium">Pièce justificative</span>
-            </label>
-            <input
-              type="text"
-              name="piece_justificative"
-              value={formData.piece_justificative}
-              onChange={handleChange}
-              placeholder="Ex: FACT-001"
-              className="input input-bordered w-full"
-            />
+            <label className="label"><span className="label-text font-medium">Pièce justificative</span></label>
+            <input type="text" name="piece_justificative" value={formData.piece_justificative} onChange={handleChange}
+              placeholder="Ex: FACT-001" className="input input-bordered w-full" />
           </div>
 
-          {/* Notes */}
-          <div className="form-control col-span-1 md:col-span-2">
-            <label className="label">
-              <span className="label-text font-medium">Notes</span>
-            </label>
-            <textarea
-              name="notes"
-              value={formData.notes}
-              onChange={handleChange}
-              placeholder="Notes supplémentaires..."
-              className="textarea textarea-bordered w-full"
-              rows="3"
-            />
+          <div className="form-control md:col-span-2">
+            <label className="label"><span className="label-text font-medium">Notes</span></label>
+            <textarea name="notes" value={formData.notes} onChange={handleChange}
+              placeholder="Notes supplémentaires..." className="textarea textarea-bordered w-full" rows="3" />
           </div>
         </div>
 
-        {/* Boutons */}
         <div className="flex flex-wrap gap-3 mt-6 pt-4 border-t border-base-200">
-          <button
-            type="submit"
-            className="btn btn-primary gap-2"
-            disabled={saving}
-          >
-            {saving ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Save className="w-4 h-4" />
-            )}
+          <button type="submit" className="btn btn-primary gap-2" disabled={saving}>
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             {saving ? 'Enregistrement...' : (isEdit ? 'Modifier' : 'Créer')}
           </button>
-          <button
-            type="button"
-            onClick={() => navigate('/frais')}
-            className="btn btn-ghost gap-2"
-          >
-            <X className="w-4 h-4" />
-            Annuler
+          <button type="button" onClick={() => navigate('/frais')} className="btn btn-ghost gap-2">
+            <X className="w-4 h-4" /> Annuler
           </button>
         </div>
       </form>
+
+      <style>{`
+        @keyframes slideDown {
+          from { transform: translateY(-20px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        .animate-slideDown { animation: slideDown 0.3s ease-out; }
+      `}</style>
     </div>
   )
 }

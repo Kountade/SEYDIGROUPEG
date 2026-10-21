@@ -1,211 +1,305 @@
 // src/components/tresorerie/ComptesBancaires.jsx
-import React, { useEffect, useState } from 'react'
+import React, {
+  useEffect, useState, useCallback, useRef, useMemo
+} from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
 import {
   Plus, Edit, Trash2, Search, RefreshCw, Filter, X, AlertCircle, CheckCircle,
   Eye, MoreVertical, ChevronLeft, ChevronRight, ArrowUpDown, LayoutGrid, List,
-  PiggyBank, Building2, DollarSign, Clock, Calendar, CreditCard, Banknote,
-  Globe, Hash, User, Settings, Shield, TrendingUp, TrendingDown, Loader2
+  PiggyBank, DollarSign, Clock, Loader2, Shield
 } from 'lucide-react'
+
+const DEBOUNCE_MS = 300
 
 const ComptesBancaires = () => {
   const navigate = useNavigate()
+
+  // ---------- État principal ----------
   const [comptes, setComptes] = useState([])
   const [loading, setLoading] = useState(true)
+  const [initialLoad, setInitialLoad] = useState(true)
   const [error, setError] = useState(null)
+
+  // ---------- Filtres serveur ----------
   const [searchTerm, setSearchTerm] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [filterType, setFilterType] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
+
+  // ---------- Pagination serveur ----------
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(12)
-  const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const [compteToDelete, setCompteToDelete] = useState(null)
-  const [notification, setNotification] = useState({ show: false, message: '', type: 'success' })
-  const [viewMode, setViewMode] = useState('grid')
+  const [totalCount, setTotalCount] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
+  const [serverStats, setServerStats] = useState({ total: 0, actifs: 0, inactifs: 0 })
+
+  // ---------- Tri serveur ----------
   const [sortField, setSortField] = useState('nom')
   const [sortDirection, setSortDirection] = useState('asc')
-  const [showFilters, setShowFilters] = useState(false)
+
+  // ---------- UI ----------
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [compteToDelete, setCompteToDelete] = useState(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
-  const [stats, setStats] = useState({ total: 0, actifs: 0, inactifs: 0 })
+  const [notification, setNotification] = useState({ show: false, message: '', type: 'success' })
+  const [viewMode, setViewMode] = useState('grid')
+  const [showFilters, setShowFilters] = useState(false)
 
-  const showNotification = (message, type = 'success') => {
+  // ---------- Refs ----------
+  const cacheRef = useRef(new Map())
+  const abortRef = useRef(null)
+  const notifTimerRef = useRef(null)
+
+  const showNotification = useCallback((message, type = 'success') => {
     setNotification({ show: true, message, type })
-    setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 4000)
-  }
-
-  const fetchData = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const token = localStorage.getItem('Token')
-      if (!token) {
-        setError('Veuillez vous connecter')
-        setLoading(false)
-        return
-      }
-
-      const response = await AxiosInstance.get('/comptes-bancaires/')
-      const data = response.data || []
-      setComptes(data)
-
-      const total = data.length
-      const actifs = data.filter(c => c.is_active).length
-      setStats({ total, actifs, inactifs: total - actifs })
-
-    } catch (error) {
-      console.error('Erreur chargement comptes bancaires:', error)
-      setError('Erreur de chargement des comptes bancaires')
-      showNotification('Erreur de chargement des comptes bancaires', 'error')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    fetchData()
+    if (notifTimerRef.current) clearTimeout(notifTimerRef.current)
+    notifTimerRef.current = setTimeout(
+      () => setNotification({ show: false, message: '', type: 'success' }), 4000
+    )
   }, [])
 
-  // ✅ DELETE avec confirmation
-  const handleDelete = async () => {
-    if (!compteToDelete) return
-    setDeleteLoading(true)
+  useEffect(() => {
+    return () => {
+      if (notifTimerRef.current) clearTimeout(notifTimerRef.current)
+      if (abortRef.current) abortRef.current.abort()
+    }
+  }, [])
+
+  // ---------- Debounce search ----------
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchTerm), DEBOUNCE_MS)
+    return () => clearTimeout(t)
+  }, [searchTerm])
+
+  // ---------- Cache key ----------
+  const buildCacheKey = useCallback(() => JSON.stringify({
+    page: currentPage,
+    size: itemsPerPage,
+    q: debouncedSearch,
+    type: filterType,
+    status: filterStatus,
+    sort: `${sortField}:${sortDirection}`,
+  }), [currentPage, itemsPerPage, debouncedSearch, filterType, filterStatus, sortField, sortDirection])
+
+  // ---------- Fetch serveur ----------
+  const fetchData = useCallback(async ({ bypassCache = false } = {}) => {
+    const key = buildCacheKey()
+
+    if (!bypassCache && cacheRef.current.has(key)) {
+      const cached = cacheRef.current.get(key)
+      setComptes(cached.results)
+      setTotalCount(cached.count)
+      setTotalPages(cached.totalPages)
+      setServerStats(cached.stats)
+      setLoading(false)
+      setInitialLoad(false)
+      setError(null)
+      return
+    }
+
+    // ✅ Abort le fetch précédent (plus de guard fetchingRef)
+    if (abortRef.current) abortRef.current.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    setLoading(true)
+    setError(null)
+
     try {
-      await AxiosInstance.delete(`/comptes-bancaires/${compteToDelete.id}/`)
-      showNotification(`Compte "${compteToDelete.nom}" supprimé avec succès`, 'success')
-      fetchData()
-      setShowDeleteModal(false)
-      setCompteToDelete(null)
-    } catch (error) {
-      showNotification('Erreur lors de la suppression', 'error')
-    } finally {
-      setDeleteLoading(false)
-    }
-  }
-
-  // ✅ TOGGLE STATUS (Activer/Désactiver)
-  const handleToggleStatus = async (compte) => {
-    try {
-      await AxiosInstance.patch(`/comptes-bancaires/${compte.id}/`, {
-        is_active: !compte.is_active
-      })
-      showNotification(`Compte ${compte.is_active ? 'désactivé' : 'activé'} avec succès`, 'success')
-      fetchData()
-    } catch (error) {
-      showNotification('Erreur lors de la modification', 'error')
-    }
-  }
-
-  const handleSort = (field) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortField(field)
-      setSortDirection('asc')
-    }
-  }
-
-  const getTypeBadge = (type) => {
-    const types = {
-      courant: 'badge-primary',
-      epargne: 'badge-success',
-      bloque: 'badge-warning'
-    }
-    return (
-      <span className={`badge ${types[type] || 'badge-ghost'} badge-sm`}>
-        {type || 'Non défini'}
-      </span>
-    )
-  }
-
-  const getStatusBadge = (isActive) => {
-    return isActive ? (
-      <span className="badge badge-success badge-sm gap-1">
-        <CheckCircle className="w-3 h-3" />
-        Actif
-      </span>
-    ) : (
-      <span className="badge badge-ghost badge-sm gap-1">
-        <Clock className="w-3 h-3" />
-        Inactif
-      </span>
-    )
-  }
-
-  const formatMontant = (montant) => {
-    if (!montant && montant !== 0) return '0 FCFA'
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'XOF',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(montant)
-  }
-
-  const formatDate = (dateString) => {
-    if (!dateString) return '-'
-    try {
-      return new Date(dateString).toLocaleDateString('fr-FR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      })
-    } catch {
-      return '-'
-    }
-  }
-
-  const filteredAndSorted = React.useMemo(() => {
-    let filtered = comptes.filter(c => {
-      const search = searchTerm.toLowerCase()
-      const nom = (c.nom || '').toLowerCase()
-      const banque = (c.banque || '').toLowerCase()
-      const numero = (c.numero_compte || '').toLowerCase()
-      const code = (c.code || '').toLowerCase()
-      
-      const matchesSearch = nom.includes(search) || banque.includes(search) || 
-                           numero.includes(search) || code.includes(search)
-      const matchesType = filterType === '' || c.type_compte === filterType
-      const matchesStatus = filterStatus === '' || c.is_active === (filterStatus === 'true')
-      
-      return matchesSearch && matchesType && matchesStatus
-    })
-
-    filtered.sort((a, b) => {
-      let aVal = a[sortField] || ''
-      let bVal = b[sortField] || ''
-      
-      if (typeof aVal === 'string') {
-        aVal = aVal.toLowerCase()
-        bVal = bVal.toLowerCase()
+      const params = {
+        page: currentPage,
+        page_size: itemsPerPage,
+        ordering: `${sortDirection === 'desc' ? '-' : ''}${sortField}`,
       }
-      
-      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1
-      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1
-      return 0
-    })
+      if (debouncedSearch) params.search = debouncedSearch
+      if (filterType) params.type_compte = filterType
+      if (filterStatus !== '') params.is_active = filterStatus === 'true'
 
-    return filtered
-  }, [comptes, searchTerm, filterType, filterStatus, sortField, sortDirection])
+      const response = await AxiosInstance.get('/comptes-bancaires/', {
+        params,
+        signal: controller.signal,
+      })
 
-  const totalPages = Math.ceil(filteredAndSorted.length / itemsPerPage)
-  const paginatedItems = filteredAndSorted.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  )
+      // ✅ Ignore si aborté entre temps
+      if (controller.signal.aborted) return
 
+      const payload = response.data
+      const results = Array.isArray(payload) ? payload : (payload.results || [])
+      const count = Array.isArray(payload) ? results.length : (payload.count ?? results.length)
+      const nbPages = Array.isArray(payload)
+        ? Math.max(1, Math.ceil(results.length / itemsPerPage))
+        : Math.max(1, Math.ceil(count / itemsPerPage))
+
+      // ✅ Stats serveur : 2 count légers en parallèle
+      let stats = { total: count, actifs: 0, inactifs: 0 }
+      try {
+        const [actifsRes, inactifsRes] = await Promise.all([
+          AxiosInstance.get('/comptes-bancaires/', {
+            params: { page_size: 1, is_active: true },
+            signal: controller.signal,
+          }),
+          AxiosInstance.get('/comptes-bancaires/', {
+            params: { page_size: 1, is_active: false },
+            signal: controller.signal,
+          }),
+        ])
+        if (controller.signal.aborted) return
+        stats = {
+          total: count,
+          actifs: actifsRes.data?.count ?? 0,
+          inactifs: inactifsRes.data?.count ?? 0,
+        }
+      } catch (statsErr) {
+        // Silencieux : les stats sont optionnelles
+        if (statsErr.name !== 'CanceledError' && statsErr.code !== 'ERR_CANCELED') {
+          // rien
+        }
+      }
+
+      if (controller.signal.aborted) return
+
+      const cacheEntry = { results, count, totalPages: nbPages, stats }
+      cacheRef.current.set(key, cacheEntry)
+      if (cacheRef.current.size > 20) {
+        cacheRef.current.delete(cacheRef.current.keys().next().value)
+      }
+
+      setComptes(results)
+      setTotalCount(count)
+      setTotalPages(nbPages)
+      setServerStats(stats)
+    } catch (err) {
+      if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return
+      console.error('Erreur chargement comptes bancaires:', err)
+      if (err.response?.status === 401) {
+        setError('Session expirée, veuillez vous reconnecter')
+      } else if (err.response?.status === 403) {
+        setError("Vous n'avez pas les droits pour voir ces comptes")
+      } else {
+        setError('Erreur de chargement des comptes bancaires')
+      }
+      showNotification('Erreur de chargement des comptes bancaires', 'error')
+      setComptes([])
+    } finally {
+      // ✅ Ne pas écraser l'état si un nouveau fetch a pris le relais
+      if (abortRef.current === controller) {
+        setLoading(false)
+        setInitialLoad(false)
+      }
+    }
+  }, [buildCacheKey, currentPage, itemsPerPage, debouncedSearch, filterType, filterStatus, sortField, sortDirection, showNotification])
+
+  // ✅ DÉCLENCHEMENT AUTOMATIQUE — uniquement quand les VRAIS filtres changent
+  useEffect(() => {
+    fetchData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buildCacheKey])
+
+  // ✅ Reset page si on change itemsPerPage
+  useEffect(() => {
+    setCurrentPage(1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemsPerPage])
+
+  // ---------- Responsive ----------
   useEffect(() => {
     const handleResize = () => {
-      if (window.innerWidth < 640) setItemsPerPage(6)
-      else if (window.innerWidth < 1024) setItemsPerPage(9)
-      else setItemsPerPage(12)
+      const next =
+        window.innerWidth < 640 ? 6 :
+        window.innerWidth < 1024 ? 9 : 12
+      setItemsPerPage(prev => prev === next ? prev : next)
     }
     handleResize()
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  if (loading) {
+  const refreshData = async () => {
+    cacheRef.current.clear()
+    setCurrentPage(1)
+    await fetchData({ bypassCache: true })
+  }
+
+  // ---------- Actions ----------
+  const handleDelete = async () => {
+    if (!compteToDelete) return
+    setDeleteLoading(true)
+    try {
+      await AxiosInstance.delete(`/comptes-bancaires/${compteToDelete.id}/`)
+      cacheRef.current.clear()
+      showNotification(`Compte "${compteToDelete.nom}" supprimé avec succès`, 'success')
+      setShowDeleteModal(false)
+      setCompteToDelete(null)
+      await fetchData({ bypassCache: true })
+    } catch (err) {
+      showNotification(
+        err.response?.data?.detail || err.response?.data?.error || 'Erreur lors de la suppression',
+        'error'
+      )
+    } finally {
+      setDeleteLoading(false)
+    }
+  }
+
+  // ✅ Update local optimiste
+  const handleToggleStatus = async (compte) => {
+    const newState = !compte.is_active
+    setComptes(prev => prev.map(c => c.id === compte.id ? { ...c, is_active: newState } : c))
+    setServerStats(prev => ({
+      ...prev,
+      actifs: prev.actifs + (newState ? 1 : -1),
+      inactifs: prev.inactifs + (newState ? -1 : 1),
+    }))
+
+    try {
+      await AxiosInstance.patch(`/comptes-bancaires/${compte.id}/`, { is_active: newState })
+      cacheRef.current.clear()
+      showNotification(`Compte ${newState ? 'activé' : 'désactivé'} avec succès`, 'success')
+    } catch (err) {
+      // Rollback
+      setComptes(prev => prev.map(c => c.id === compte.id ? { ...c, is_active: !newState } : c))
+      setServerStats(prev => ({
+        ...prev,
+        actifs: prev.actifs + (newState ? -1 : 1),
+        inactifs: prev.inactifs + (newState ? 1 : -1),
+      }))
+      showNotification('Erreur lors de la modification', 'error')
+    }
+  }
+
+  const handleSort = (field) => {
+    if (sortField === field) setSortDirection(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortField(field); setSortDirection('asc') }
+    setCurrentPage(1)
+  }
+
+  // ---------- Helpers ----------
+  const getTypeBadge = (type) => {
+    const map = { courant: 'badge-primary', epargne: 'badge-success', bloque: 'badge-warning' }
+    return <span className={`badge ${map[type] || 'badge-ghost'} badge-sm`}>{type || 'Non défini'}</span>
+  }
+
+  const getStatusBadge = (isActive) => isActive ? (
+    <span className="badge badge-success badge-sm gap-1"><CheckCircle className="w-3 h-3" /> Actif</span>
+  ) : (
+    <span className="badge badge-ghost badge-sm gap-1"><Clock className="w-3 h-3" /> Inactif</span>
+  )
+
+  const formatMontant = (montant) => {
+    const n = Number(montant)
+    if (!Number.isFinite(n)) return '0 FCFA'
+    return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n) + ' FCFA'
+  }
+
+  const formatDate = (dateString) => {
+    if (!dateString) return '-'
+    try { return new Date(dateString).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) }
+    catch { return '-' }
+  }
+
+  // ---------- Premier chargement ----------
+  if (initialLoad && loading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
         <div className="text-center space-y-4">
@@ -218,16 +312,15 @@ const ComptesBancaires = () => {
     )
   }
 
-  if (error) {
+  if (error && comptes.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
         <div className="text-center">
           <AlertCircle className="w-16 h-16 text-error mx-auto mb-4" />
           <h2 className="text-xl font-bold text-base-content mb-2">Erreur de chargement</h2>
           <p className="text-base-content/60 mb-4">{error}</p>
-          <button onClick={fetchData} className="btn btn-primary gap-2">
-            <RefreshCw className="w-4 h-4" />
-            Réessayer
+          <button onClick={refreshData} className="btn btn-primary gap-2">
+            <RefreshCw className="w-4 h-4" /> Réessayer
           </button>
         </div>
       </div>
@@ -236,17 +329,25 @@ const ComptesBancaires = () => {
 
   return (
     <div className="space-y-4 sm:space-y-6 p-3 sm:p-4 lg:p-6">
-      
+      {/* Spinner overlay */}
+      {loading && !initialLoad && (
+        <div className="fixed top-20 right-6 z-40">
+          <div className="bg-base-100 shadow-lg rounded-full px-4 py-2 flex items-center gap-2 border border-base-300">
+            <Loader2 className="w-3 h-3 animate-spin text-primary" />
+            <span className="text-xs text-base-content/60">Chargement...</span>
+          </div>
+        </div>
+      )}
+
       {/* Notification */}
       {notification.show && (
         <div className="fixed top-16 right-3 sm:right-6 z-50 animate-slideDown">
           <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-lg text-sm sm:text-base`}>
-            {notification.type === 'success' ? <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5" /> : <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5" />}
+            {notification.type === 'success'
+              ? <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5" />
+              : <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5" />}
             <span className="font-semibold">{notification.message}</span>
-            <button 
-              className="btn btn-ghost btn-xs btn-circle"
-              onClick={() => setNotification({ ...notification, show: false })}
-            >
+            <button className="btn btn-ghost btn-xs btn-circle" onClick={() => setNotification({ ...notification, show: false })}>
               <X className="w-3 h-3 sm:w-4 sm:h-4" />
             </button>
           </div>
@@ -256,16 +357,16 @@ const ComptesBancaires = () => {
       {/* En-tête */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-base-content bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-base-content">
             🏦 Comptes bancaires
           </h1>
           <p className="text-xs sm:text-sm text-base-content/60 mt-1">
-            Gérez vos comptes bancaires ({stats.total} au total)
+            Gérez vos comptes bancaires ({serverStats.total} au total)
           </p>
         </div>
         <div className="flex flex-wrap gap-2 sm:gap-3">
-          <button onClick={fetchData} className="btn btn-sm sm:btn-md btn-outline gap-1 sm:gap-2">
-            <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4" />
+          <button onClick={refreshData} className="btn btn-sm sm:btn-md btn-outline gap-1 sm:gap-2" disabled={loading}>
+            <RefreshCw className={`w-3 h-3 sm:w-4 sm:h-4 ${loading ? 'animate-spin' : ''}`} />
             <span className="hidden xs:inline">Actualiser</span>
           </button>
           <Link to="/comptes-bancaires/nouveau" className="btn btn-sm sm:btn-md btn-primary gap-1 sm:gap-2">
@@ -275,22 +376,22 @@ const ComptesBancaires = () => {
         </div>
       </div>
 
-      {/* Statistiques */}
+      {/* Stats serveur */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 lg:gap-4">
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
           <div className="stat-figure text-primary"><PiggyBank className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" /></div>
           <div className="stat-title text-xs sm:text-sm font-semibold">Total</div>
-          <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{stats.total}</div>
+          <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{serverStats.total}</div>
         </div>
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
           <div className="stat-figure text-success"><CheckCircle className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" /></div>
           <div className="stat-title text-xs sm:text-sm font-semibold">Actifs</div>
-          <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{stats.actifs}</div>
+          <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{serverStats.actifs}</div>
         </div>
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-200 p-2 sm:p-3 lg:p-4">
           <div className="stat-figure text-error"><Clock className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" /></div>
           <div className="stat-title text-xs sm:text-sm font-semibold">Inactifs</div>
-          <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{stats.inactifs}</div>
+          <div className="stat-value text-lg sm:text-2xl lg:text-3xl font-black">{serverStats.inactifs}</div>
         </div>
       </div>
 
@@ -310,7 +411,7 @@ const ComptesBancaires = () => {
             </div>
           </div>
           <button onClick={() => setShowFilters(!showFilters)} className="btn btn-outline btn-sm sm:hidden gap-2">
-            <Filter className="w-4 h-4" /> Filtres {showFilters ? <ChevronLeft className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+            <Filter className="w-4 h-4" /> Filtres
           </button>
           <div className={`${showFilters ? 'flex' : 'hidden'} sm:flex flex-wrap gap-3`}>
             <select className="select select-bordered w-full sm:w-40 text-sm" value={filterType} onChange={(e) => { setFilterType(e.target.value); setCurrentPage(1) }}>
@@ -324,6 +425,9 @@ const ComptesBancaires = () => {
               <option value="true">Actif</option>
               <option value="false">Inactif</option>
             </select>
+            <button className="btn btn-outline gap-2" onClick={() => { setFilterType(''); setFilterStatus(''); setSearchTerm(''); setCurrentPage(1) }}>
+              <Filter className="w-4 h-4" /> <span className="hidden sm:inline">Réinitialiser</span>
+            </button>
             <div className="join ml-auto">
               <button className={`join-item btn btn-sm ${viewMode === 'grid' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setViewMode('grid')}>
                 <LayoutGrid className="w-4 h-4" />
@@ -332,16 +436,13 @@ const ComptesBancaires = () => {
                 <List className="w-4 h-4" />
               </button>
             </div>
-            <button className="btn btn-outline gap-2" onClick={() => { setFilterType(''); setFilterStatus(''); setSearchTerm(''); setCurrentPage(1) }}>
-              <Filter className="w-4 h-4" /> <span className="hidden sm:inline">Réinitialiser</span>
-            </button>
           </div>
         </div>
       </div>
 
-      {/* Liste des comptes */}
+      {/* Liste */}
       <div className="bg-base-100 rounded-xl shadow-xl border border-base-300 overflow-hidden">
-        {filteredAndSorted.length === 0 ? (
+        {comptes.length === 0 ? (
           <div className="p-8 sm:p-12 text-center">
             <PiggyBank className="w-16 h-16 sm:w-20 sm:h-20 mx-auto mb-4 text-base-content/30" />
             <p className="text-lg sm:text-xl font-semibold text-base-content/50">Aucun compte bancaire trouvé</p>
@@ -351,8 +452,8 @@ const ComptesBancaires = () => {
           </div>
         ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 p-3 sm:p-4">
-            {paginatedItems.map((compte) => (
-              <div key={compte.id} className="bg-base-200 rounded-xl p-4 hover:shadow-lg transition-all hover:-translate-y-1 border border-base-300 group">
+            {comptes.map((compte) => (
+              <div key={compte.id} className="bg-base-200 rounded-xl p-4 hover:shadow-lg transition-all hover:-translate-y-1 border border-base-300">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <div className="bg-primary/10 rounded-xl w-12 h-12 flex items-center justify-center">
@@ -368,48 +469,37 @@ const ComptesBancaires = () => {
                       <MoreVertical className="w-4 h-4" />
                     </button>
                     <ul className="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-44">
+                      <li><Link to={`/comptes-bancaires/${compte.id}`}><Eye className="w-4 h-4" /> Détails</Link></li>
+                      <li><Link to={`/comptes-bancaires/${compte.id}/edit`}><Edit className="w-4 h-4" /> Modifier</Link></li>
                       <li>
-                        <Link to={`/comptes-bancaires/${compte.id}`} className="text-sm">
-                          <Eye className="w-4 h-4" /> Détails
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to={`/comptes-bancaires/${compte.id}/edit`} className="text-sm">
-                          <Edit className="w-4 h-4" /> Modifier
-                        </Link>
-                      </li>
-                      <li>
-                        <button onClick={() => handleToggleStatus(compte)} className="text-sm">
-                          {compte.is_active ? (
-                            <><X className="w-4 h-4" /> Désactiver</>
-                          ) : (
-                            <><CheckCircle className="w-4 h-4" /> Activer</>
-                          )}
+                        <button onClick={() => handleToggleStatus(compte)}>
+                          {compte.is_active ? <><X className="w-4 h-4" /> Désactiver</> : <><CheckCircle className="w-4 h-4" /> Activer</>}
                         </button>
                       </li>
                       <li>
-                        <button onClick={() => { setCompteToDelete(compte); setShowDeleteModal(true) }} className="text-sm text-error">
+                        <button onClick={() => { setCompteToDelete(compte); setShowDeleteModal(true) }} className="text-error">
                           <Trash2 className="w-4 h-4" /> Supprimer
                         </button>
                       </li>
                     </ul>
                   </div>
                 </div>
-                
+
                 <div className="space-y-2 mb-3">
                   <div className="flex items-center gap-2 text-sm text-base-content/70">
                     <DollarSign className="w-4 h-4 text-success" />
                     <span className="font-bold">{formatMontant(compte.solde_actuel)}</span>
                   </div>
-                  <div className="text-xs text-base-content/50">
-                    <span className="font-mono">{compte.numero_compte}</span>
-                  </div>
+                  <div className="text-xs text-base-content/50 font-mono">{compte.numero_compte}</div>
                   <div className="flex flex-wrap gap-1">
                     {getTypeBadge(compte.type_compte)}
                     {getStatusBadge(compte.is_active)}
+                    {compte.is_default && (
+                      <span className="badge badge-primary badge-sm gap-1"><Shield className="w-3 h-3" /> Défaut</span>
+                    )}
                   </div>
                 </div>
-                
+
                 <div className="pt-3 border-t border-base-300 flex items-center justify-between text-xs text-base-content/40">
                   <span>Ouvert le {formatDate(compte.date_ouverture)}</span>
                   {compte.iban && <span className="font-mono text-[10px]">IBAN: {compte.iban}</span>}
@@ -419,9 +509,9 @@ const ComptesBancaires = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="table table-xs sm:table-sm lg:table-md w-full">
+            <table className="table table-xs sm:table-sm w-full">
               <thead>
-                <tr className="text-xs sm:text-sm">
+                <tr>
                   <th><button className="flex items-center gap-1 hover:text-primary" onClick={() => handleSort('code')}>Code <ArrowUpDown className="w-3 h-3" /></button></th>
                   <th><button className="flex items-center gap-1 hover:text-primary" onClick={() => handleSort('nom')}>Nom <ArrowUpDown className="w-3 h-3" /></button></th>
                   <th><button className="flex items-center gap-1 hover:text-primary" onClick={() => handleSort('banque')}>Banque <ArrowUpDown className="w-3 h-3" /></button></th>
@@ -432,7 +522,7 @@ const ComptesBancaires = () => {
                 </tr>
               </thead>
               <tbody>
-                {paginatedItems.map((compte) => (
+                {comptes.map((compte) => (
                   <tr key={compte.id} className="hover">
                     <td className="font-mono text-xs text-primary">{compte.code}</td>
                     <td className="font-medium">{compte.nom}</td>
@@ -442,12 +532,8 @@ const ComptesBancaires = () => {
                     <td>{getStatusBadge(compte.is_active)}</td>
                     <td className="text-center">
                       <div className="flex justify-center gap-1">
-                        <Link to={`/comptes-bancaires/${compte.id}`} className="btn btn-ghost btn-xs text-info">
-                          <Eye className="w-3 h-3" />
-                        </Link>
-                        <Link to={`/comptes-bancaires/${compte.id}/edit`} className="btn btn-ghost btn-xs text-primary">
-                          <Edit className="w-3 h-3" />
-                        </Link>
+                        <Link to={`/comptes-bancaires/${compte.id}`} className="btn btn-ghost btn-xs text-info"><Eye className="w-3 h-3" /></Link>
+                        <Link to={`/comptes-bancaires/${compte.id}/edit`} className="btn btn-ghost btn-xs text-primary"><Edit className="w-3 h-3" /></Link>
                         <button onClick={() => handleToggleStatus(compte)} className="btn btn-ghost btn-xs">
                           {compte.is_active ? <X className="w-3 h-3 text-warning" /> : <CheckCircle className="w-3 h-3 text-success" />}
                         </button>
@@ -463,33 +549,54 @@ const ComptesBancaires = () => {
           </div>
         )}
 
-        {/* Pagination */}
-        {filteredAndSorted.length > 0 && (
+        {/* Pagination serveur */}
+        {totalCount > 0 && (
           <div className="p-3 sm:p-4 border-t border-base-300">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
               <div className="text-xs sm:text-sm text-base-content/60 order-2 sm:order-1">
-                {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, filteredAndSorted.length)} sur {filteredAndSorted.length}
+                {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, totalCount)} sur {totalCount}
               </div>
               <div className="flex items-center gap-2 order-1 sm:order-2">
-                <select className="select select-bordered select-xs sm:select-sm" value={itemsPerPage} onChange={(e) => { setItemsPerPage(parseInt(e.target.value)); setCurrentPage(1) }}>
+                <select
+                  className="select select-bordered select-xs sm:select-sm"
+                  value={itemsPerPage}
+                  onChange={(e) => { setItemsPerPage(parseInt(e.target.value)); setCurrentPage(1) }}
+                >
                   <option value="6">6</option>
                   <option value="9">9</option>
                   <option value="12">12</option>
                   <option value="24">24</option>
                 </select>
                 <div className="join">
-                  <button className="join-item btn btn-xs sm:btn-sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+                  <button
+                    className="join-item btn btn-xs sm:btn-sm"
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1 || loading}
+                  >
                     <ChevronLeft className="w-3 h-3 sm:w-4 sm:h-4" />
                   </button>
                   {[...Array(Math.min(3, totalPages))].map((_, i) => {
-                    let pageNum = totalPages <= 3 ? i + 1 : currentPage <= 2 ? i + 1 : currentPage >= totalPages - 1 ? totalPages - 2 + i : currentPage - 1 + i
+                    let pageNum
+                    if (totalPages <= 3) pageNum = i + 1
+                    else if (currentPage <= 2) pageNum = i + 1
+                    else if (currentPage >= totalPages - 1) pageNum = totalPages - 2 + i
+                    else pageNum = currentPage - 1 + i
                     return (
-                      <button key={i} className={`join-item btn btn-xs sm:btn-sm ${currentPage === pageNum ? 'btn-primary' : ''}`} onClick={() => setCurrentPage(pageNum)}>
+                      <button
+                        key={i}
+                        className={`join-item btn btn-xs sm:btn-sm ${currentPage === pageNum ? 'btn-primary' : ''}`}
+                        onClick={() => setCurrentPage(pageNum)}
+                        disabled={loading}
+                      >
                         {pageNum}
                       </button>
                     )
                   })}
-                  <button className="join-item btn btn-xs sm:btn-sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+                  <button
+                    className="join-item btn btn-xs sm:btn-sm"
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages || loading}
+                  >
                     <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4" />
                   </button>
                 </div>
@@ -513,7 +620,7 @@ const ComptesBancaires = () => {
               <p className="text-xs text-base-content/50 mt-2">Cette action est irréversible.</p>
             </div>
             <div className="flex gap-3">
-              <button className="btn btn-ghost flex-1" onClick={() => setShowDeleteModal(false)}>Annuler</button>
+              <button className="btn btn-ghost flex-1" onClick={() => setShowDeleteModal(false)} disabled={deleteLoading}>Annuler</button>
               <button className="btn btn-error flex-1" onClick={handleDelete} disabled={deleteLoading}>
                 {deleteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Supprimer'}
               </button>
@@ -521,6 +628,14 @@ const ComptesBancaires = () => {
           </div>
         </div>
       )}
+
+      <style>{`
+        @keyframes slideDown {
+          from { transform: translateY(-20px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        .animate-slideDown { animation: slideDown 0.3s ease-out; }
+      `}</style>
     </div>
   )
 }
