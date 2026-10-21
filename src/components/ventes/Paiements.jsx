@@ -1,6 +1,6 @@
 // src/components/paiements/Paiements.jsx
 import React, {
-  useEffect, useState, useCallback, useRef, useMemo
+  useEffect, useState, useCallback, useRef,
 } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
@@ -9,133 +9,357 @@ import {
   Plus, Edit, Trash2, Search, RefreshCw, Filter, CreditCard,
   X, AlertCircle, CheckCircle, Eye, MoreVertical, ChevronLeft,
   ChevronRight, ArrowUpDown, LayoutGrid, List, Calendar,
-  DollarSign, Clock, XCircle, FileText, Download, Receipt, Loader2
+  DollarSign, Clock, XCircle, FileText, Download, Receipt, Loader2,
 } from 'lucide-react'
 
+// ============================================================
+// CONSTANTES
+// ============================================================
+const DEBOUNCE_MS = 300
+const CACHE_TTL_MS = 2 * 60 * 1000
+const CACHE_MAX = 20
+
+const methodesPaiement = {
+  especes: 'Espèces',
+  carte: 'Carte bancaire',
+  cheque: 'Chèque',
+  virement: 'Virement',
+  mobile_money: 'Mobile Money',
+  autre: 'Autre',
+}
+
+const statutsPaiement = {
+  pending: 'En attente',
+  completed: 'Complété',
+  failed: 'Échoué',
+  refunded: 'Remboursé',
+}
+
+const unwrap = (payload) =>
+  Array.isArray(payload) ? payload : (payload?.results || [])
+
+// ============================================================
+// COMPOSANT
+// ============================================================
 const Paiements = () => {
   const navigate = useNavigate()
 
+  // ---------- État principal ----------
   const [paiements, setPaiements] = useState([])
   const [loading, setLoading] = useState(true)
   const [initialLoad, setInitialLoad] = useState(true)
   const [error, setError] = useState(null)
+
+  // ---------- Filtres serveur ----------
   const [searchTerm, setSearchTerm] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [filterMethode, setFilterMethode] = useState('')
   const [filterStatut, setFilterStatut] = useState('')
+
+  // ---------- Pagination serveur ----------
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(10)
-  const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const [paiementToDelete, setPaiementToDelete] = useState(null)
-  const [notification, setNotification] = useState({ show: false, message: '', type: 'success' })
-  const [viewMode, setViewMode] = useState('table')
+  const [totalCount, setTotalCount] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
+
+  // ---------- Tri serveur ----------
   const [sortField, setSortField] = useState('date_paiement')
   const [sortDirection, setSortDirection] = useState('desc')
+
+  // ---------- UI ----------
+  const [viewMode, setViewMode] = useState('table')
   const [showFilters, setShowFilters] = useState(false)
-  const [stats, setStats] = useState({ total: 0, total_montant: 0, montant_jour: 0 })
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [paiementToDelete, setPaiementToDelete] = useState(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
   const [pdfLoadingId, setPdfLoadingId] = useState(null)
+  const [notification, setNotification] = useState({
+    show: false, message: '', type: 'success',
+  })
 
+  // ---------- Stats ----------
+  const [stats, setStats] = useState({
+    total: 0, total_montant: 0, montant_jour: 0,
+  })
+
+  // ---------- Refs ----------
   const cacheRef = useRef(new Map())
-  const fetchingRef = useRef(false)
+  const abortRef = useRef(null)
+  const notifTimerRef = useRef(null)
 
-  const unwrap = (data) => Array.isArray(data) ? data : (data?.results || [])
-
-  const methodesPaiement = {
-    especes: 'Espèces', carte: 'Carte bancaire', cheque: 'Chèque',
-    virement: 'Virement', mobile_money: 'Mobile Money', autre: 'Autre'
-  }
-
-  const statutsPaiement = {
-    pending: 'En attente', completed: 'Complété', failed: 'Échoué', refunded: 'Remboursé'
-  }
-
-  const showNotification = (message, type = 'success') => {
+  // ============================================================
+  // HELPERS
+  // ============================================================
+  const showNotification = useCallback((message, type = 'success') => {
     setNotification({ show: true, message, type })
-    setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 4000)
-  }
+    if (notifTimerRef.current) clearTimeout(notifTimerRef.current)
+    notifTimerRef.current = setTimeout(
+      () => setNotification({ show: false, message: '', type: 'success' }),
+      4000
+    )
+  }, [])
 
-  // ---------- Fetch avec cache ----------
+  useEffect(() => {
+    return () => {
+      if (notifTimerRef.current) clearTimeout(notifTimerRef.current)
+      if (abortRef.current) abortRef.current.abort()
+    }
+  }, [])
+
+  // ============================================================
+  // DEBOUNCE
+  // ============================================================
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchTerm), DEBOUNCE_MS)
+    return () => clearTimeout(t)
+  }, [searchTerm])
+
+  // ============================================================
+  // CACHE TTL
+  // ============================================================
+  const cacheGet = useCallback((key) => {
+    const entry = cacheRef.current.get(key)
+    if (!entry) return null
+    if (entry.expiresAt && Date.now() > entry.expiresAt) {
+      cacheRef.current.delete(key)
+      return null
+    }
+    return entry
+  }, [])
+
+  const cacheSet = useCallback((key, value) => {
+    cacheRef.current.set(key, {
+      ...value,
+      expiresAt: Date.now() + CACHE_TTL_MS,
+    })
+    if (cacheRef.current.size > CACHE_MAX) {
+      cacheRef.current.delete(cacheRef.current.keys().next().value)
+    }
+  }, [])
+
+  // ============================================================
+  // CACHE KEY
+  // ============================================================
+  const buildCacheKey = useCallback(() => JSON.stringify({
+    page: currentPage,
+    size: itemsPerPage,
+    q: debouncedSearch,
+    methode: filterMethode,
+    statut: filterStatut,
+    sort: `${sortField}:${sortDirection}`,
+  }), [currentPage, itemsPerPage, debouncedSearch, filterMethode,
+       filterStatut, sortField, sortDirection])
+
+  // ============================================================
+  // FETCH PRINCIPAL
+  // ============================================================
   const fetchData = useCallback(async ({ bypassCache = false } = {}) => {
-    const key = 'paiements_list'
+    const key = buildCacheKey()
 
-    if (!bypassCache && cacheRef.current.has(key)) {
-      const c = cacheRef.current.get(key)
-      setPaiements(c.paiements)
-      setStats(c.stats)
-      setLoading(false)
-      setInitialLoad(false)
-      setError(null)
-      return
+    if (!bypassCache) {
+      const cached = cacheGet(key)
+      if (cached) {
+        setPaiements(cached.results)
+        setTotalCount(cached.count)
+        setTotalPages(cached.totalPages)
+        setLoading(false)
+        setInitialLoad(false)
+        setError(null)
+        return
+      }
     }
 
-    if (fetchingRef.current) return
-    fetchingRef.current = true
+    if (abortRef.current) abortRef.current.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     setLoading(true)
     setError(null)
 
     try {
-      // ✅ page_size=500 pour tout charger
-      const [paiementsRes, statsRes] = await Promise.all([
-        AxiosInstance.get('/paiements/?page_size=500'),
-        AxiosInstance.get('/paiements/stats/').catch(() => ({ data: {} }))
-      ])
-
-      const paiementsData = unwrap(paiementsRes.data).filter(p => p && typeof p === 'object')
-      const statsData = statsRes.data || {}
-
-      cacheRef.current.set(key, { paiements: paiementsData, stats: statsData })
-      if (cacheRef.current.size > 10) {
-        const firstKey = cacheRef.current.keys().next().value
-        cacheRef.current.delete(firstKey)
+      const params = {
+        page: currentPage,
+        page_size: itemsPerPage,
+        ordering: `${sortDirection === 'desc' ? '-' : ''}${sortField}`,
       }
+      if (debouncedSearch) params.search = debouncedSearch
+      if (filterMethode) params.methode = filterMethode
+      if (filterStatut) params.statut = filterStatut
 
-      setPaiements(paiementsData)
-      setStats({
-        total: statsData.total || paiementsData.length,
-        total_montant: statsData.total_montant || 0,
-        montant_jour: statsData.montant_jour || 0,
+      const response = await AxiosInstance.get('/paiements/', {
+        params,
+        signal: controller.signal,
       })
+
+      if (controller.signal.aborted) return
+
+      const payload = response.data
+      const results = unwrap(payload)
+      const count = Array.isArray(payload)
+        ? results.length
+        : (payload.count ?? results.length)
+      const nbPages = Math.max(1, Math.ceil(count / itemsPerPage))
+
+      cacheSet(key, { results, count, totalPages: nbPages })
+
+      setPaiements(results)
+      setTotalCount(count)
+      setTotalPages(nbPages)
     } catch (err) {
-      console.error(err)
-      setError('Erreur de chargement des paiements')
-      showNotification('Erreur de chargement des paiements', 'error')
+      if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return
+      console.error('Erreur chargement paiements:', err)
+      if (err.response?.status === 401) {
+        setError('Session expirée, veuillez vous reconnecter')
+      } else if (err.response?.status === 403) {
+        setError("Vous n'avez pas les droits")
+      } else {
+        setError('Erreur de chargement des paiements')
+      }
+      showNotification('Erreur de chargement', 'error')
       setPaiements([])
     } finally {
-      setLoading(false)
-      setInitialLoad(false)
-      fetchingRef.current = false
+      if (abortRef.current === controller) {
+        setLoading(false)
+        setInitialLoad(false)
+      }
     }
+  }, [buildCacheKey, currentPage, itemsPerPage, debouncedSearch,
+      filterMethode, filterStatut, sortField, sortDirection,
+      showNotification, cacheGet, cacheSet])
+
+  // ✅ UN SEUL useEffect
+  useEffect(() => {
+    fetchData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buildCacheKey])
+
+  // ============================================================
+  // FETCH STATS (serveur)
+  // ============================================================
+  const fetchStats = useCallback(async () => {
+    try {
+      const res = await AxiosInstance.get('/paiements/stats/')
+      const d = res.data || {}
+      setStats({
+        total: d.total || 0,
+        total_montant: parseFloat(d.total_montant) || 0,
+        montant_jour: parseFloat(d.montant_jour) || 0,
+      })
+    } catch {
+      // silencieux
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchStats()
+  }, [fetchStats])
+
+  // ============================================================
+  // RESPONSIVE
+  // ============================================================
+  useEffect(() => {
+    const handleResize = () => {
+      const next =
+        window.innerWidth < 640 ? 5 :
+        window.innerWidth < 1024 ? 10 : 10
+      setItemsPerPage(prev => prev === next ? prev : next)
+    }
+    handleResize()
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
   }, [])
 
   const refreshData = async () => {
     cacheRef.current.clear()
-    await fetchData({ bypassCache: true })
+    setCurrentPage(1)
+    await Promise.all([
+      fetchData({ bypassCache: true }),
+      fetchStats(),
+    ])
   }
 
-  useEffect(() => {
-    fetchData()
-  }, [fetchData])
-
-  // ---------- Actions ----------
+  // ============================================================
+  // ACTIONS
+  // ============================================================
   const handleDelete = async () => {
     if (!paiementToDelete) return
+    setDeleteLoading(true)
     try {
       await AxiosInstance.delete(`/paiements/${paiementToDelete.id}/`)
       cacheRef.current.clear()
-      showNotification(`Paiement ${paiementToDelete.reference} supprimé`, 'success')
-      fetchData({ bypassCache: true })
+      showNotification(
+        `Paiement ${paiementToDelete.reference} supprimé`, 'success'
+      )
       setShowDeleteModal(false)
       setPaiementToDelete(null)
-    } catch (error) {
+      await Promise.all([
+        fetchData({ bypassCache: true }),
+        fetchStats(),
+      ])
+    } catch (err) {
       showNotification(
-        error.response?.data?.detail || 'Erreur lors de la suppression',
+        err.response?.data?.detail ||
+        err.response?.data?.error ||
+        'Erreur lors de la suppression',
         'error'
       )
+    } finally {
+      setDeleteLoading(false)
     }
   }
 
+  const handleDownloadPDF = async (paiement, id) => {
+    setPdfLoadingId(id)
+    try {
+      const cacheKey = `paiement_detail_${id}`
+      let data = cacheGet(cacheKey)?.value
+      if (!data) {
+        const res = await AxiosInstance.get(`/paiements/${id}/`)
+        data = res.data
+        cacheRef.current.set(cacheKey, {
+          value: data,
+          expiresAt: Date.now() + CACHE_TTL_MS,
+        })
+      }
+      await downloadPaiementPDF(data)
+      showNotification('Reçu PDF généré avec succès', 'success')
+    } catch (err) {
+      console.error(err)
+      showNotification('Erreur lors de la génération du PDF', 'error')
+    } finally {
+      setPdfLoadingId(null)
+    }
+  }
+
+  const handleViewDetail = (id) => navigate(`/paiements/${id}`)
+
+  // ============================================================
+  // TRI
+  // ============================================================
   const handleSort = (field) => {
-    if (sortField === field) setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
-    else { setSortField(field); setSortDirection('asc') }
+    if (sortField === field) {
+      setSortDirection(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDirection('asc')
+    }
+    setCurrentPage(1)
+  }
+
+  // ============================================================
+  // HELPERS RENDU
+  // ============================================================
+  const formatPrice = (v) => {
+    const n = Number(v)
+    if (!Number.isFinite(n)) return '0 FCFA'
+    return new Intl.NumberFormat('fr-FR').format(n) + ' FCFA'
+  }
+
+  const formatDate = (date) => {
+    if (!date) return '—'
+    return new Date(date).toLocaleDateString('fr-FR', {
+      day: '2-digit', month: 'short', year: 'numeric',
+    })
   }
 
   const getStatutBadge = (statut) => {
@@ -164,98 +388,14 @@ const Paiements = () => {
     return 'Anonyme'
   }
 
-  const handleDownloadPDF = async (paiement, id) => {
-    setPdfLoadingId(id)
-    try {
-      const cacheKey = `paiement_detail_${id}`
-      let data
-      if (cacheRef.current.has(cacheKey)) {
-        data = cacheRef.current.get(cacheKey)
-      } else {
-        const res = await AxiosInstance.get(`/paiements/${id}/`)
-        data = res.data
-        cacheRef.current.set(cacheKey, data)
-      }
-      await downloadPaiementPDF(data)
-      showNotification('Reçu PDF généré avec succès', 'success')
-    } catch (err) {
-      console.error(err)
-      showNotification('Erreur lors de la génération du PDF', 'error')
-    } finally {
-      setPdfLoadingId(null)
-    }
-  }
-
-  const handleViewDetail = (id) => navigate(`/paiements/${id}`)
-
-  // ---------- Filtrage + tri ----------
-  const filteredAndSorted = useMemo(() => {
-    const filtered = paiements.filter(p => {
-      if (!p) return false
-      const search = searchTerm.toLowerCase()
-      const matchSearch =
-        (p.reference || '').toLowerCase().includes(search)
-        || getClientName(p).toLowerCase().includes(search)
-        || getFactureRef(p).toLowerCase().includes(search)
-        || (p.reference_externe || '').toLowerCase().includes(search)
-      const matchMethode = filterMethode === '' || p.methode === filterMethode
-      const matchStatut = filterStatut === '' || p.statut === filterStatut
-      return matchSearch && matchMethode && matchStatut
-    })
-
-    filtered.sort((a, b) => {
-      let aVal, bVal
-      switch (sortField) {
-        case 'date_paiement':
-          aVal = new Date(a.date_paiement || 0).getTime()
-          bVal = new Date(b.date_paiement || 0).getTime()
-          break
-        case 'client':
-          aVal = getClientName(a).toLowerCase()
-          bVal = getClientName(b).toLowerCase()
-          break
-        case 'facture':
-          aVal = getFactureRef(a).toLowerCase()
-          bVal = getFactureRef(b).toLowerCase()
-          break
-        case 'montant':
-          aVal = Number(a.montant) || 0
-          bVal = Number(b.montant) || 0
-          break
-        default:
-          aVal = (a[sortField] || '').toString().toLowerCase()
-          bVal = (b[sortField] || '').toString().toLowerCase()
-      }
-      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1
-      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1
-      return 0
-    })
-
-    return filtered
-  }, [paiements, searchTerm, filterMethode, filterStatut, sortField, sortDirection])
-
-  const totalPages = Math.max(1, Math.ceil(filteredAndSorted.length / itemsPerPage))
-  const paginated = useMemo(() => filteredAndSorted.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  ), [filteredAndSorted, currentPage, itemsPerPage])
-
-  useEffect(() => {
-    if (currentPage > totalPages) setCurrentPage(1)
-  }, [totalPages, currentPage])
-
-  const formatPrice = (v) => {
-    const n = Number(v)
-    if (!Number.isFinite(n)) return '0 FCFA'
-    return new Intl.NumberFormat('fr-FR').format(n) + ' FCFA'
-  }
-
-  // ---------- Premier chargement ----------
+  // ============================================================
+  // LOADING / ERROR
+  // ============================================================
   if (initialLoad && loading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-200px)]">
         <div className="text-center space-y-6">
-          <div className="loading loading-spinner loading-lg text-primary w-16 h-16"></div>
+          <Loader2 className="w-16 h-16 text-primary animate-spin mx-auto" />
           <p className="text-xl font-semibold text-base-content/70 animate-pulse">
             Chargement des paiements...
           </p>
@@ -264,12 +404,12 @@ const Paiements = () => {
     )
   }
 
-  if (error) {
+  if (error && paiements.length === 0) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-200px)]">
         <div className="text-center">
           <AlertCircle className="w-16 h-16 text-error mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-base-content mb-2">Erreur de chargement</h2>
+          <h2 className="text-xl font-bold mb-2">Erreur de chargement</h2>
           <p className="text-base-content/60 mb-4">{error}</p>
           <button onClick={refreshData} className="btn btn-primary gap-2">
             <RefreshCw className="w-4 h-4" /> Réessayer
@@ -279,13 +419,16 @@ const Paiements = () => {
     )
   }
 
+  // ============================================================
+  // RENDER
+  // ============================================================
   return (
     <div className="space-y-6 p-4 lg:p-6">
       {/* Spinner overlay */}
       {loading && !initialLoad && (
         <div className="fixed top-20 right-6 z-40">
           <div className="bg-base-100 shadow-lg rounded-full px-4 py-2 flex items-center gap-2 border border-base-300">
-            <span className="loading loading-spinner loading-xs text-primary"></span>
+            <Loader2 className="w-3 h-3 animate-spin text-primary" />
             <span className="text-xs text-base-content/60">Chargement...</span>
           </div>
         </div>
@@ -312,10 +455,12 @@ const Paiements = () => {
       {/* En-tête */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-black text-base-content mb-2 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+          <h1 className="text-4xl font-black mb-2 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
             Paiements
           </h1>
-          <p className="text-base text-base-content/60">Gestion des encaissements et reçus</p>
+          <p className="text-base text-base-content/60">
+            Gestion des encaissements et reçus — {totalCount.toLocaleString('fr-FR')} paiement(s)
+          </p>
         </div>
         <div className="flex flex-wrap gap-3">
           <button onClick={refreshData} className="btn btn-outline gap-2" disabled={loading}>
@@ -328,32 +473,31 @@ const Paiements = () => {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Stats serveur */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300 p-4">
-          <div className="stat-figure text-primary"><CreditCard className="w-6 h-6" /></div>
-          <div className="stat-title text-sm font-semibold">Total encaissé</div>
-          <div className="stat-value text-2xl font-black truncate">
-            {formatPrice(stats.total_montant)}
-          </div>
-          <div className="stat-desc text-sm">{stats.total} transactions</div>
-        </div>
-        <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300 p-4">
-          <div className="stat-figure text-success"><Calendar className="w-6 h-6" /></div>
-          <div className="stat-title text-sm font-semibold">Aujourd'hui</div>
-          <div className="stat-value text-2xl font-black truncate">
-            {formatPrice(stats.montant_jour)}
-          </div>
-        </div>
-        <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300 p-4">
-          <div className="stat-figure text-info"><DollarSign className="w-6 h-6" /></div>
-          <div className="stat-title text-sm font-semibold">Moyenne par paiement</div>
-          <div className="stat-value text-2xl font-black truncate">
-            {stats.total > 0
+        <StatCard
+          title="Total encaissé"
+          value={formatPrice(stats.total_montant)}
+          description={`${stats.total.toLocaleString('fr-FR')} transactions`}
+          icon={CreditCard}
+          color="text-primary"
+        />
+        <StatCard
+          title="Aujourd'hui"
+          value={formatPrice(stats.montant_jour)}
+          icon={Calendar}
+          color="text-success"
+        />
+        <StatCard
+          title="Moyenne par paiement"
+          value={
+            stats.total > 0
               ? formatPrice(stats.total_montant / stats.total)
-              : '0 FCFA'}
-          </div>
-        </div>
+              : '0 FCFA'
+          }
+          icon={DollarSign}
+          color="text-info"
+        />
       </div>
 
       {/* Filtres */}
@@ -368,6 +512,14 @@ const Paiements = () => {
               value={searchTerm}
               onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1) }}
             />
+            {searchTerm && (
+              <button
+                className="absolute right-3 top-1/2 -translate-y-1/2 btn btn-ghost btn-xs btn-circle"
+                onClick={() => setSearchTerm('')}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
           </div>
           <button
             onClick={() => setShowFilters(!showFilters)}
@@ -377,7 +529,7 @@ const Paiements = () => {
           </button>
           <div className={`${showFilters ? 'flex' : 'hidden'} lg:flex flex-wrap items-center gap-3`}>
             <select
-              className="select select-bordered select-sm w-40"
+              className="select select-bordered select-sm w-44"
               value={filterMethode}
               onChange={(e) => { setFilterMethode(e.target.value); setCurrentPage(1) }}
             >
@@ -399,8 +551,10 @@ const Paiements = () => {
             <button
               className="btn btn-sm btn-ghost gap-1"
               onClick={() => {
-                setFilterMethode(''); setFilterStatut('')
-                setSearchTerm(''); setCurrentPage(1)
+                setFilterMethode('')
+                setFilterStatut('')
+                setSearchTerm('')
+                setCurrentPage(1)
               }}
             >
               <X className="w-4 h-4" /> Réinitialiser
@@ -425,11 +579,14 @@ const Paiements = () => {
 
       {/* Contenu */}
       <div className="bg-base-100 rounded-xl shadow-xl border border-base-300 overflow-hidden">
-        {filteredAndSorted.length === 0 ? (
+        {paiements.length === 0 ? (
           <div className="text-center py-16">
             <CreditCard className="w-16 h-16 mx-auto mb-4 text-base-content/30" />
-            <p className="text-lg font-semibold text-base-content/50">Aucun paiement trouvé</p>
-            <p className="text-sm text-base-content/40 mt-2">Ajoutez votre premier paiement</p>
+            <p className="text-lg font-semibold text-base-content/50">
+              {debouncedSearch || filterMethode || filterStatut
+                ? 'Aucun paiement ne correspond à vos critères'
+                : 'Aucun paiement trouvé'}
+            </p>
             <button
               className="btn btn-primary mt-6 gap-2"
               onClick={() => navigate('/paiements/nouveau')}
@@ -439,7 +596,7 @@ const Paiements = () => {
           </div>
         ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 p-6">
-            {paginated.map(p => (
+            {paiements.map(p => (
               <div
                 key={p.id}
                 className="bg-base-200 rounded-2xl p-5 hover:shadow-md transition-all border border-base-300"
@@ -448,9 +605,7 @@ const Paiements = () => {
                   <div>
                     <div className="font-mono font-bold text-lg">{p.reference}</div>
                     <div className="text-xs text-base-content/50">
-                      {p.date_paiement
-                        ? new Date(p.date_paiement).toLocaleDateString()
-                        : '—'}
+                      {formatDate(p.date_paiement)}
                     </div>
                   </div>
                   <div className="flex gap-1">
@@ -484,7 +639,10 @@ const Paiements = () => {
                         <li>
                           <button
                             className="text-error"
-                            onClick={() => { setPaiementToDelete(p); setShowDeleteModal(true) }}
+                            onClick={() => {
+                              setPaiementToDelete(p)
+                              setShowDeleteModal(true)
+                            }}
                           >
                             <Trash2 className="w-4 h-4" /> Supprimer
                           </button>
@@ -527,27 +685,19 @@ const Paiements = () => {
                 <tr>
                   <th>
                     <button className="flex items-center gap-1 hover:text-primary" onClick={() => handleSort('reference')}>
-                      Référence <ArrowUpDown className="w-3 h-3" />
+                      Référence <SortIcon field="reference" sortField={sortField} sortDirection={sortDirection} />
                     </button>
                   </th>
                   <th>
                     <button className="flex items-center gap-1 hover:text-primary" onClick={() => handleSort('date_paiement')}>
-                      Date <ArrowUpDown className="w-3 h-3" />
+                      Date <SortIcon field="date_paiement" sortField={sortField} sortDirection={sortDirection} />
                     </button>
                   </th>
-                  <th>
-                    <button className="flex items-center gap-1 hover:text-primary" onClick={() => handleSort('client')}>
-                      Client <ArrowUpDown className="w-3 h-3" />
-                    </button>
-                  </th>
-                  <th>
-                    <button className="flex items-center gap-1 hover:text-primary" onClick={() => handleSort('facture')}>
-                      Facture <ArrowUpDown className="w-3 h-3" />
-                    </button>
-                  </th>
+                  <th>Client</th>
+                  <th>Facture</th>
                   <th className="text-right">
-                    <button className="flex items-center gap-1 hover:text-primary" onClick={() => handleSort('montant')}>
-                      Montant <ArrowUpDown className="w-3 h-3" />
+                    <button className="flex items-center gap-1 hover:text-primary ml-auto" onClick={() => handleSort('montant')}>
+                      Montant <SortIcon field="montant" sortField={sortField} sortDirection={sortDirection} />
                     </button>
                   </th>
                   <th>Méthode</th>
@@ -556,14 +706,10 @@ const Paiements = () => {
                 </tr>
               </thead>
               <tbody>
-                {paginated.map(p => (
+                {paiements.map(p => (
                   <tr key={p.id} className="hover">
                     <td className="font-mono font-medium">{p.reference}</td>
-                    <td>
-                      {p.date_paiement
-                        ? new Date(p.date_paiement).toLocaleDateString()
-                        : '—'}
-                    </td>
+                    <td>{formatDate(p.date_paiement)}</td>
                     <td>{getClientName(p)}</td>
                     <td className="font-mono">{getFactureRef(p)}</td>
                     <td className="text-right font-semibold">{formatPrice(p.montant)}</td>
@@ -596,7 +742,10 @@ const Paiements = () => {
                           <Edit className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => { setPaiementToDelete(p); setShowDeleteModal(true) }}
+                          onClick={() => {
+                            setPaiementToDelete(p)
+                            setShowDeleteModal(true)
+                          }}
                           className="btn btn-ghost btn-xs text-error"
                           title="Supprimer"
                         >
@@ -607,35 +756,37 @@ const Paiements = () => {
                   </tr>
                 ))}
               </tbody>
-              <tfoot className="bg-base-100 border-t-2">
-                <tr className="font-bold">
-                  <td colSpan="4" className="text-right">Total</td>
-                  <td className="text-right">
-                    {formatPrice(
-                      filteredAndSorted.reduce((s, p) => s + (Number(p.montant) || 0), 0)
-                    )}
-                  </td>
-                  <td colSpan="3"></td>
-                </tr>
-              </tfoot>
             </table>
           </div>
         )}
 
-        {/* Pagination */}
-        {filteredAndSorted.length > 0 && (
+        {/* ✅ Pagination serveur */}
+        {totalCount > 0 && (
           <div className="p-4 border-t border-base-300">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="text-sm text-base-content/60 order-2 sm:order-1">
-                {((currentPage - 1) * itemsPerPage) + 1} -{' '}
-                {Math.min(currentPage * itemsPerPage, filteredAndSorted.length)} sur{' '}
-                {filteredAndSorted.length}
+                Affichage de{' '}
+                <span className="font-semibold text-primary">
+                  {((currentPage - 1) * itemsPerPage) + 1}
+                </span>
+                {' '}à{' '}
+                <span className="font-semibold text-primary">
+                  {Math.min(currentPage * itemsPerPage, totalCount)}
+                </span>
+                {' '}sur{' '}
+                <span className="font-semibold">
+                  {totalCount.toLocaleString('fr-FR')}
+                </span>{' '}
+                paiements
               </div>
               <div className="flex items-center gap-2 order-1 sm:order-2">
                 <select
                   className="select select-bordered select-sm"
                   value={itemsPerPage}
-                  onChange={(e) => { setItemsPerPage(parseInt(e.target.value)); setCurrentPage(1) }}
+                  onChange={(e) => {
+                    setItemsPerPage(parseInt(e.target.value))
+                    setCurrentPage(1)
+                  }}
                 >
                   <option value="10">10</option>
                   <option value="25">25</option>
@@ -646,11 +797,11 @@ const Paiements = () => {
                   <button
                     className="join-item btn btn-sm"
                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                    disabled={currentPage === 1}
+                    disabled={currentPage === 1 || loading}
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
-                  {[...Array(Math.min(5, totalPages))].map((_, i) => {
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                     let pageNum
                     if (totalPages <= 5) pageNum = i + 1
                     else if (currentPage <= 3) pageNum = i + 1
@@ -658,9 +809,10 @@ const Paiements = () => {
                     else pageNum = currentPage - 2 + i
                     return (
                       <button
-                        key={i}
+                        key={pageNum}
                         className={`join-item btn btn-sm ${currentPage === pageNum ? 'btn-primary' : ''}`}
                         onClick={() => setCurrentPage(pageNum)}
+                        disabled={loading}
                       >
                         {pageNum}
                       </button>
@@ -669,7 +821,7 @@ const Paiements = () => {
                   <button
                     className="join-item btn btn-sm"
                     onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                    disabled={currentPage === totalPages}
+                    disabled={currentPage === totalPages || loading}
                   >
                     <ChevronRight className="w-4 h-4" />
                   </button>
@@ -695,11 +847,18 @@ const Paiements = () => {
                 <button
                   className="btn btn-ghost flex-1"
                   onClick={() => setShowDeleteModal(false)}
+                  disabled={deleteLoading}
                 >
                   Annuler
                 </button>
-                <button className="btn btn-error flex-1" onClick={handleDelete}>
-                  Supprimer
+                <button
+                  className="btn btn-error flex-1"
+                  onClick={handleDelete}
+                  disabled={deleteLoading}
+                >
+                  {deleteLoading ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Suppression...</>
+                  ) : 'Supprimer'}
                 </button>
               </div>
             </div>
@@ -716,6 +875,27 @@ const Paiements = () => {
       `}</style>
     </div>
   )
+}
+
+// ============================================================
+// Composants helpers
+// ============================================================
+const StatCard = ({ title, value, description, icon: Icon, color }) => (
+  <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300 p-4">
+    <div className={`stat-figure ${color}`}>
+      <Icon className="w-6 h-6" />
+    </div>
+    <div className="stat-title text-sm font-semibold">{title}</div>
+    <div className="stat-value text-2xl font-black truncate">{value}</div>
+    {description && <div className="stat-desc text-sm">{description}</div>}
+  </div>
+)
+
+const SortIcon = ({ field, sortField, sortDirection }) => {
+  if (sortField !== field) return <ArrowUpDown className="w-3 h-3 opacity-40" />
+  return sortDirection === 'asc'
+    ? <ChevronRight className="w-3 h-3 rotate-[-90deg]" />
+    : <ChevronRight className="w-3 h-3 rotate-90" />
 }
 
 export default Paiements

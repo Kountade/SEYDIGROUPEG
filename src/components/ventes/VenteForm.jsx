@@ -1,25 +1,41 @@
 // src/components/sales/VenteForm.jsx
 import React, {
-  useEffect, useState, useCallback, useRef, useMemo
+  useEffect, useState, useCallback, useRef,
 } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
 import {
   Save, X, ArrowLeft, Plus, Minus, Trash2, User, ShoppingCart,
   CheckCircle, AlertCircle, Loader2, Package, FileText, Warehouse,
-  Tag, Layers
+  Tag, Layers, Search,
 } from 'lucide-react'
 
+// ============================================================
+// CONSTANTES
+// ============================================================
+const DEBOUNCE_MS = 300
+const CACHE_TTL_MS = 5 * 60 * 1000 // 5 min (données peu changeantes)
+
+// ============================================================
+// HELPERS
+// ============================================================
+const unwrap = (payload) =>
+  Array.isArray(payload) ? payload : (payload?.results || [])
+
+// ============================================================
+// COMPOSANT
+// ============================================================
 const VenteForm = () => {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const clientIdParam = searchParams.get('client_id')
 
-  // ---------- États ----------
+  // ---------- États principaux ----------
   const [loadingUser, setLoadingUser] = useState(true)
   const [loadingProducts, setLoadingProducts] = useState(false)
-  const [loadingInitial, setLoadingInitial] = useState(true)
+  const [initialLoad, setInitialLoad] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState(null)
 
   const [agence, setAgence] = useState(null)
   const [entrepot, setEntrepot] = useState(null)
@@ -29,6 +45,8 @@ const VenteForm = () => {
   const [clients, setClients] = useState([])
   const [selectedClient, setSelectedClient] = useState(null)
   const [showClientModal, setShowClientModal] = useState(false)
+  const [clientSearch, setClientSearch] = useState('')
+  const [debouncedClientSearch, setDebouncedClientSearch] = useState('')
 
   const [typeVente, setTypeVente] = useState('comptoir')
   const [notes, setNotes] = useState('')
@@ -41,90 +59,150 @@ const VenteForm = () => {
   const [items, setItems] = useState([])
   const [totals, setTotals] = useState({ subtotal: 0, total: 0 })
 
+  // Notification
   const [notification, setNotification] = useState({
-    show: false, message: '', type: 'success', details: null
+    show: false, message: '', type: 'success', details: null,
   })
 
-  // Refs cache
+  // ---------- Refs ----------
   const cacheRef = useRef(new Map())
+  const abortRef = useRef(null)
   const fetchingProductsRef = useRef(false)
-  const fetchingUserRef = useRef(false)
-  const fetchingClientsRef = useRef(false)
   const fetchingLotsRef = useRef({})
+  const notifTimerRef = useRef(null)
 
-  const unwrap = (data) => Array.isArray(data) ? data : (data?.results || [])
+  // ============================================================
+  // HELPERS CACHE AVEC TTL
+  // ============================================================
+  const cacheGet = useCallback((key) => {
+    const entry = cacheRef.current.get(key)
+    if (!entry) return null
+    if (entry.expiresAt && Date.now() > entry.expiresAt) {
+      cacheRef.current.delete(key)
+      return null
+    }
+    return entry.value
+  }, [])
 
-  const showNotification = (message, type = 'success', details = null) => {
+  const cacheSet = useCallback((key, value) => {
+    cacheRef.current.set(key, {
+      value,
+      expiresAt: Date.now() + CACHE_TTL_MS,
+    })
+  }, [])
+
+  // ============================================================
+  // NOTIFICATION
+  // ============================================================
+  const showNotification = useCallback((message, type = 'success', details = null) => {
     setNotification({ show: true, message, type, details })
-    setTimeout(() => setNotification({
-      show: false, message: '', type: 'success', details: null
-    }), 8000)
-  }
+    if (notifTimerRef.current) clearTimeout(notifTimerRef.current)
+    notifTimerRef.current = setTimeout(() => {
+      setNotification({ show: false, message: '', type: 'success', details: null })
+    }, 8000)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (notifTimerRef.current) clearTimeout(notifTimerRef.current)
+      if (abortRef.current) abortRef.current.abort()
+    }
+  }, [])
 
   // ============================================================
-  // 1. Charge user + agence + entrepôt
+  // DEBOUNCE RECHERCHE CLIENT
   // ============================================================
-  const loadUserAndAgence = useCallback(async () => {
-    if (fetchingUserRef.current) return
-    fetchingUserRef.current = true
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedClientSearch(clientSearch), DEBOUNCE_MS)
+    return () => clearTimeout(t)
+  }, [clientSearch])
+
+  // ============================================================
+  // 1. CHARGER USER + AGENCE + ENTREPÔT
+  // ============================================================
+  const loadEntrepot = useCallback(async (agenceId, signal) => {
     try {
-      // Cache user
-      let userData
-      if (cacheRef.current.has('user_me')) {
-        userData = cacheRef.current.get('user_me')
-      } else {
-        const res = await AxiosInstance.get('/users/me/')
+      const cacheKey = `warehouses_${agenceId}`
+      let warehouses = cacheGet(cacheKey)
+      if (!warehouses) {
+        const res = await AxiosInstance.get(
+          `/warehouses/?agence=${agenceId}&page_size=200`,
+          { signal }
+        )
+        if (signal.aborted) return
+        warehouses = unwrap(res.data)
+        cacheSet(cacheKey, warehouses)
+      }
+      const def = warehouses.find(w => w.is_default) || warehouses[0]
+      if (def) setEntrepot(def)
+    } catch (err) {
+      if (err.name === 'CanceledError') return
+      console.error('Erreur entrepôts:', err)
+    }
+  }, [cacheGet, cacheSet])
+
+  const loadUserAndAgence = useCallback(async () => {
+    if (abortRef.current) abortRef.current.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    setLoadingUser(true)
+    setError(null)
+
+    try {
+      // 1) User
+      let userData = cacheGet('user_me')
+      if (!userData) {
+        const res = await AxiosInstance.get('/users/me/', {
+          signal: controller.signal,
+        })
+        if (controller.signal.aborted) return
         userData = res.data
-        cacheRef.current.set('user_me', userData)
+        cacheSet('user_me', userData)
       }
       setCurrentUser(userData)
 
-      // Déterminer l'agence
+      // 2) Agence
       const agencesUser = unwrap(userData.agences || [])
       let agenceUtilisateur = agencesUser[0]
 
       if (!agenceUtilisateur) {
-        let agencesList
-        if (cacheRef.current.has('agences_list')) {
-          agencesList = cacheRef.current.get('agences_list')
-        } else {
-          const agencesRes = await AxiosInstance.get('/agences/?page_size=200')
+        let agencesList = cacheGet('agences_list')
+        if (!agencesList) {
+          const agencesRes = await AxiosInstance.get(
+            '/agences/?page_size=200',
+            { signal: controller.signal }
+          )
+          if (controller.signal.aborted) return
           agencesList = unwrap(agencesRes.data)
-          cacheRef.current.set('agences_list', agencesList)
+          cacheSet('agences_list', agencesList)
         }
         if (agencesList.length > 0) agenceUtilisateur = agencesList[0]
       }
 
       if (agenceUtilisateur) {
         setAgence(agenceUtilisateur)
-        await loadEntrepot(agenceUtilisateur.id)
+        await loadEntrepot(agenceUtilisateur.id, controller.signal)
+      } else {
+        setError("Aucune agence associée à votre compte")
       }
-    } catch (error) {
-      console.error(error)
+    } catch (err) {
+      if (err.name === 'CanceledError') return
+      if (err.response?.status === 401) {
+        setError('Session expirée, veuillez vous reconnecter')
+        setTimeout(() => navigate('/login'), 2000)
+      } else if (err.response?.status === 403) {
+        setError("Vous n'avez pas les droits")
+      } else {
+        setError('Erreur de chargement du profil')
+      }
       showNotification('Erreur de chargement du profil', 'error')
     } finally {
-      setLoadingUser(false)
-    }
-  }, [])
-
-  const loadEntrepot = async (agenceId) => {
-    try {
-      let warehouses
-      if (cacheRef.current.has(`warehouses_${agenceId}`)) {
-        warehouses = cacheRef.current.get(`warehouses_${agenceId}`)
-      } else {
-        const res = await AxiosInstance.get(
-          `/warehouses/?agence=${agenceId}&page_size=200`
-        )
-        warehouses = unwrap(res.data)
-        cacheRef.current.set(`warehouses_${agenceId}`, warehouses)
+      if (abortRef.current === controller) {
+        setLoadingUser(false)
       }
-      const def = warehouses.find(w => w.is_default) || warehouses[0]
-      if (def) setEntrepot(def)
-    } catch (error) {
-      console.error('Erreur entrepôts:', error)
     }
-  }
+  }, [cacheGet, cacheSet, loadEntrepot, navigate, showNotification])
 
   useEffect(() => {
     loadUserAndAgence()
@@ -132,7 +210,7 @@ const VenteForm = () => {
   }, [])
 
   // ============================================================
-  // 2. Produits : 1 requête produits + 1 requête pricing (au lieu de N)
+  // 2. PRODUITS : 1 requête produits + 1 pricing + 1 stocks
   // ============================================================
   const loadProducts = useCallback(async () => {
     if (!entrepot?.id || fetchingProductsRef.current) return
@@ -142,20 +220,23 @@ const VenteForm = () => {
     try {
       const cacheKey = `products_${entrepot.id}`
 
-      // Cache → skip
-      if (cacheRef.current.has(cacheKey)) {
-        setProducts(cacheRef.current.get(cacheKey))
+      // Cache
+      const cached = cacheGet(cacheKey)
+      if (cached) {
+        setProducts(cached)
         setLoadingProducts(false)
-        setLoadingInitial(false)
+        setInitialLoad(false)
         fetchingProductsRef.current = false
         return
       }
 
       // 1) Produits actifs
-      const productsRes = await AxiosInstance.get('/products/?is_active=true&page_size=500')
+      const productsRes = await AxiosInstance.get(
+        '/products/?is_active=true&page_size=500'
+      )
       const allProducts = unwrap(productsRes.data)
 
-      // 2) Tous les prix de CET entrepôt en 1 requête
+      // 2) Tous les prix de CET entrepôt (1 requête)
       let pricingMap = {}
       try {
         const pricingRes = await AxiosInstance.get(
@@ -170,7 +251,7 @@ const VenteForm = () => {
         console.warn('Pricing non chargé:', err)
       }
 
-      // 3) Stocks de CET entrepôt en 1 requête
+      // 3) Stocks de CET entrepôt (1 requête)
       let stockMap = {}
       try {
         const stocksRes = await AxiosInstance.get(
@@ -199,54 +280,53 @@ const VenteForm = () => {
         }
       })
 
-      cacheRef.current.set(cacheKey, enriched)
+      cacheSet(cacheKey, enriched)
       setProducts(enriched)
-    } catch (error) {
-      console.error(error)
+    } catch (err) {
+      if (err.name === 'CanceledError') return
+      console.error('Erreur produits:', err)
       showNotification('Erreur de chargement des produits', 'error')
     } finally {
       setLoadingProducts(false)
-      setLoadingInitial(false)
+      setInitialLoad(false)
       fetchingProductsRef.current = false
     }
-  }, [entrepot])
+  }, [entrepot, cacheGet, cacheSet, showNotification])
 
   useEffect(() => {
     if (entrepot?.id) loadProducts()
   }, [entrepot, loadProducts])
 
   // ============================================================
-  // 3. Clients
+  // 3. CLIENTS
   // ============================================================
-  useEffect(() => {
-    if (fetchingClientsRef.current) return
-    fetchingClientsRef.current = true
-    const fetchClients = async () => {
-      try {
-        let data
-        if (cacheRef.current.has('clients_list')) {
-          data = cacheRef.current.get('clients_list')
-        } else {
-          const res = await AxiosInstance.get('/clients/?is_active=true&page_size=200')
-          data = unwrap(res.data)
-          cacheRef.current.set('clients_list', data)
-        }
-        setClients(data)
-        if (clientIdParam) {
-          const found = data.find(c => c.id === parseInt(clientIdParam))
-          if (found) setSelectedClient(found)
-        }
-      } catch (err) {
-        console.error(err)
-      } finally {
-        fetchingClientsRef.current = false
+  const loadClients = useCallback(async () => {
+    try {
+      const cacheKey = 'clients_list'
+      let data = cacheGet(cacheKey)
+      if (!data) {
+        const res = await AxiosInstance.get(
+          '/clients/?is_active=true&page_size=200'
+        )
+        data = unwrap(res.data)
+        cacheSet(cacheKey, data)
       }
+      setClients(data)
+      if (clientIdParam) {
+        const found = data.find(c => c.id === parseInt(clientIdParam))
+        if (found) setSelectedClient(found)
+      }
+    } catch (err) {
+      console.error('Erreur clients:', err)
     }
-    fetchClients()
-  }, [clientIdParam])
+  }, [clientIdParam, cacheGet, cacheSet])
+
+  useEffect(() => {
+    loadClients()
+  }, [loadClients])
 
   // ============================================================
-  // 4. Lots par produit (chargé à la demande)
+  // 4. LOTS PAR PRODUIT (à la demande)
   // ============================================================
   const fetchLotsForProduct = useCallback(async (productId) => {
     if (!productId || !entrepot?.id) return
@@ -267,8 +347,8 @@ const VenteForm = () => {
         && lot.quantity > 0
       )
       setLotsByProduct(prev => ({ ...prev, [productId]: available }))
-    } catch (error) {
-      console.error('Erreur lots:', error)
+    } catch (err) {
+      console.error('Erreur lots:', err)
       setLotsByProduct(prev => ({ ...prev, [productId]: [] }))
     } finally {
       setLoadingLots(prev => ({ ...prev, [productId]: false }))
@@ -277,7 +357,7 @@ const VenteForm = () => {
   }, [entrepot, lotsByProduct])
 
   // ============================================================
-  // 5. Gestion des items
+  // 5. GESTION DES ITEMS
   // ============================================================
   const isProductAlreadyAdded = (productId) =>
     items.some(i => i.product_id === productId)
@@ -394,7 +474,7 @@ const VenteForm = () => {
   }
 
   // ============================================================
-  // 6. Totaux
+  // 6. TOTAUX
   // ============================================================
   useEffect(() => {
     const subtotal = items.reduce((s, i) => s + (Number(i.total) || 0), 0)
@@ -402,16 +482,16 @@ const VenteForm = () => {
   }, [items])
 
   // ============================================================
-  // 7. Soumission
+  // 7. SOUMISSION
   // ============================================================
   const handleSubmit = async () => {
-    const emptyItems = items.filter(i => !i.product_id)
-    if (emptyItems.length > 0) {
-      showNotification('Veuillez sélectionner un produit pour chaque ligne', 'error')
-      return
-    }
+    // Validations
     if (items.length === 0) {
       showNotification('Ajoutez au moins un produit', 'error')
+      return
+    }
+    if (items.some(i => !i.product_id)) {
+      showNotification('Veuillez sélectionner un produit pour chaque ligne', 'error')
       return
     }
     if (!agence) {
@@ -425,16 +505,29 @@ const VenteForm = () => {
       return
     }
 
-    const stockErrors = []
+    // ✅ Validation stock cumulée (regroupe par produit)
+    const stockCheck = {}
     items.forEach(i => {
-      if (i.quantity > i.stock_max) {
-        stockErrors.push(
-          `${i.product_name} : ${i.stock_max} dispo, ${i.quantity} demandé`
-        )
+      if (!stockCheck[i.product_id]) {
+        stockCheck[i.product_id] = {
+          name: i.product_name,
+          needed: 0,
+          available: i.stock_max || 0,
+        }
+      }
+      stockCheck[i.product_id].needed += i.quantity
+    })
+
+    const stockErrors = []
+    Object.values(stockCheck).forEach(s => {
+      if (s.needed > s.available) {
+        stockErrors.push(`${s.name} : ${s.available} dispo, ${s.needed} demandé`)
       }
     })
     if (stockErrors.length > 0) {
-      showNotification(`Stock insuffisant :\n${stockErrors.join('\n')}`, 'error')
+      showNotification(
+        `Stock insuffisant :\n${stockErrors.join('\n')}`, 'error'
+      )
       return
     }
 
@@ -444,7 +537,7 @@ const VenteForm = () => {
         type_vente: typeVente,
         agence: agence.id,
         client_id: selectedClient?.id || null,
-        notes: notes || `Vente du ${new Date().toLocaleString()}`,
+        notes: notes || `Vente du ${new Date().toLocaleString('fr-FR')}`,
         items: items.map(i => ({
           product: parseInt(i.product_id),
           quantity: i.quantity,
@@ -459,21 +552,36 @@ const VenteForm = () => {
       cacheRef.current.clear()
       showNotification('Vente créée avec succès !', 'success')
       setTimeout(() => navigate('/ventes'), 1500)
-    } catch (error) {
-      console.error(error)
+    } catch (err) {
+      console.error('Erreur création vente:', err)
       let msg = 'Erreur lors de la création'
-      const d = error.response?.data
-      if (typeof d === 'string') msg = d
-      else if (d?.error) msg = d.error
-      else if (d?.detail) msg = d.detail
-      else if (d?.non_field_errors) msg = d.non_field_errors.join(', ')
-      else if (d?.items) msg = 'Erreur articles : ' + JSON.stringify(d.items)
+      const d = err.response?.data
+      if (typeof d === 'string') {
+        msg = d
+      } else if (d && typeof d === 'object') {
+        // Parse DRF field errors
+        const fieldErrors = []
+        Object.entries(d).forEach(([key, val]) => {
+          if (key === 'non_field_errors' || key === 'detail' || key === 'error') {
+            msg = Array.isArray(val) ? val[0] : String(val)
+          } else {
+            const v = Array.isArray(val) ? val[0] : val
+            fieldErrors.push(`${key}: ${v}`)
+          }
+        })
+        if (fieldErrors.length > 0 && msg === 'Erreur lors de la création') {
+          msg = fieldErrors.join('\n')
+        }
+      }
       showNotification(msg, 'error', d)
     } finally {
       setSubmitting(false)
     }
   }
 
+  // ============================================================
+  // HELPERS FORMAT
+  // ============================================================
   const formatPrice = (p) => {
     const n = Number(p)
     if (!Number.isFinite(n)) return '0 FCFA'
@@ -484,19 +592,19 @@ const VenteForm = () => {
     let s = `${lot.lot_number}`
     if (lot.quantity !== undefined) s += ` (${lot.quantity} u.)`
     if (lot.expiry_date) {
-      s += ` - Exp: ${new Date(lot.expiry_date).toLocaleDateString()}`
+      s += ` - Exp: ${new Date(lot.expiry_date).toLocaleDateString('fr-FR')}`
     }
     return s
   }
 
   // ============================================================
-  // 8. Rendu : premier chargement
+  // RENDU : LOADING INITIAL
   // ============================================================
-  if (loadingUser || (loadingInitial && loadingProducts)) {
+  if ((loadingUser || initialLoad) && loadingProducts) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-200px)]">
         <div className="text-center space-y-4">
-          <div className="loading loading-spinner loading-lg text-primary"></div>
+          <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto" />
           <p className="text-base font-medium text-base-content/70 animate-pulse">
             Chargement de l'environnement de vente...
           </p>
@@ -505,13 +613,48 @@ const VenteForm = () => {
     )
   }
 
+  // ============================================================
+  // RENDU : ERREUR CRITIQUE
+  // ============================================================
+  if (error && !agence) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-200px)]">
+        <div className="text-center">
+          <AlertCircle className="w-16 h-16 text-error mx-auto mb-4" />
+          <h2 className="text-xl font-bold mb-2">Erreur de chargement</h2>
+          <p className="text-base-content/60 mb-4">{error}</p>
+          <button onClick={loadUserAndAgence} className="btn btn-primary gap-2">
+            <Loader2 className="w-4 h-4" /> Réessayer
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ============================================================
+  // FILTRAGE CLIENTS (recherche)
+  // ============================================================
+  const filteredClients = debouncedClientSearch
+    ? clients.filter(c => {
+        const q = debouncedClientSearch.toLowerCase()
+        return (
+          (c.nom || '').toLowerCase().includes(q) ||
+          (c.prenom || '').toLowerCase().includes(q) ||
+          (c.telephone || '').toLowerCase().includes(q)
+        )
+      })
+    : clients
+
+  // ============================================================
+  // RENDER
+  // ============================================================
   return (
     <div className="px-0 lg:px-0 py-4 lg:py-6 bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
-      {/* Spinner overlay discret */}
-      {loadingProducts && !loadingInitial && (
+      {/* Spinner overlay */}
+      {loadingProducts && !initialLoad && (
         <div className="fixed top-20 right-6 z-40">
           <div className="bg-base-100 shadow-lg rounded-full px-4 py-2 flex items-center gap-2 border border-base-300">
-            <span className="loading loading-spinner loading-xs text-primary"></span>
+            <Loader2 className="w-3 h-3 animate-spin text-primary" />
             <span className="text-xs text-base-content/60">Chargement...</span>
           </div>
         </div>
@@ -927,6 +1070,7 @@ const VenteForm = () => {
             <button
               className="btn btn-ghost gap-2"
               onClick={() => navigate('/ventes')}
+              disabled={submitting}
             >
               Annuler
             </button>
@@ -957,6 +1101,19 @@ const VenteForm = () => {
                 <X className="w-4 h-4" />
               </button>
             </div>
+
+            {/* ✅ Recherche debounce */}
+            <div className="relative mb-4">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/40" />
+              <input
+                type="text"
+                placeholder="Rechercher par nom, prénom ou téléphone..."
+                className="input input-bordered w-full pl-9 text-sm"
+                value={clientSearch}
+                onChange={(e) => setClientSearch(e.target.value)}
+              />
+            </div>
+
             <div className="space-y-2 max-h-96 overflow-y-auto">
               <button
                 className="w-full text-left p-3 bg-gray-100 rounded-lg hover:bg-primary/10 transition"
@@ -965,18 +1122,24 @@ const VenteForm = () => {
                 <div className="font-semibold">Client anonyme</div>
                 <div className="text-xs text-gray-500">Vente sans client enregistré</div>
               </button>
-              {clients.map(client => (
-                <button
-                  key={client.id}
-                  className="w-full text-left p-3 bg-gray-100 rounded-lg hover:bg-primary/10 transition"
-                  onClick={() => { setSelectedClient(client); setShowClientModal(false) }}
-                >
-                  <div className="font-semibold">
-                    {client.nom} {client.prenom || ''}
-                  </div>
-                  <div className="text-xs text-gray-500">{client.telephone}</div>
-                </button>
-              ))}
+              {filteredClients.length === 0 ? (
+                <div className="text-center py-4 text-sm text-gray-400">
+                  Aucun client trouvé
+                </div>
+              ) : (
+                filteredClients.map(client => (
+                  <button
+                    key={client.id}
+                    className="w-full text-left p-3 bg-gray-100 rounded-lg hover:bg-primary/10 transition"
+                    onClick={() => { setSelectedClient(client); setShowClientModal(false) }}
+                  >
+                    <div className="font-semibold">
+                      {client.nom} {client.prenom || ''}
+                    </div>
+                    <div className="text-xs text-gray-500">{client.telephone}</div>
+                  </button>
+                ))
+              )}
             </div>
             <div className="modal-action">
               <button className="btn btn-ghost" onClick={() => setShowClientModal(false)}>

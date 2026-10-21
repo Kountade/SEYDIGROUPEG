@@ -1,37 +1,85 @@
 // src/components/ventes/VentesList.jsx
-import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react'
+import React, {
+  useEffect, useState, useMemo, useCallback, useRef
+} from 'react'
 import { useNavigate } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
 import Livraison from './Livraison'
 import TicketPOS from './TicketPOS'
 import {
   ShoppingCart, Eye, CheckCircle, XCircle, Clock, Search, RefreshCw,
-  Filter, Calendar, TrendingUp, AlertCircle, ChevronLeft, ChevronRight,
-  Users, FileText, CreditCard, X, Download, Printer, Plus, DollarSign,
-  AlertTriangle, ArrowUpDown, ChevronUp, ChevronDown, Trash2,
-  Truck, Loader2, Package, User, Check, MoreVertical, LayoutGrid,
-  List, Receipt, FileCheck, Info, Wallet, Banknote, Landmark, Smartphone
+  Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight,
+  Users, CreditCard, X, Plus, DollarSign, AlertTriangle,
+  ArrowUpDown, Trash2, Truck, Loader2, Package, User, Check,
+  LayoutGrid, List, Receipt, FileCheck, Info, Wallet, Banknote,
+  Landmark, Smartphone,
 } from 'lucide-react'
 
+// ============================================================
+// CONSTANTES
+// ============================================================
+const DEBOUNCE_MS = 300
+const CACHE_TTL_MS = 2 * 60 * 1000  // 2 minutes
+const CACHE_MAX = 20
+
+// ============================================================
+// CONFIGS
+// ============================================================
+const statusConfig = {
+  draft: { label: 'Brouillon', icon: Clock, color: 'text-gray-500', bgColor: 'bg-gray-100', borderColor: 'border-gray-200' },
+  pending_approval: { label: 'En attente', icon: Clock, color: 'text-orange-600', bgColor: 'bg-orange-100', borderColor: 'border-orange-200' },
+  approved: { label: 'Approuvée', icon: CheckCircle, color: 'text-blue-600', bgColor: 'bg-blue-100', borderColor: 'border-blue-200' },
+  rejected: { label: 'Rejetée', icon: XCircle, color: 'text-red-600', bgColor: 'bg-red-100', borderColor: 'border-red-200' },
+  completed: { label: 'Complétée', icon: CheckCircle, color: 'text-green-600', bgColor: 'bg-green-100', borderColor: 'border-green-200' },
+  cancelled: { label: 'Annulée', icon: XCircle, color: 'text-gray-500', bgColor: 'bg-gray-100', borderColor: 'border-gray-200' },
+}
+
+const paymentMethods = [
+  { value: 'especes', label: 'Espèces', icon: Banknote, color: 'text-green-600' },
+  { value: 'carte', label: 'Carte bancaire', icon: CreditCard, color: 'text-blue-600' },
+  { value: 'cheque', label: 'Chèque', icon: FileCheck, color: 'text-purple-600' },
+  { value: 'virement', label: 'Virement', icon: Landmark, color: 'text-indigo-600' },
+  { value: 'mobile_money', label: 'Mobile Money', icon: Smartphone, color: 'text-orange-600' },
+  { value: 'autre', label: 'Autre', icon: Wallet, color: 'text-gray-600' },
+]
+
+const unwrapList = (payload) =>
+  Array.isArray(payload) ? payload : (payload?.results || [])
+
+// ============================================================
+// COMPOSANT
+// ============================================================
 const VentesList = () => {
   const navigate = useNavigate()
 
-  // ---------- États ----------
+  // ---------- État principal ----------
   const [ventes, setVentes] = useState([])
   const [loading, setLoading] = useState(true)
   const [initialLoad, setInitialLoad] = useState(true)
+  const [error, setError] = useState(null)
   const [generatingBl, setGeneratingBl] = useState(null)
   const [generatingTicket, setGeneratingTicket] = useState(null)
+
+  // ---------- Filtres serveur ----------
   const [searchTerm, setSearchTerm] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterType, setFilterType] = useState('')
   const [filterPayment, setFilterPayment] = useState('')
   const [dateRange, setDateRange] = useState({ start: '', end: '' })
+
+  // ---------- Pagination serveur ----------
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(12)
-  const [viewMode, setViewMode] = useState('table')
+  const [totalCount, setTotalCount] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
+
+  // ---------- Tri serveur ----------
   const [sortField, setSortField] = useState('date_vente')
   const [sortDirection, setSortDirection] = useState('desc')
+
+  // ---------- UI ----------
+  const [viewMode, setViewMode] = useState('table')
   const [currentUser, setCurrentUser] = useState(null)
   const [userRoles, setUserRoles] = useState({ est_pdg: false, est_chef_agence: false })
 
@@ -42,6 +90,8 @@ const VentesList = () => {
   const [venteToApprove, setVenteToApprove] = useState(null)
   const [rejectReason, setRejectReason] = useState('')
   const [showRejectModal, setShowRejectModal] = useState(false)
+  const [deleteLoading, setDeleteLoading] = useState(false)
+  const [actionLoading, setActionLoading] = useState(false)
 
   // Paiement
   const [showPaymentModal, setShowPaymentModal] = useState(false)
@@ -55,41 +105,24 @@ const VentesList = () => {
   const [selectedCompte, setSelectedCompte] = useState('')
   const [loadingDestinations, setLoadingDestinations] = useState(false)
 
+  // Notification
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' })
-
-  // Refs
-  const cacheRef = useRef(new Map())
-  const fetchingRef = useRef(false)
 
   // Stats
   const [stats, setStats] = useState({
-    total: 0, pending: 0, approved: 0, completed: 0, rejected: 0,
-    cancelled: 0, totalCA: 0, totalPaid: 0, totalUnpaid: 0,
-    countPaid: 0, countUnpaid: 0
+    total: 0, pending: 0, approved: 0, completed: 0,
+    rejected: 0, cancelled: 0, totalCA: 0, totalPaid: 0,
+    totalUnpaid: 0, countPaid: 0, countUnpaid: 0,
   })
 
-  // ---------- Config ----------
-  const statusConfig = {
-    draft: { label: 'Brouillon', icon: Clock, color: 'text-gray-500', bgColor: 'bg-gray-100', borderColor: 'border-gray-200' },
-    pending_approval: { label: 'En attente', icon: Clock, color: 'text-orange-600', bgColor: 'bg-orange-100', borderColor: 'border-orange-200' },
-    approved: { label: 'Approuvée', icon: CheckCircle, color: 'text-blue-600', bgColor: 'bg-blue-100', borderColor: 'border-blue-200' },
-    rejected: { label: 'Rejetée', icon: XCircle, color: 'text-red-600', bgColor: 'bg-red-100', borderColor: 'border-red-200' },
-    completed: { label: 'Complétée', icon: CheckCircle, color: 'text-green-600', bgColor: 'bg-green-100', borderColor: 'border-green-200' },
-    cancelled: { label: 'Annulée', icon: XCircle, color: 'text-gray-500', bgColor: 'bg-gray-100', borderColor: 'border-gray-200' }
-  }
+  // ---------- Refs ----------
+  const cacheRef = useRef(new Map())
+  const abortRef = useRef(null)
+  const notifTimerRef = useRef(null)
 
-  const paymentMethods = [
-    { value: 'especes', label: 'Espèces', icon: Banknote, color: 'text-green-600' },
-    { value: 'carte', label: 'Carte bancaire', icon: CreditCard, color: 'text-blue-600' },
-    { value: 'cheque', label: 'Chèque', icon: FileCheck, color: 'text-purple-600' },
-    { value: 'virement', label: 'Virement', icon: Landmark, color: 'text-indigo-600' },
-    { value: 'mobile_money', label: 'Mobile Money', icon: Smartphone, color: 'text-orange-600' },
-    { value: 'autre', label: 'Autre', icon: Wallet, color: 'text-gray-600' }
-  ]
-
-  // ---------- Helpers ----------
-  const unwrap = (data) => Array.isArray(data) ? data : (data?.results || [])
-
+  // ============================================================
+  // HELPERS
+  // ============================================================
   const formatPrice = (price) => {
     const n = parseFloat(price)
     if (!Number.isFinite(n)) return '0 FCFA'
@@ -100,16 +133,192 @@ const VentesList = () => {
     if (!date) return '-'
     return new Date(date).toLocaleDateString('fr-FR', {
       day: '2-digit', month: 'short', year: 'numeric',
-      hour: '2-digit', minute: '2-digit'
+      hour: '2-digit', minute: '2-digit',
     })
   }
 
-  const showNotification = (message, type = 'success') => {
+  const showNotification = useCallback((message, type = 'success') => {
     setNotification({ show: true, message, type })
-    setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 5000)
-  }
+    if (notifTimerRef.current) clearTimeout(notifTimerRef.current)
+    notifTimerRef.current = setTimeout(
+      () => setNotification({ show: false, message: '', type: 'success' }),
+      5000
+    )
+  }, [])
 
-  // ---------- Fetch user ----------
+  useEffect(() => {
+    return () => {
+      if (notifTimerRef.current) clearTimeout(notifTimerRef.current)
+      if (abortRef.current) abortRef.current.abort()
+    }
+  }, [])
+
+  // ============================================================
+  // DEBOUNCE SEARCH
+  // ============================================================
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchTerm), DEBOUNCE_MS)
+    return () => clearTimeout(t)
+  }, [searchTerm])
+
+  // ============================================================
+  // CACHE HELPERS (TTL réel)
+  // ============================================================
+  const cacheGet = useCallback((key) => {
+    const entry = cacheRef.current.get(key)
+    if (!entry) return null
+    if (entry.expiresAt && Date.now() > entry.expiresAt) {
+      cacheRef.current.delete(key)
+      return null
+    }
+    return entry
+  }, [])
+
+  const cacheSet = useCallback((key, value) => {
+    cacheRef.current.set(key, {
+      ...value,
+      expiresAt: Date.now() + CACHE_TTL_MS,
+    })
+    if (cacheRef.current.size > CACHE_MAX) {
+      cacheRef.current.delete(cacheRef.current.keys().next().value)
+    }
+  }, [])
+
+  // ============================================================
+  // CACHE KEY
+  // ============================================================
+  const buildCacheKey = useCallback(() => JSON.stringify({
+    page: currentPage,
+    size: itemsPerPage,
+    q: debouncedSearch,
+    status: filterStatus,
+    type: filterType,
+    pay: filterPayment,
+    date_start: dateRange.start,
+    date_end: dateRange.end,
+    sort: `${sortField}:${sortDirection}`,
+  }), [currentPage, itemsPerPage, debouncedSearch, filterStatus,
+       filterType, filterPayment, dateRange, sortField, sortDirection])
+
+  // ============================================================
+  // ✅ FETCH PRINCIPAL — pagination serveur
+  // ============================================================
+  const fetchVentes = useCallback(async ({ bypassCache = false } = {}) => {
+    const key = buildCacheKey()
+
+    // Cache hit
+    if (!bypassCache) {
+      const cached = cacheGet(key)
+      if (cached) {
+        setVentes(cached.ventes)
+        setTotalCount(cached.totalCount)
+        setTotalPages(cached.totalPages)
+        setLoading(false)
+        setInitialLoad(false)
+        setError(null)
+        return
+      }
+    }
+
+    if (abortRef.current) abortRef.current.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    setLoading(true)
+    setError(null)
+
+    try {
+      const params = {
+        page: currentPage,
+        page_size: itemsPerPage,
+        ordering: `${sortDirection === 'desc' ? '-' : ''}${sortField}`,
+      }
+      if (debouncedSearch) params.search = debouncedSearch
+      if (filterStatus) params.status = filterStatus
+      if (filterType) params.type_vente = filterType
+      if (filterPayment) params.payment_filter = filterPayment
+      if (dateRange.start) params.date_from = dateRange.start
+      if (dateRange.end) params.date_to = dateRange.end
+
+      const response = await AxiosInstance.get('/ventes/', {
+        params,
+        signal: controller.signal,
+      })
+
+      if (controller.signal.aborted) return
+
+      const payload = response.data
+      const results = unwrapList(payload)
+      const count = Array.isArray(payload)
+        ? results.length
+        : (payload.count ?? results.length)
+      const nbPages = Math.max(1, Math.ceil(count / itemsPerPage))
+
+      cacheSet(key, { ventes: results, totalCount: count, totalPages: nbPages })
+
+      setVentes(results)
+      setTotalCount(count)
+      setTotalPages(nbPages)
+    } catch (err) {
+      if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return
+      console.error('Erreur chargement ventes:', err)
+      if (err.response?.status === 401) {
+        setError('Session expirée, veuillez vous reconnecter')
+      } else if (err.response?.status === 403) {
+        setError("Vous n'avez pas les droits")
+      } else {
+        setError('Erreur de chargement des ventes')
+      }
+      showNotification('Erreur de chargement', 'error')
+      setVentes([])
+    } finally {
+      if (abortRef.current === controller) {
+        setLoading(false)
+        setInitialLoad(false)
+      }
+    }
+  }, [buildCacheKey, currentPage, itemsPerPage, debouncedSearch,
+      filterStatus, filterType, filterPayment, dateRange,
+      sortField, sortDirection, showNotification, cacheGet, cacheSet])
+
+  // ✅ UN SEUL useEffect
+  useEffect(() => {
+    fetchVentes()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buildCacheKey])
+
+  // ============================================================
+  // ✅ FETCH STATS (serveur)
+  // ============================================================
+  const fetchStats = useCallback(async () => {
+    try {
+      const res = await AxiosInstance.get('/ventes/stats/')
+      const d = res.data || {}
+      setStats({
+        total: d.total || 0,
+        pending: d.en_attente || 0,
+        approved: d.approuvees || 0,
+        completed: d.completees || 0,
+        rejected: d.rejetees || 0,
+        cancelled: d.annulees || 0,
+        totalCA: parseFloat(d.total_ca) || 0,
+        totalPaid: parseFloat(d.total_paye) || 0,
+        totalUnpaid: parseFloat(d.impayes) || 0,
+        countPaid: d.payees || 0,
+        countUnpaid: 0,
+      })
+    } catch {
+      // fallback silencieux
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchStats()
+  }, [fetchStats])
+
+  // ============================================================
+  // FETCH USER
+  // ============================================================
   const fetchCurrentUser = useCallback(async () => {
     try {
       const response = await AxiosInstance.get('/users/me/')
@@ -118,112 +327,65 @@ const VentesList = () => {
       const isPDG = userData.role_global === 'pdg' || userData.is_superuser === true
       const isChefAgence = userData.roles_agence?.some(r => r.role === 'chef_agence') || false
       setUserRoles({ est_pdg: isPDG, est_chef_agence: isChefAgence })
-    } catch (error) {
-      console.error('Erreur chargement utilisateur:', error)
+    } catch (err) {
+      console.error('Erreur chargement utilisateur:', err)
     }
   }, [])
 
-  // ---------- Fetch ventes ----------
-  const fetchVentes = useCallback(async ({ bypassCache = false } = {}) => {
-    const key = 'ventes_list'
+  useEffect(() => {
+    fetchCurrentUser()
+  }, [fetchCurrentUser])
 
-    if (!bypassCache && cacheRef.current.has(key)) {
-      const c = cacheRef.current.get(key)
-      setVentes(c.ventes)
-      setStats(c.stats)
-      setLoading(false)
-      setInitialLoad(false)
-      return
+  // ============================================================
+  // RESPONSIVE
+  // ============================================================
+  useEffect(() => {
+    const handleResize = () => {
+      const next =
+        window.innerWidth < 640 ? 6 :
+        window.innerWidth < 1024 ? 12 : 12
+      setItemsPerPage(prev => prev === next ? prev : next)
     }
-
-    if (fetchingRef.current) return
-    fetchingRef.current = true
-    setLoading(true)
-
-    try {
-      // ✅ page_size=200 pour compatibilité + unwrap paginé
-      const response = await AxiosInstance.get('/ventes/?page_size=200')
-      const data = unwrap(response.data)
-
-      // ✅ Sécurité : vérifier que chaque vente est un objet
-      const cleanData = data.filter(v => v && typeof v === 'object')
-
-      setVentes(cleanData)
-
-      // Stats
-      const total = cleanData.length
-      const pending = cleanData.filter(v => v.status === 'pending_approval').length
-      const approved = cleanData.filter(v => v.status === 'approved').length
-      const completed = cleanData.filter(v => v.status === 'completed').length
-      const rejected = cleanData.filter(v => v.status === 'rejected').length
-      const cancelled = cleanData.filter(v => v.status === 'cancelled').length
-      const totalCA = cleanData.reduce((sum, v) => sum + (parseFloat(v.total) || 0), 0)
-      const totalPaid = cleanData.reduce((sum, v) => sum + (parseFloat(v.montant_paye) || 0), 0)
-
-      const unpaidVentes = cleanData.filter(v =>
-        (v.status === 'approved' || v.status === 'completed') && !v.est_paye
-      )
-      const totalUnpaid = unpaidVentes.reduce((sum, v) =>
-        sum + ((parseFloat(v.total) || 0) - (parseFloat(v.montant_paye) || 0)), 0
-      )
-
-      const newStats = {
-        total, pending, approved, completed, rejected, cancelled,
-        totalCA, totalPaid, totalUnpaid,
-        countPaid: cleanData.filter(v => v.est_paye).length,
-        countUnpaid: unpaidVentes.length,
-      }
-
-      cacheRef.current.set(key, { ventes: cleanData, stats: newStats })
-      if (cacheRef.current.size > 10) {
-        const firstKey = cacheRef.current.keys().next().value
-        cacheRef.current.delete(firstKey)
-      }
-
-      setStats(newStats)
-    } catch (error) {
-      console.error('Erreur chargement ventes:', error)
-      showNotification('Erreur de chargement des ventes', 'error')
-      setVentes([])
-    } finally {
-      setLoading(false)
-      setInitialLoad(false)
-      fetchingRef.current = false
-    }
+    handleResize()
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
   }, [])
 
   const refreshData = async () => {
     cacheRef.current.clear()
-    await fetchVentes({ bypassCache: true })
+    setCurrentPage(1)
+    await Promise.all([
+      fetchVentes({ bypassCache: true }),
+      fetchStats(),
+    ])
   }
 
-  // ---------- Fetch destinations paiement ----------
+  // ============================================================
+  // FETCH DESTINATIONS PAIEMENT
+  // ============================================================
   const fetchDestinations = async (venteId) => {
     setLoadingDestinations(true)
     try {
-      const response = await AxiosInstance.get(`/ventes/${venteId}/destinations_paiement/`)
-      setDestinations({
-        caisses: response.data.caisses || [],
-        comptes_bancaires: response.data.comptes_bancaires || []
-      })
-      const defaultCaisse = (response.data.caisses || []).find(c => c.is_default)
+      const response = await AxiosInstance.get(
+        `/ventes/${venteId}/destinations_paiement/`
+      )
+      const caisses = response.data.caisses || []
+      const comptes = response.data.comptes_bancaires || []
+      setDestinations({ caisses, comptes_bancaires: comptes })
+      const defaultCaisse = caisses.find(c => c.is_default)
       if (defaultCaisse) setSelectedCaisse(defaultCaisse.id)
-      else if ((response.data.caisses || []).length > 0) setSelectedCaisse(response.data.caisses[0].id)
-    } catch (error) {
-      console.error('Erreur chargement destinations:', error)
+      else if (caisses.length > 0) setSelectedCaisse(caisses[0].id)
+    } catch (err) {
+      console.error('Erreur chargement destinations:', err)
       setDestinations({ caisses: [], comptes_bancaires: [] })
     } finally {
       setLoadingDestinations(false)
     }
   }
 
-  // ---------- Init ----------
-  useEffect(() => {
-    fetchCurrentUser()
-    fetchVentes()
-  }, [fetchCurrentUser, fetchVentes])
-
-  // ---------- Actions paiement ----------
+  // ============================================================
+  // ACTIONS PAIEMENT
+  // ============================================================
   const openPaymentModal = async (vente) => {
     setVenteToPay(vente)
     setPaymentMethod('especes')
@@ -242,7 +404,7 @@ const VentesList = () => {
       const payload = {
         methode: paymentMethod,
         notes: paymentNotes || `Paiement automatique - Vente ${venteToPay.reference}`,
-        reference_externe: paymentReference
+        reference_externe: paymentReference,
       }
       if (paymentMethod === 'especes' || paymentMethod === 'mobile_money') {
         if (selectedCaisse) payload.caisse_destination = selectedCaisse
@@ -250,7 +412,9 @@ const VentesList = () => {
         if (selectedCompte) payload.compte_destination = selectedCompte
       }
 
-      const response = await AxiosInstance.post(`/ventes/${venteToPay.id}/marquer_paye/`, payload)
+      const response = await AxiosInstance.post(
+        `/ventes/${venteToPay.id}/marquer_paye/`, payload
+      )
       const { paiement, facture } = response.data
 
       showNotification(
@@ -263,16 +427,23 @@ const VentesList = () => {
       setShowPaymentModal(false)
       setVenteToPay(null)
       cacheRef.current.clear()
-      fetchVentes({ bypassCache: true })
-    } catch (error) {
-      console.error('Erreur paiement:', error)
-      showNotification(error.response?.data?.error || 'Erreur lors du paiement', 'error')
+      await Promise.all([
+        fetchVentes({ bypassCache: true }),
+        fetchStats(),
+      ])
+    } catch (err) {
+      console.error('Erreur paiement:', err)
+      showNotification(
+        err.response?.data?.error || 'Erreur lors du paiement', 'error'
+      )
     } finally {
       setProcessingPayment(false)
     }
   }
 
-  // ---------- Génération PDF ----------
+  // ============================================================
+  // GÉNÉRATION PDF
+  // ============================================================
   const handleGenerateTicket = async (vente) => {
     if (!vente || (vente.status !== 'approved' && vente.status !== 'completed')) {
       showNotification('Seules les ventes approuvées ou complétées peuvent générer un ticket', 'error')
@@ -288,12 +459,12 @@ const VentesList = () => {
         client: venteData.client || {},
         payment_method: 'Especes',
         paid_amount: parseFloat(venteData.montant_paye) || 0,
-        remaining_amount: parseFloat(venteData.reste_a_payer) || 0
+        remaining_amount: parseFloat(venteData.reste_a_payer) || 0,
       }
       await TicketPOS(ticketData)
       showNotification(`Ticket POS généré pour ${vente.reference}`, 'success')
-    } catch (error) {
-      console.error('Erreur génération ticket:', error)
+    } catch (err) {
+      console.error('Erreur génération ticket:', err)
       showNotification('Erreur lors de la génération du ticket', 'error')
     } finally {
       setGeneratingTicket(null)
@@ -313,30 +484,40 @@ const VentesList = () => {
         date_livraison: new Date().toISOString().split('T')[0],
         adresse_livraison: venteData.client?.adresse || '',
         contact_livraison: venteData.client?.telephone || '',
-        instructions: ''
+        instructions: '',
       }
       await Livraison(venteData, options)
       showNotification(`Bon de livraison généré pour ${vente.reference}`, 'success')
-    } catch (error) {
-      console.error('Erreur génération BL:', error)
+    } catch (err) {
+      console.error('Erreur génération BL:', err)
       showNotification('Erreur lors de la génération du bon de livraison', 'error')
     } finally {
       setGeneratingBl(null)
     }
   }
 
-  // ---------- Actions workflow ----------
+  // ============================================================
+  // WORKFLOW
+  // ============================================================
   const handleApprove = async () => {
     if (!venteToApprove) return
+    setActionLoading(true)
     try {
       await AxiosInstance.post(`/ventes/${venteToApprove.id}/approve/`)
-      showNotification(`Vente "${venteToApprove.reference}" approuvée avec succès`, 'success')
+      showNotification(`Vente "${venteToApprove.reference}" approuvée`, 'success')
       cacheRef.current.clear()
-      fetchVentes({ bypassCache: true })
+      await Promise.all([
+        fetchVentes({ bypassCache: true }),
+        fetchStats(),
+      ])
       setShowApproveModal(false)
       setVenteToApprove(null)
-    } catch (error) {
-      showNotification(error.response?.data?.error || "Erreur lors de l'approbation", 'error')
+    } catch (err) {
+      showNotification(
+        err.response?.data?.error || "Erreur lors de l'approbation", 'error'
+      )
+    } finally {
+      setActionLoading(false)
     }
   }
 
@@ -346,34 +527,54 @@ const VentesList = () => {
       showNotification('Veuillez saisir un motif de rejet', 'error')
       return
     }
+    setActionLoading(true)
     try {
-      await AxiosInstance.post(`/ventes/${venteToApprove.id}/reject/`, { motif: rejectReason })
+      await AxiosInstance.post(
+        `/ventes/${venteToApprove.id}/reject/`, { motif: rejectReason }
+      )
       showNotification(`Vente "${venteToApprove.reference}" rejetée`, 'success')
       cacheRef.current.clear()
-      fetchVentes({ bypassCache: true })
+      await Promise.all([
+        fetchVentes({ bypassCache: true }),
+        fetchStats(),
+      ])
       setShowRejectModal(false)
       setVenteToApprove(null)
       setRejectReason('')
-    } catch (error) {
-      showNotification(error.response?.data?.error || 'Erreur lors du rejet', 'error')
+    } catch (err) {
+      showNotification(
+        err.response?.data?.error || 'Erreur lors du rejet', 'error'
+      )
+    } finally {
+      setActionLoading(false)
     }
   }
 
   const handleDeleteVente = async () => {
     if (!venteToDelete) return
+    setDeleteLoading(true)
     try {
       await AxiosInstance.delete(`/ventes/${venteToDelete.id}/`)
       showNotification(`Vente "${venteToDelete.reference}" supprimée`, 'success')
       cacheRef.current.clear()
-      fetchVentes({ bypassCache: true })
+      await Promise.all([
+        fetchVentes({ bypassCache: true }),
+        fetchStats(),
+      ])
       setShowDeleteModal(false)
       setVenteToDelete(null)
-    } catch {
-      showNotification('Erreur lors de la suppression', 'error')
+    } catch (err) {
+      showNotification(
+        err.response?.data?.error || 'Erreur lors de la suppression', 'error'
+      )
+    } finally {
+      setDeleteLoading(false)
     }
   }
 
-  // ---------- Permissions ----------
+  // ============================================================
+  // PERMISSIONS
+  // ============================================================
   const canApprove = () => userRoles.est_pdg || userRoles.est_chef_agence
   const canGenerateBL = (v) => v.status === 'approved' || v.status === 'completed'
   const canGenerateTicket = (v) => v.status === 'approved' || v.status === 'completed'
@@ -381,88 +582,35 @@ const VentesList = () => {
   const canMarkAsPaid = (v) =>
     (v.status === 'approved' || v.status === 'completed') && !v.est_paye
 
-  // ---------- Tri ----------
+  // ============================================================
+  // TRI
+  // ============================================================
   const handleSort = (field) => {
-    if (sortField === field) setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
-    else { setSortField(field); setSortDirection('asc') }
+    if (sortField === field) {
+      setSortDirection(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDirection('asc')
+    }
+    setCurrentPage(1)
   }
 
   const SortIcon = ({ field }) => {
     if (sortField !== field) return <ArrowUpDown className="w-3 h-3 opacity-40" />
     return sortDirection === 'asc'
-      ? <ChevronUp className="w-3 h-3" />
-      : <ChevronDown className="w-3 h-3" />
+      ? <ChevronRight className="w-3 h-3 rotate-[-90deg]" />
+      : <ChevronRight className="w-3 h-3 rotate-90" />
   }
 
-  // ---------- Filtrage + tri (mémoïsé) ----------
-  const filteredAndSortedVentes = useMemo(() => {
-    const filtered = ventes.filter(vente => {
-      if (!vente) return false
-      const search = searchTerm.toLowerCase()
-      const reference = (vente.reference || '').toLowerCase()
-      const clientNom = (vente.client_nom || '').toLowerCase()
-      const matchesSearch = reference.includes(search) || clientNom.includes(search)
-      const matchesStatus = !filterStatus || vente.status === filterStatus
-      const matchesType = !filterType || vente.type_vente === filterType
-
-      let matchesPayment = true
-      if (filterPayment === 'paid') matchesPayment = vente.est_paye === true
-      else if (filterPayment === 'unpaid') {
-        matchesPayment = vente.est_paye === false
-          && (vente.status === 'approved' || vente.status === 'completed')
-      } else if (filterPayment === 'partial') {
-        matchesPayment = parseFloat(vente.montant_paye || 0) > 0 && !vente.est_paye
-      }
-
-      const matchesDateStart = !dateRange.start
-        || new Date(vente.date_vente) >= new Date(dateRange.start)
-      const matchesDateEnd = !dateRange.end
-        || new Date(vente.date_vente) <= new Date(dateRange.end)
-
-      return matchesSearch && matchesStatus && matchesType
-        && matchesPayment && matchesDateStart && matchesDateEnd
-    })
-
-    filtered.sort((a, b) => {
-      let aVal = a[sortField] ?? ''
-      let bVal = b[sortField] ?? ''
-      if (sortField === 'total' || sortField === 'montant_paye') {
-        aVal = parseFloat(aVal) || 0
-        bVal = parseFloat(bVal) || 0
-      }
-      if (sortField === 'date_vente') {
-        aVal = new Date(aVal).getTime()
-        bVal = new Date(bVal).getTime()
-      }
-      if (sortField === 'client_nom' || sortField === 'reference') {
-        aVal = (aVal || '').toString().toLowerCase()
-        bVal = (bVal || '').toString().toLowerCase()
-      }
-      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1
-      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1
-      return 0
-    })
-
-    return filtered
-  }, [ventes, searchTerm, filterStatus, filterType, filterPayment, dateRange, sortField, sortDirection])
-
-  const totalPages = Math.max(1, Math.ceil(filteredAndSortedVentes.length / itemsPerPage))
-  const paginatedVentes = useMemo(() => filteredAndSortedVentes.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  ), [filteredAndSortedVentes, currentPage, itemsPerPage])
-
-  useEffect(() => {
-    if (currentPage > totalPages) setCurrentPage(1)
-  }, [totalPages, currentPage])
-
-  // ---------- Badges ----------
+  // ============================================================
+  // BADGES
+  // ============================================================
   const getStatusBadge = (status) => {
-    const config = statusConfig[status] || statusConfig.draft
-    const Icon = config.icon
+    const cfg = statusConfig[status] || statusConfig.draft
+    const Icon = cfg.icon
     return (
-      <span className={`badge ${config.bgColor} ${config.color} gap-1 px-3 py-2 text-xs border ${config.borderColor}`}>
-        <Icon className="w-3 h-3" /> {config.label}
+      <span className={`badge ${cfg.bgColor} ${cfg.color} gap-1 px-3 py-2 text-xs border ${cfg.borderColor}`}>
+        <Icon className="w-3 h-3" /> {cfg.label}
       </span>
     )
   }
@@ -492,12 +640,14 @@ const VentesList = () => {
     }
   }
 
-  // ---------- Premier chargement ----------
+  // ============================================================
+  // LOADING / ERROR
+  // ============================================================
   if (initialLoad && loading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-200px)]">
         <div className="text-center space-y-6">
-          <div className="loading loading-spinner loading-lg text-primary w-16 h-16"></div>
+          <Loader2 className="w-16 h-16 text-primary animate-spin mx-auto" />
           <p className="text-xl font-semibold text-base-content/70 animate-pulse">
             Chargement des ventes...
           </p>
@@ -506,13 +656,31 @@ const VentesList = () => {
     )
   }
 
+  if (error && ventes.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-200px)]">
+        <div className="text-center">
+          <AlertCircle className="w-16 h-16 text-error mx-auto mb-4" />
+          <h2 className="text-xl font-bold mb-2">Erreur de chargement</h2>
+          <p className="text-base-content/60 mb-4">{error}</p>
+          <button onClick={refreshData} className="btn btn-primary gap-2">
+            <RefreshCw className="w-4 h-4" /> Réessayer
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ============================================================
+  // RENDER
+  // ============================================================
   return (
     <div className="space-y-6 p-4 lg:p-6">
       {/* Spinner overlay */}
       {loading && !initialLoad && (
         <div className="fixed top-20 right-6 z-40 animate-slideDown">
           <div className="bg-base-100 shadow-lg rounded-full px-4 py-2 flex items-center gap-2 border border-base-300">
-            <span className="loading loading-spinner loading-xs text-primary"></span>
+            <Loader2 className="w-4 h-4 animate-spin text-primary" />
             <span className="text-xs text-base-content/60">Chargement...</span>
           </div>
         </div>
@@ -542,7 +710,7 @@ const VentesList = () => {
           <div className="modal-box max-w-2xl">
             <div className="text-center mb-6">
               <div className="avatar placeholder mb-4">
-                <div className="bg-success/10 text-success rounded-full w-20 h-20 flex items-center justify-center">
+                <div className="bg-success/10 text-success rounded-full w-20 h-20 flex items-center justify-center mx-auto">
                   <CreditCard className="w-10 h-10" />
                 </div>
               </div>
@@ -570,7 +738,10 @@ const VentesList = () => {
                 <div className="flex justify-between border-t border-base-300 pt-2">
                   <span className="font-semibold">Reste à payer:</span>
                   <span className="font-bold text-success text-lg">
-                    {formatPrice((parseFloat(venteToPay.total) || 0) - (parseFloat(venteToPay.montant_paye) || 0))}
+                    {formatPrice(
+                      (parseFloat(venteToPay.total) || 0)
+                      - (parseFloat(venteToPay.montant_paye) || 0)
+                    )}
                   </span>
                 </div>
               </div>
@@ -694,22 +865,16 @@ const VentesList = () => {
                   setVenteToPay(null)
                 }}
                 disabled={processingPayment}
-              >
-                Annuler
-              </button>
+              >Annuler</button>
               <button
                 className="btn btn-success gap-2"
                 onClick={handleMarquerPaye}
                 disabled={processingPayment}
               >
                 {processingPayment ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" /> Traitement...
-                  </>
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Traitement...</>
                 ) : (
-                  <>
-                    <CheckCircle className="w-4 h-4" /> Confirmer le paiement
-                  </>
+                  <><CheckCircle className="w-4 h-4" /> Confirmer le paiement</>
                 )}
               </button>
             </div>
@@ -723,7 +888,7 @@ const VentesList = () => {
           <div className="modal-box">
             <div className="text-center mb-6">
               <div className="avatar placeholder mb-4">
-                <div className="bg-success/10 text-success rounded-full w-20 h-20 flex items-center justify-center">
+                <div className="bg-success/10 text-success rounded-full w-20 h-20 flex items-center justify-center mx-auto">
                   <CheckCircle className="w-10 h-10" />
                 </div>
               </div>
@@ -739,11 +904,18 @@ const VentesList = () => {
               <button
                 className="btn btn-ghost"
                 onClick={() => { setShowApproveModal(false); setVenteToApprove(null) }}
+                disabled={actionLoading}
+              >Annuler</button>
+              <button
+                className="btn btn-success gap-2"
+                onClick={handleApprove}
+                disabled={actionLoading}
               >
-                Annuler
-              </button>
-              <button className="btn btn-success gap-2" onClick={handleApprove}>
-                <CheckCircle className="w-4 h-4" /> Approuver
+                {actionLoading ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Traitement...</>
+                ) : (
+                  <><CheckCircle className="w-4 h-4" /> Approuver</>
+                )}
               </button>
             </div>
           </div>
@@ -756,7 +928,7 @@ const VentesList = () => {
           <div className="modal-box">
             <div className="text-center mb-6">
               <div className="avatar placeholder mb-4">
-                <div className="bg-error/10 text-error rounded-full w-20 h-20 flex items-center justify-center">
+                <div className="bg-error/10 text-error rounded-full w-20 h-20 flex items-center justify-center mx-auto">
                   <XCircle className="w-10 h-10" />
                 </div>
               </div>
@@ -779,12 +951,23 @@ const VentesList = () => {
             <div className="modal-action">
               <button
                 className="btn btn-ghost"
-                onClick={() => { setShowRejectModal(false); setVenteToApprove(null); setRejectReason('') }}
+                onClick={() => {
+                  setShowRejectModal(false)
+                  setVenteToApprove(null)
+                  setRejectReason('')
+                }}
+                disabled={actionLoading}
+              >Annuler</button>
+              <button
+                className="btn btn-error gap-2"
+                onClick={handleReject}
+                disabled={actionLoading}
               >
-                Annuler
-              </button>
-              <button className="btn btn-error gap-2" onClick={handleReject}>
-                <XCircle className="w-4 h-4" /> Rejeter
+                {actionLoading ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Traitement...</>
+                ) : (
+                  <><XCircle className="w-4 h-4" /> Rejeter</>
+                )}
               </button>
             </div>
           </div>
@@ -797,7 +980,7 @@ const VentesList = () => {
           <div className="modal-box">
             <div className="text-center mb-6">
               <div className="avatar placeholder mb-4">
-                <div className="bg-error/10 text-error rounded-full w-20 h-20 flex items-center justify-center">
+                <div className="bg-error/10 text-error rounded-full w-20 h-20 flex items-center justify-center mx-auto">
                   <AlertTriangle className="w-10 h-10" />
                 </div>
               </div>
@@ -806,11 +989,21 @@ const VentesList = () => {
               <p className="text-sm text-base-content/50 mt-2">Cette action est irréversible.</p>
             </div>
             <div className="modal-action">
-              <button className="btn btn-ghost" onClick={() => setShowDeleteModal(false)}>
-                Annuler
-              </button>
-              <button className="btn btn-error gap-2" onClick={handleDeleteVente}>
-                <Trash2 className="w-4 h-4" /> Supprimer
+              <button
+                className="btn btn-ghost"
+                onClick={() => setShowDeleteModal(false)}
+                disabled={deleteLoading}
+              >Annuler</button>
+              <button
+                className="btn btn-error gap-2"
+                onClick={handleDeleteVente}
+                disabled={deleteLoading}
+              >
+                {deleteLoading ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Suppression...</>
+                ) : (
+                  <><Trash2 className="w-4 h-4" /> Supprimer</>
+                )}
               </button>
             </div>
           </div>
@@ -954,20 +1147,24 @@ const VentesList = () => {
                 type="date"
                 className="input input-bordered"
                 value={dateRange.start}
-                onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+                onChange={(e) => { setDateRange(prev => ({ ...prev, start: e.target.value })); setCurrentPage(1) }}
               />
               <input
                 type="date"
                 className="input input-bordered"
                 value={dateRange.end}
-                onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+                onChange={(e) => { setDateRange(prev => ({ ...prev, end: e.target.value })); setCurrentPage(1) }}
               />
             </div>
             <button
               className="btn btn-outline gap-2"
               onClick={() => {
-                setFilterStatus(''); setFilterType(''); setFilterPayment('')
-                setSearchTerm(''); setDateRange({ start: '', end: '' }); setCurrentPage(1)
+                setFilterStatus('')
+                setFilterType('')
+                setFilterPayment('')
+                setSearchTerm('')
+                setDateRange({ start: '', end: '' })
+                setCurrentPage(1)
               }}
             >
               <Filter className="w-4 h-4" /> Réinitialiser
@@ -992,7 +1189,7 @@ const VentesList = () => {
 
       {/* Contenu */}
       <div className="bg-base-100 rounded-xl shadow-xl border border-base-300 overflow-hidden">
-        {filteredAndSortedVentes.length === 0 ? (
+        {ventes.length === 0 ? (
           <div className="p-12 text-center">
             <ShoppingCart className="w-20 h-20 mx-auto mb-4 text-base-content/30" />
             <p className="text-xl font-semibold text-base-content/50">Aucune vente trouvée</p>
@@ -1019,8 +1216,8 @@ const VentesList = () => {
                     </button>
                   </th>
                   <th>
-                    <button className="flex items-center gap-1 hover:text-primary" onClick={() => handleSort('client_nom')}>
-                      Client <SortIcon field="client_nom" />
+                    <button className="flex items-center gap-1 hover:text-primary" onClick={() => handleSort('client__nom')}>
+                      Client <SortIcon field="client__nom" />
                     </button>
                   </th>
                   <th>
@@ -1039,7 +1236,7 @@ const VentesList = () => {
                 </tr>
               </thead>
               <tbody>
-                {paginatedVentes.map((vente) => (
+                {ventes.map((vente) => (
                   <tr key={vente.id} className="hover">
                     <td className="font-mono font-semibold">{vente.reference}</td>
                     <td>
@@ -1063,9 +1260,7 @@ const VentesList = () => {
                             className="btn btn-ghost btn-xs text-success hover:bg-success/10"
                             onClick={() => openPaymentModal(vente)}
                             title="Marquer comme payé"
-                          >
-                            <CreditCard className="w-3 h-3" />
-                          </button>
+                          ><CreditCard className="w-3 h-3" /></button>
                         )}
                         {canGenerateTicket(vente) && (
                           <button
@@ -1097,9 +1292,7 @@ const VentesList = () => {
                               className="btn btn-ghost btn-xs text-success"
                               onClick={() => { setVenteToApprove(vente); setShowApproveModal(true) }}
                               title="Approuver"
-                            >
-                              <CheckCircle className="w-3 h-3" />
-                            </button>
+                            ><CheckCircle className="w-3 h-3" /></button>
                             <button
                               className="btn btn-ghost btn-xs text-error"
                               onClick={() => {
@@ -1108,26 +1301,20 @@ const VentesList = () => {
                                 setShowRejectModal(true)
                               }}
                               title="Rejeter"
-                            >
-                              <XCircle className="w-3 h-3" />
-                            </button>
+                            ><XCircle className="w-3 h-3" /></button>
                           </>
                         )}
                         <button
                           className="btn btn-ghost btn-xs"
                           onClick={() => navigate(`/ventes/${vente.id}`)}
                           title="Détails"
-                        >
-                          <Eye className="w-3 h-3" />
-                        </button>
+                        ><Eye className="w-3 h-3" /></button>
                         {canDelete(vente) && (
                           <button
                             className="btn btn-ghost btn-xs text-error"
                             onClick={() => { setVenteToDelete(vente); setShowDeleteModal(true) }}
                             title="Supprimer"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
+                          ><Trash2 className="w-3 h-3" /></button>
                         )}
                       </div>
                     </td>
@@ -1139,7 +1326,7 @@ const VentesList = () => {
         ) : (
           <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {paginatedVentes.map((vente) => (
+              {ventes.map((vente) => (
                 <div
                   key={vente.id}
                   className={`bg-base-200 rounded-xl p-6 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 border ${
@@ -1189,16 +1376,13 @@ const VentesList = () => {
                         className="btn btn-ghost btn-xs text-success"
                         onClick={() => openPaymentModal(vente)}
                         title="Marquer comme payé"
-                      >
-                        <CreditCard className="w-3 h-3" />
-                      </button>
+                      ><CreditCard className="w-3 h-3" /></button>
                     )}
                     {canGenerateTicket(vente) && (
                       <button
                         className="btn btn-ghost btn-xs text-secondary"
                         onClick={() => handleGenerateTicket(vente)}
                         disabled={generatingTicket === vente.id}
-                        title="Ticket POS"
                       >
                         {generatingTicket === vente.id
                           ? <Loader2 className="w-3 h-3 animate-spin" />
@@ -1210,7 +1394,6 @@ const VentesList = () => {
                         className="btn btn-ghost btn-xs text-info"
                         onClick={() => handleGenerateBonLivraison(vente)}
                         disabled={generatingBl === vente.id}
-                        title="Bon de livraison"
                       >
                         {generatingBl === vente.id
                           ? <Loader2 className="w-3 h-3 animate-spin" />
@@ -1222,9 +1405,7 @@ const VentesList = () => {
                         <button
                           className="btn btn-ghost btn-xs text-success"
                           onClick={() => { setVenteToApprove(vente); setShowApproveModal(true) }}
-                        >
-                          <CheckCircle className="w-3 h-3" />
-                        </button>
+                        ><CheckCircle className="w-3 h-3" /></button>
                         <button
                           className="btn btn-ghost btn-xs text-error"
                           onClick={() => {
@@ -1232,24 +1413,18 @@ const VentesList = () => {
                             setRejectReason('')
                             setShowRejectModal(true)
                           }}
-                        >
-                          <XCircle className="w-3 h-3" />
-                        </button>
+                        ><XCircle className="w-3 h-3" /></button>
                       </>
                     )}
                     <button
                       className="btn btn-ghost btn-xs"
                       onClick={() => navigate(`/ventes/${vente.id}`)}
-                    >
-                      <Eye className="w-3 h-3" />
-                    </button>
+                    ><Eye className="w-3 h-3" /></button>
                     {canDelete(vente) && (
                       <button
                         className="btn btn-ghost btn-xs text-error"
                         onClick={() => { setVenteToDelete(vente); setShowDeleteModal(true) }}
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
+                      ><Trash2 className="w-3 h-3" /></button>
                     )}
                   </div>
                 </div>
@@ -1258,34 +1433,35 @@ const VentesList = () => {
           </div>
         )}
 
-        {/* Pagination */}
-        {filteredAndSortedVentes.length > 0 && (
+        {/* ✅ Pagination serveur */}
+        {totalCount > 0 && (
           <div className="p-4 border-t border-base-300">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="text-sm text-base-content/60">
                 Affichage de {((currentPage - 1) * itemsPerPage) + 1} à{' '}
-                {Math.min(currentPage * itemsPerPage, filteredAndSortedVentes.length)} sur{' '}
-                {filteredAndSortedVentes.length} ventes
+                {Math.min(currentPage * itemsPerPage, totalCount)} sur{' '}
+                {totalCount.toLocaleString('fr-FR')} ventes
               </div>
               <div className="flex items-center gap-2">
                 <select
                   className="select select-bordered select-sm"
                   value={itemsPerPage}
-                  onChange={(e) => { setItemsPerPage(parseInt(e.target.value)); setCurrentPage(1) }}
+                  onChange={(e) => {
+                    setItemsPerPage(parseInt(e.target.value))
+                    setCurrentPage(1)
+                  }}
                 >
+                  <option value="6">6 par page</option>
                   <option value="12">12 par page</option>
                   <option value="24">24 par page</option>
                   <option value="48">48 par page</option>
-                  <option value="96">96 par page</option>
                 </select>
                 <div className="join">
                   <button
                     className="join-item btn btn-sm"
                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                    disabled={currentPage === 1}
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
+                    disabled={currentPage === 1 || loading}
+                  ><ChevronLeft className="w-4 h-4" /></button>
                   {[...Array(Math.min(5, totalPages))].map((_, i) => {
                     let pageNum
                     if (totalPages <= 5) pageNum = i + 1
@@ -1297,18 +1473,15 @@ const VentesList = () => {
                         key={i}
                         className={`join-item btn btn-sm ${currentPage === pageNum ? 'btn-primary' : ''}`}
                         onClick={() => setCurrentPage(pageNum)}
-                      >
-                        {pageNum}
-                      </button>
+                        disabled={loading}
+                      >{pageNum}</button>
                     )
                   })}
                   <button
                     className="join-item btn btn-sm"
                     onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                    disabled={currentPage === totalPages}
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
+                    disabled={currentPage === totalPages || loading}
+                  ><ChevronRight className="w-4 h-4" /></button>
                 </div>
               </div>
             </div>

@@ -1,79 +1,174 @@
 // src/components/pos/PointDeVente.jsx
 import React, {
-  useState, useEffect, useRef, useMemo, useCallback
+  useState, useEffect, useRef, useMemo, useCallback,
 } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
 import {
   Plus, Minus, Trash2, Search, RefreshCw, Filter, ShoppingCart, X,
   AlertCircle, CheckCircle, ChevronLeft, ChevronRight, ArrowUpDown,
-  LayoutGrid, List, Tag, Package, AlertTriangle, DollarSign,
-  Warehouse, User, Users, Phone, Mail, Barcode, Receipt, Loader,
-  Building2, MapPin, Star
+  LayoutGrid, List, Tag, Package, AlertTriangle, Warehouse, User,
+  Users, Phone, Mail, Barcode, Receipt, Loader, Building2, MapPin,
+  Star, ArrowDown,
 } from 'lucide-react'
 
+// ============================================================
+// CONSTANTES
+// ============================================================
+const DEBOUNCE_MS = 300
+const CACHE_TTL_MS = 3 * 60 * 1000
+const PAGE_SIZE = 50
+const SCROLL_THRESHOLD = 200  // px avant le bas pour déclencher load more
+
+const unwrap = (payload) =>
+  Array.isArray(payload) ? payload : (payload?.results || [])
+
+const safeNumber = (val, fallback = 0) => {
+  if (val === null || val === undefined || val === '') return fallback
+  const n = typeof val === 'number' ? val : parseFloat(val)
+  return Number.isFinite(n) ? n : fallback
+}
+
+const safeInt = (val, fallback = 0) => {
+  if (val === null || val === undefined || val === '') return fallback
+  const n = typeof val === 'number' ? val : parseInt(val, 10)
+  return Number.isFinite(n) ? n : fallback
+}
+
+// ============================================================
+// COMPOSANT
+// ============================================================
 const PointDeVente = () => {
   const navigate = useNavigate()
   const searchInputRef = useRef(null)
+  const scrollContainerRef = useRef(null)
+  const notifTimerRef = useRef(null)
+  const abortRef = useRef(null)
+  const cacheRef = useRef(new Map())
 
-  // ============================================================
-  // ÉTATS
-  // ============================================================
+  // ---------- États ----------
   const [loadingUser, setLoadingUser] = useState(true)
   const [loadingProducts, setLoadingProducts] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [initialProductsLoad, setInitialProductsLoad] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState(null)
 
+  // ---------- Données ----------
   const [products, setProducts] = useState([])
+  const [totalProducts, setTotalProducts] = useState(0)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [hasNextPage, setHasNextPage] = useState(true)
+
   const [clients, setClients] = useState([])
   const [selectedClient, setSelectedClient] = useState(null)
   const [showClientModal, setShowClientModal] = useState(false)
+  const [clientSearch, setClientSearch] = useState('')
+  const [debouncedClientSearch, setDebouncedClientSearch] = useState('')
+
   const [notification, setNotification] = useState({
-    show: false, message: '', type: 'success', details: null
+    show: false, message: '', type: 'success', details: null,
   })
 
+  // ---------- Contexte ----------
   const [agence, setAgence] = useState(null)
   const [entrepot, setEntrepot] = useState(null)
   const [currentUser, setCurrentUser] = useState(null)
-  const [notes, setNotes] = useState('')
-
   const [agences, setAgences] = useState([])
   const [selectedAgenceFilter, setSelectedAgenceFilter] = useState(null)
   const [warehouses, setWarehouses] = useState([])
   const [loadingWarehouses, setLoadingWarehouses] = useState(false)
+  const [categories, setCategories] = useState([])
+  const [notes, setNotes] = useState('')
 
-  // Lots
+  // ---------- Filtres ----------
+  const [searchTerm, setSearchTerm] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState('all')
+  const [showOnlyAvailable, setShowOnlyAvailable] = useState(true)
+  const [sortField, setSortField] = useState('name')
+  const [sortDirection, setSortDirection] = useState('asc')
+  const [viewMode, setViewMode] = useState('grid')
+
+  // ---------- Lots par produit (cache) ----------
   const [lotsByProduct, setLotsByProduct] = useState({})
   const [loadingLots, setLoadingLots] = useState({})
 
-  // Panier
-  const [items, setItems] = useState([])
+  // ---------- Panier ----------
+  const [items, setItems] = useState(() => {
+    // ✅ Récupérer panier depuis localStorage (persistance)
+    try {
+      const saved = localStorage.getItem('pos_cart')
+      return saved ? JSON.parse(saved) : []
+    } catch {
+      return []
+    }
+  })
   const [totals, setTotals] = useState({ subtotal: 0, tax_amount: 0, total: 0 })
 
-  // Filtres
-  const [searchTerm, setSearchTerm] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState('all')
-  const [categories, setCategories] = useState([])
-  const [showOnlyAvailable, setShowOnlyAvailable] = useState(true)
+  // ============================================================
+  // CACHE avec TTL
+  // ============================================================
+  const cacheGet = useCallback((key) => {
+    const entry = cacheRef.current.get(key)
+    if (!entry) return null
+    if (entry.expiresAt && Date.now() > entry.expiresAt) {
+      cacheRef.current.delete(key)
+      return null
+    }
+    return entry.value
+  }, [])
 
-  // Vue
-  const [viewMode, setViewMode] = useState('grid')
-  const [currentPage, setCurrentPage] = useState(1)
-  const [itemsPerPage, setItemsPerPage] = useState(12)
-  const [sortField, setSortField] = useState('name')
-  const [sortDirection, setSortDirection] = useState('asc')
-
-  // Refs cache
-  const cacheRef = useRef(new Map())
-  const fetchingUserRef = useRef(false)
-  const fetchingProductsRef = useRef(false)
-  const fetchingClientsRef = useRef(false)
+  const cacheSet = useCallback((key, value) => {
+    cacheRef.current.set(key, {
+      value,
+      expiresAt: Date.now() + CACHE_TTL_MS,
+    })
+  }, [])
 
   // ============================================================
-  // HELPERS
+  // NOTIFICATION
   // ============================================================
-  const unwrap = (data) => Array.isArray(data) ? data : (data?.results || [])
+  const showNotification = useCallback((message, type = 'success', details = null) => {
+    setNotification({ show: true, message, type, details })
+    if (notifTimerRef.current) clearTimeout(notifTimerRef.current)
+    notifTimerRef.current = setTimeout(() => {
+      setNotification({ show: false, message: '', type: 'success', details: null })
+    }, 5000)
+  }, [])
 
+  useEffect(() => {
+    return () => {
+      if (notifTimerRef.current) clearTimeout(notifTimerRef.current)
+      if (abortRef.current) abortRef.current.abort()
+    }
+  }, [])
+
+  // ============================================================
+  // PANIER : persistance localStorage
+  // ============================================================
+  useEffect(() => {
+    try {
+      localStorage.setItem('pos_cart', JSON.stringify(items))
+    } catch { /* ignore */ }
+  }, [items])
+
+  // ============================================================
+  // DEBOUNCE RECHERCHE PRODUITS + CLIENTS
+  // ============================================================
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchTerm), DEBOUNCE_MS)
+    return () => clearTimeout(t)
+  }, [searchTerm])
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedClientSearch(clientSearch), DEBOUNCE_MS)
+    return () => clearTimeout(t)
+  }, [clientSearch])
+
+  // ============================================================
+  // HELPERS IMAGE / PRIX
+  // ============================================================
   const getImageUrl = (product) => {
     if (!product) return null
     const img = product.main_image || product.image_url || product.image
@@ -81,18 +176,6 @@ const PointDeVente = () => {
     if (typeof img === 'string') return img
     if (typeof img === 'object' && img.url) return img.url
     return null
-  }
-
-  const safeNumber = (val, fallback = 0) => {
-    if (val === null || val === undefined || val === '') return fallback
-    const n = typeof val === 'number' ? val : parseFloat(val)
-    return Number.isFinite(n) ? n : fallback
-  }
-
-  const safeInt = (val, fallback = 0) => {
-    if (val === null || val === undefined || val === '') return fallback
-    const n = typeof val === 'number' ? val : parseInt(val, 10)
-    return Number.isFinite(n) ? n : fallback
   }
 
   const formatPrice = (price) => {
@@ -104,13 +187,6 @@ const PointDeVente = () => {
     }
   }
 
-  const showNotification = (message, type = 'success', details = null) => {
-    setNotification({ show: true, message, type, details })
-    setTimeout(() => setNotification({
-      show: false, message: '', type: 'success', details: null
-    }), 5000)
-  }
-
   const isProductAvailable = (product) => {
     if (!product) return false
     const stock = safeNumber(product.stock_quantity, 0)
@@ -118,148 +194,332 @@ const PointDeVente = () => {
     return stock > 0 && price > 0
   }
 
-  const getStatusBadge = (product) => {
-    const stock = safeNumber(product?.stock_quantity, 0)
-    const minLevel = safeNumber(product?.min_stock_level, 0)
-    const price = safeNumber(product?.sale_price, 0)
-    const hasPrice = product?.has_price !== false && price > 0
-
-    if (!hasPrice) {
-      return (
-        <div className="badge badge-error gap-1 font-semibold">
-          <AlertTriangle className="w-3 h-3" /> Prix manquant
-        </div>
-      )
-    }
-    if (stock <= 0) {
-      return (
-        <div className="badge badge-error gap-1 font-semibold">
-          <AlertTriangle className="w-3 h-3" /> Rupture
-        </div>
-      )
-    }
-    if (minLevel > 0 && stock <= minLevel) {
-      return (
-        <div className="badge badge-warning gap-1 font-semibold">
-          <AlertCircle className="w-3 h-3" /> Stock faible
-        </div>
-      )
-    }
-    return (
-      <div className="badge badge-success gap-1 font-semibold">
-        <CheckCircle className="w-3 h-3" /> En stock
-      </div>
-    )
-  }
-
   // ============================================================
-  // CHARGEMENT ENTREPÔTS
+  // 1. CHARGER USER + AGENCE + ENTREPÔT + CATÉGORIES
   // ============================================================
-  const fetchWarehouses = async (agenceId = null) => {
+  const fetchWarehouses = useCallback(async (agenceId) => {
     setLoadingWarehouses(true)
     try {
-      const targetAgenceId = agenceId || agence?.id
-      const cacheKey = `warehouses_${targetAgenceId || 'all'}`
-
-      let warehousesList
-      if (cacheRef.current.has(cacheKey)) {
-        warehousesList = cacheRef.current.get(cacheKey)
-      } else {
-        const params = new URLSearchParams()
-        if (targetAgenceId) params.append('agence', targetAgenceId)
-        params.append('is_active', 'true')
-        params.append('page_size', '100')
-        const response = await AxiosInstance.get(`/warehouses/?${params.toString()}`)
-        warehousesList = unwrap(response.data)
-        cacheRef.current.set(cacheKey, warehousesList)
+      const cacheKey = `warehouses_${agenceId}`
+      let list = cacheGet(cacheKey)
+      if (!list) {
+        const res = await AxiosInstance.get(
+          `/warehouses/?agence=${agenceId}&is_active=true&page_size=100`
+        )
+        list = unwrap(res.data)
+        cacheSet(cacheKey, list)
       }
-
-      setWarehouses(warehousesList)
-      return warehousesList
-    } catch (error) {
-      console.error('Erreur chargement entrepôts:', error)
+      setWarehouses(list)
+      return list
+    } catch (err) {
+      console.error('Erreur entrepôts:', err)
       setWarehouses([])
       return []
     } finally {
       setLoadingWarehouses(false)
     }
-  }
+  }, [cacheGet, cacheSet])
 
-  // ============================================================
-  // CHARGEMENT INITIAL USER + AGENCES + CATÉGORIES
-  // ============================================================
+  const loadUserAndAgence = useCallback(async () => {
+    if (abortRef.current) abortRef.current.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    setLoadingUser(true)
+    setError(null)
+
+    try {
+      // 1) User
+      let userData = cacheGet('user_me')
+      if (!userData) {
+        const res = await AxiosInstance.get('/users/me/', {
+          signal: controller.signal,
+        })
+        if (controller.signal.aborted) return
+        userData = res.data || {}
+        cacheSet('user_me', userData)
+      }
+      setCurrentUser(userData)
+
+      // 2) Agences
+      const agencesUser = unwrap(userData.agences || [])
+      let agenceUtilisateur = agencesUser[0]
+      let allAgences = agencesUser
+
+      if (allAgences.length === 0) {
+        let agencesList = cacheGet('agences_list')
+        if (!agencesList) {
+          const res = await AxiosInstance.get(
+            '/agences/?page_size=200',
+            { signal: controller.signal }
+          )
+          if (controller.signal.aborted) return
+          agencesList = unwrap(res.data)
+          cacheSet('agences_list', agencesList)
+        }
+        allAgences = agencesList
+        if (allAgences.length > 0) agenceUtilisateur = allAgences[0]
+      }
+      setAgences(allAgences)
+
+      // 3) Entrepôt
+      if (agenceUtilisateur) {
+        setAgence(agenceUtilisateur)
+        setSelectedAgenceFilter(agenceUtilisateur.id)
+        const list = await fetchWarehouses(agenceUtilisateur.id)
+        if (list.length > 0) {
+          const def = list.find(w => w.is_default) || list[0]
+          setEntrepot(def)
+        }
+      }
+
+      // 4) Catégories
+      let cats = cacheGet('categories')
+      if (!cats) {
+        try {
+          const catRes = await AxiosInstance.get('/categories/?page_size=200')
+          cats = unwrap(catRes.data)
+          cacheSet('categories', cats)
+        } catch (err) {
+          console.warn('Catégories non chargées:', err)
+          cats = []
+        }
+      }
+      setCategories(cats)
+    } catch (err) {
+      if (err.name === 'CanceledError') return
+      if (err.response?.status === 401) {
+        setError('Session expirée')
+        setTimeout(() => navigate('/login'), 2000)
+      } else {
+        setError('Erreur de chargement du profil')
+      }
+      showNotification('Erreur de chargement du profil', 'error')
+    } finally {
+      setLoadingUser(false)
+    }
+  }, [cacheGet, cacheSet, fetchWarehouses, navigate, showNotification])
+
   useEffect(() => {
-    if (fetchingUserRef.current) return
-    fetchingUserRef.current = true
+    loadUserAndAgence()
+  }, [loadUserAndAgence])
 
-    const fetchCurrentUser = async () => {
-      try {
-        let userData
-        if (cacheRef.current.has('user_me')) {
-          userData = cacheRef.current.get('user_me')
-        } else {
-          const response = await AxiosInstance.get('/users/me/')
-          userData = response.data || {}
-          cacheRef.current.set('user_me', userData)
-        }
-        setCurrentUser(userData)
+  // ============================================================
+  // 2. ✅ CHARGER PRODUITS — search-first + pagination serveur
+  // ============================================================
+  // Paramètres de la requête produits (memoïsé)
+  const productParams = useMemo(() => {
+    const params = {
+      is_active: true,
+      page_size: PAGE_SIZE,
+      ordering: `${sortDirection === 'desc' ? '-' : ''}${sortField}`,
+    }
+    if (entrepot?.id) params.warehouse_id = entrepot.id
+    if (debouncedSearch) params.search = debouncedSearch
+    if (selectedCategory !== 'all') params.category = selectedCategory
+    if (showOnlyAvailable) params.has_stock = 'true'
+    return params
+  }, [entrepot, debouncedSearch, selectedCategory, showOnlyAvailable,
+      sortField, sortDirection])
 
-        const agencesUser = unwrap(userData.agences || [])
-        let agenceUtilisateur = agencesUser[0]
+  const buildProductCacheKey = useCallback((page) => JSON.stringify({
+    ...productParams,
+    page,
+  }), [productParams])
 
-        if (agencesUser.length > 0) {
-          setAgences(agencesUser)
-        } else {
-          // Fallback : charger toutes les agences
-          let agencesList
-          if (cacheRef.current.has('agences_list')) {
-            agencesList = cacheRef.current.get('agences_list')
-          } else {
-            const res = await AxiosInstance.get('/agences/?page_size=200')
-            agencesList = unwrap(res.data)
-            cacheRef.current.set('agences_list', agencesList)
-          }
-          setAgences(agencesList)
-          if (agencesList.length > 0) agenceUtilisateur = agencesList[0]
-        }
+  // Charger une page
+  const loadProducts = useCallback(async (page = 1, { append = false } = {}) => {
+    if (!entrepot?.id) return
 
-        if (agenceUtilisateur) {
-          setAgence(agenceUtilisateur)
-          setSelectedAgenceFilter(agenceUtilisateur.id)
-          const list = await fetchWarehouses(agenceUtilisateur.id)
-          if (list.length > 0) {
-            const def = list.find(w => w.is_default) || list[0]
-            setEntrepot(def)
-          }
-        }
+    if (!append) setLoadingProducts(true)
+    else setLoadingMore(true)
 
-        // Catégories (cache)
-        if (cacheRef.current.has('categories')) {
-          setCategories(cacheRef.current.get('categories'))
-        } else {
-          try {
-            const catRes = await AxiosInstance.get('/categories/?page_size=200')
-            const cats = unwrap(catRes.data)
-            cacheRef.current.set('categories', cats)
-            setCategories(cats)
-          } catch (e) {
-            console.warn('Catégories non chargées:', e)
-          }
-        }
-      } catch (error) {
-        console.error('Erreur users/me:', error)
-        showNotification('Erreur de chargement du profil', 'error')
-      } finally {
-        setLoadingUser(false)
+    const cacheKey = buildProductCacheKey(page)
+
+    // Cache hit
+    if (!append) {
+      const cached = cacheGet(cacheKey)
+      if (cached) {
+        setProducts(cached.results)
+        setTotalProducts(cached.count)
+        setCurrentPage(page)
+        setHasNextPage(!!cached.next)
+        setLoadingProducts(false)
+        setInitialProductsLoad(false)
+        return
       }
     }
 
-    fetchCurrentUser()
+    if (abortRef.current) abortRef.current.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    try {
+      const res = await AxiosInstance.get('/products/', {
+        params: { ...productParams, page },
+        signal: controller.signal,
+      })
+      if (controller.signal.aborted) return
+
+      const payload = res.data
+      let results = unwrap(payload)
+      const count = payload.count ?? results.length
+
+      // ✅ Enrichir avec pricing + stock (2 requêtes en parallèle)
+      if (entrepot?.id && results.length > 0) {
+        const productIds = results.map(p => p.id)
+        const [pricingMap, stockMap] = await Promise.all([
+          loadPricingMap(entrepot.id, productIds, controller.signal),
+          loadStockMap(entrepot.id, productIds, controller.signal),
+        ])
+        if (controller.signal.aborted) return
+
+        results = results.map(product => {
+          const price = pricingMap[product.id]
+          const stock = stockMap[`${product.id}_null`] || { quantity: 0, minimum: 0 }
+          const salePrice = safeNumber(
+            price?.sale_price ?? product.sale_price ?? product.price, 0
+          )
+          const wholesalePrice = price?.wholesale_price != null
+            ? safeNumber(price.wholesale_price) : null
+          return {
+            ...product,
+            image_url: getImageUrl(product),
+            sale_price: salePrice,
+            wholesale_price: wholesalePrice,
+            has_wholesale: !!wholesalePrice && wholesalePrice > 0,
+            has_price: salePrice > 0,
+            stock_quantity: stock.quantity,
+            min_stock_level: stock.minimum,
+          }
+        })
+      }
+
+      // Cache seulement si première page
+      if (!append) {
+        cacheSet(cacheKey, {
+          results,
+          count,
+          next: payload.next,
+        })
+      }
+
+      if (append) {
+        // ✅ Concat sans doublons (sécurité)
+        setProducts(prev => {
+          const existingIds = new Set(prev.map(p => p.id))
+          const fresh = results.filter(p => !existingIds.has(p.id))
+          return [...prev, ...fresh]
+        })
+      } else {
+        setProducts(results)
+      }
+      setTotalProducts(count)
+      setCurrentPage(page)
+      setHasNextPage(!!payload.next)
+    } catch (err) {
+      if (err.name === 'CanceledError') return
+      console.error('Erreur produits:', err)
+      showNotification('Erreur de chargement des produits', 'error')
+    } finally {
+      setLoadingProducts(false)
+      setLoadingMore(false)
+      setInitialProductsLoad(false)
+    }
+  }, [entrepot, productParams, buildProductCacheKey, cacheGet, cacheSet, showNotification])
+
+  // Charger pricing + stock en parallèle (filtré sur les IDs de la page)
+  const loadPricingMap = async (warehouseId, productIds, signal) => {
+    try {
+      const res = await AxiosInstance.get('/product-prices/', {
+        params: {
+          warehouse_id: warehouseId,
+          is_current: true,
+          product_id__in: productIds.join(','),
+          page_size: 500,
+        },
+        signal,
+      })
+      const pricings = unwrap(res.data)
+      return pricings.reduce((acc, p) => {
+        acc[p.product] = p
+        return acc
+      }, {})
+    } catch (err) {
+      console.warn('Pricing non chargé:', err)
+      return {}
+    }
+  }
+
+  const loadStockMap = async (warehouseId, productIds, signal) => {
+    try {
+      const res = await AxiosInstance.get('/warehouse-stocks/by_warehouse/', {
+        params: {
+          warehouse_id: warehouseId,
+          product_id__in: productIds.join(','),
+          page_size: 500,
+        },
+        signal,
+      })
+      const stocks = unwrap(res.data)
+      return stocks.reduce((acc, s) => {
+        acc[`${s.product}_${s.variant || 'null'}`] = {
+          quantity: safeNumber(s.quantity, 0),
+          minimum: safeNumber(s.minimum_stock, 0),
+        }
+        return acc
+      }, {})
+    } catch (err) {
+      console.warn('Stocks non chargés:', err)
+      return {}
+    }
+  }
+
+  // ✅ Trigger load quand filtres changent (reset page 1)
+  useEffect(() => {
+    if (!entrepot?.id) return
+    setCurrentPage(1)
+    setHasNextPage(true)
+    loadProducts(1, { append: false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [entrepot, debouncedSearch, selectedCategory, showOnlyAvailable,
+      sortField, sortDirection])
+
+  // ✅ Infinite scroll : détecter scroll bas
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+    if (!hasNextPage || loadingMore || loadingProducts) return
+    const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    if (distanceToBottom < SCROLL_THRESHOLD) {
+      loadProducts(currentPage + 1, { append: true })
+    }
+  }, [hasNextPage, loadingMore, loadingProducts, currentPage, loadProducts])
 
   // ============================================================
-  // CHANGEMENT D'AGENCE
+  // 3. CLIENTS
+  // ============================================================
+  useEffect(() => {
+    const loadClients = async () => {
+      try {
+        let data = cacheGet('clients_active')
+        if (!data) {
+          const res = await AxiosInstance.get(
+            '/clients/?is_active=true&page_size=500'
+          )
+          data = unwrap(res.data)
+          cacheSet('clients_active', data)
+        }
+        setClients(data)
+      } catch (err) {
+        console.error('Erreur clients:', err)
+      }
+    }
+    loadClients()
+  }, [cacheGet, cacheSet])
+
+  // ============================================================
+  // 4. CHANGEMENT AGENCE / ENTREPÔT
   // ============================================================
   const handleAgenceChange = async (agenceId) => {
     const newAgence = agences.find(a => a.id === parseInt(agenceId))
@@ -276,9 +536,6 @@ const PointDeVente = () => {
     showNotification(`Agence changée : ${newAgence.nom}`, 'success')
   }
 
-  // ============================================================
-  // CHANGEMENT D'ENTREPÔT
-  // ============================================================
   const handleEntrepotChange = (warehouseId) => {
     const newEntrepot = warehouses.find(w => w.id === parseInt(warehouseId))
     if (!newEntrepot) return
@@ -288,169 +545,34 @@ const PointDeVente = () => {
   }
 
   // ============================================================
-  // CHARGEMENT PRODUITS + PRICING + STOCKS EN 3 REQUÊTES (au lieu de 2N)
+  // 5. LOTS PAR PRODUIT (à la demande)
   // ============================================================
-  useEffect(() => {
-    if (!entrepot?.id) return
-
-    const loadProducts = async () => {
-      const cacheKey = `pos_products_${entrepot.id}`
-
-      // Cache → skip
-      if (cacheRef.current.has(cacheKey)) {
-        setProducts(cacheRef.current.get(cacheKey))
-        setLoadingProducts(false)
-        setInitialProductsLoad(false)
-        return
-      }
-
-      if (fetchingProductsRef.current) return
-      fetchingProductsRef.current = true
-      setLoadingProducts(true)
-
-      try {
-        // 1) Produits
-        const productsRes = await AxiosInstance.get('/products/?is_active=true&page_size=500')
-        const allProducts = unwrap(productsRes.data)
-
-        // 2) Tous les prix de CET entrepôt (1 requête)
-        let pricingMap = {}
-        try {
-          const pricingRes = await AxiosInstance.get(
-            `/product-prices/?warehouse_id=${entrepot.id}&is_current=true&page_size=500`
-          )
-          const pricings = unwrap(pricingRes.data)
-          pricingMap = pricings.reduce((acc, p) => {
-            acc[p.product] = p
-            return acc
-          }, {})
-        } catch (err) {
-          console.warn('Pricing non chargé:', err)
-        }
-
-        // 3) Stocks de CET entrepôt (1 requête)
-        let stockMap = {}
-        try {
-          const stockRes = await AxiosInstance.get(
-            `/warehouse-stocks/by_warehouse/?warehouse_id=${entrepot.id}&page_size=500`
-          )
-          const stocks = unwrap(stockRes.data)
-          stockMap = stocks.reduce((acc, s) => {
-            const key = `${s.product}_${s.variant || 'null'}`
-            acc[key] = {
-              quantity: safeNumber(s.quantity, 0),
-              minimum: safeNumber(s.minimum_stock, 0),
-            }
-            return acc
-          }, {})
-        } catch (err) {
-          console.warn('Stocks non chargés:', err)
-        }
-
-        // Assemblage
-        const enriched = allProducts.map(product => {
-          const pid = product.id
-          const pricing = pricingMap[pid]
-          const stock = stockMap[`${pid}_null`] || { quantity: 0, minimum: 0 }
-
-          const salePrice = safeNumber(
-            pricing?.sale_price ?? product.sale_price ?? product.price,
-            0
-          )
-          const wholesalePrice = pricing?.wholesale_price != null
-            ? safeNumber(pricing.wholesale_price)
-            : null
-          const hasWholesale = !!wholesalePrice && wholesalePrice > 0
-          const hasPrice = salePrice > 0
-
-          return {
-            ...product,
-            image_url: getImageUrl(product),
-            sale_price: salePrice,
-            wholesale_price: wholesalePrice,
-            has_wholesale: hasWholesale,
-            has_price: hasPrice,
-            stock_quantity: stock.quantity,
-            min_stock_level: stock.minimum,
-          }
-        })
-
-        cacheRef.current.set(cacheKey, enriched)
-        if (cacheRef.current.size > 10) {
-          const firstKey = cacheRef.current.keys().next().value
-          cacheRef.current.delete(firstKey)
-        }
-
-        setProducts(enriched)
-      } catch (error) {
-        console.error('Erreur produits:', error)
-        showNotification('Erreur de chargement des produits', 'error')
-      } finally {
-        setLoadingProducts(false)
-        setInitialProductsLoad(false)
-        fetchingProductsRef.current = false
-      }
-    }
-
-    loadProducts()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entrepot])
-
-  // ============================================================
-  // CHARGEMENT CLIENTS (1 seule fois + cache)
-  // ============================================================
-  useEffect(() => {
-    if (fetchingClientsRef.current) return
-    fetchingClientsRef.current = true
-
-    const fetchClients = async () => {
-      try {
-        let data
-        if (cacheRef.current.has('clients_active')) {
-          data = cacheRef.current.get('clients_active')
-        } else {
-          const response = await AxiosInstance.get('/clients/?is_active=true&page_size=500')
-          data = unwrap(response.data)
-          cacheRef.current.set('clients_active', data)
-        }
-        setClients(data)
-      } catch (error) {
-        console.error('Erreur clients:', error)
-      } finally {
-        fetchingClientsRef.current = false
-      }
-    }
-    fetchClients()
-  }, [])
-
-  // ============================================================
-  // LOTS PAR PRODUIT (à la demande + cache)
-  // ============================================================
-  const fetchLotsForProduct = async (productId) => {
+  const fetchLotsForProduct = useCallback(async (productId) => {
     const pid = safeInt(productId)
     if (!pid || !entrepot?.id) return
     if (lotsByProduct[pid] !== undefined) return
 
     setLoadingLots(prev => ({ ...prev, [pid]: true }))
     try {
-      const response = await AxiosInstance.get(`/lots/by-product/${pid}/?page_size=100`)
-      const lots = unwrap(response.data)
+      const res = await AxiosInstance.get(
+        `/lots/by-product/${pid}/?page_size=100`
+      )
+      const lots = unwrap(res.data)
       const available = lots.filter(lot =>
         safeInt(lot.warehouse) === safeInt(entrepot.id)
         && lot.quality_status === 'good'
         && safeNumber(lot.quantity, 0) > 0
       )
       setLotsByProduct(prev => ({ ...prev, [pid]: available }))
-    } catch (error) {
-      console.warn('Lots non chargés pour produit', pid, error)
+    } catch {
       setLotsByProduct(prev => ({ ...prev, [pid]: [] }))
     } finally {
       setLoadingLots(prev => ({ ...prev, [pid]: false }))
     }
-  }
+  }, [entrepot, lotsByProduct])
 
   // ============================================================
-  // PANIER
+  // 6. PANIER
   // ============================================================
   const isProductAlreadyAdded = (productId) => {
     const pid = safeInt(productId)
@@ -458,24 +580,16 @@ const PointDeVente = () => {
   }
 
   const handleAddItem = (product) => {
-    if (!product) {
-      showNotification('Produit invalide', 'error')
-      return
-    }
+    if (!product) return
     if (!isProductAvailable(product)) {
       const stock = safeNumber(product.stock_quantity, 0)
       const price = safeNumber(product.sale_price, 0)
-      if (stock <= 0) showNotification(`"${product.name}" est en rupture de stock`, 'warning')
-      else if (price <= 0) showNotification(`"${product.name}" n'a pas de prix défini`, 'warning')
+      if (stock <= 0) showNotification(`"${product.name}" en rupture`, 'warning')
+      else if (price <= 0) showNotification(`"${product.name}" sans prix`, 'warning')
       return
     }
 
     const pid = safeInt(product.id)
-    if (!pid) {
-      showNotification('ID produit invalide', 'error')
-      return
-    }
-
     if (isProductAlreadyAdded(pid)) {
       const existing = items.find(i => safeInt(i.product_id) === pid)
       if (existing) handleQuantityChange(existing.id, existing.quantity + 1)
@@ -547,16 +661,13 @@ const PointDeVente = () => {
     const maxQty = safeNumber(item.stock_max, 999)
     const safeQty = Math.max(1, Math.min(safeInt(newQuantity, 1), maxQty))
     if (safeQty !== newQuantity) {
-      showNotification(
-        `Stock maximum pour ${item.product_name} : ${maxQty}`,
-        'warning'
-      )
+      showNotification(`Stock max pour ${item.product_name} : ${maxQty}`, 'warning')
     }
     handleItemChange(itemId, 'quantity', safeQty)
   }
 
   // ============================================================
-  // TOTAUX
+  // 7. TOTAUX
   // ============================================================
   useEffect(() => {
     const subtotal = items.reduce(
@@ -566,28 +677,34 @@ const PointDeVente = () => {
   }, [items])
 
   // ============================================================
-  // SUBMIT
+  // 8. SUBMIT
   // ============================================================
   const handleSubmit = async () => {
     if (items.length === 0) {
-      showNotification('Ajoutez au moins un produit à la vente', 'error')
+      showNotification('Ajoutez au moins un produit', 'error')
       return
     }
-    if (!agence?.id) {
-      showNotification('Agence non trouvée', 'error')
-      return
-    }
-    if (!entrepot?.id) {
-      showNotification('Veuillez sélectionner un entrepôt', 'error')
+    if (!agence?.id || !entrepot?.id) {
+      showNotification('Agence ou entrepôt manquant', 'error')
       return
     }
 
+    // ✅ Validation stock cumulée
+    const stockCheck = {}
+    items.forEach(i => {
+      if (!stockCheck[i.product_id]) {
+        stockCheck[i.product_id] = {
+          name: i.product_name,
+          needed: 0,
+          available: i.stock_max || 0,
+        }
+      }
+      stockCheck[i.product_id].needed += i.quantity
+    })
     const stockErrors = []
-    items.forEach(item => {
-      if (safeNumber(item.quantity, 0) > safeNumber(item.stock_max, 0)) {
-        stockErrors.push(
-          `${item.product_name} : ${item.stock_max} dispo, ${item.quantity} demandé`
-        )
+    Object.values(stockCheck).forEach(s => {
+      if (s.needed > s.available) {
+        stockErrors.push(`${s.name} : ${s.available} dispo, ${s.needed} demandé`)
       }
     })
     if (stockErrors.length > 0) {
@@ -596,12 +713,11 @@ const PointDeVente = () => {
     }
 
     setSubmitting(true)
-
     const payload = {
       type_vente: 'comptoir',
       agence: safeInt(agence.id),
       client_id: selectedClient?.id ? safeInt(selectedClient.id) : null,
-      notes: notes || `Vente POS du ${new Date().toLocaleString()}`,
+      notes: notes || `Vente POS du ${new Date().toLocaleString('fr-FR')}`,
       items: items.map(item => ({
         product: safeInt(item.product_id),
         quantity: safeInt(item.quantity, 1),
@@ -615,86 +731,88 @@ const PointDeVente = () => {
     try {
       await AxiosInstance.post('/ventes/', payload)
       cacheRef.current.clear()
+      localStorage.removeItem('pos_cart')
       showNotification('Vente créée avec succès !', 'success')
       setItems([])
       setSelectedClient(null)
       setNotes('')
       setTimeout(() => navigate('/ventes'), 1500)
-    } catch (error) {
-      console.error(error)
-      let errorMessage = 'Erreur lors de la création'
-      const data = error.response?.data
-      if (data?.error) errorMessage = data.error
-      else if (data?.detail) errorMessage = data.detail
-      else if (Array.isArray(data?.non_field_errors))
-        errorMessage = data.non_field_errors.join(', ')
-      else if (data?.items) errorMessage = 'Erreur articles : ' + JSON.stringify(data.items)
-      showNotification(errorMessage, 'error', data)
+    } catch (err) {
+      console.error(err)
+      let msg = 'Erreur lors de la création'
+      const d = err.response?.data
+      if (typeof d === 'string') msg = d
+      else if (d?.error) msg = d.error
+      else if (d?.detail) msg = d.detail
+      else if (Array.isArray(d?.non_field_errors))
+        msg = d.non_field_errors.join(', ')
+      else if (d?.items) msg = 'Erreur articles : ' + JSON.stringify(d.items)
+      showNotification(msg, 'error', d)
     } finally {
       setSubmitting(false)
     }
   }
 
   // ============================================================
-  // FILTRAGE / TRI / PAGINATION
+  // 9. FILTRAGE CLIENTS (recherche locale sur les 500 chargés)
   // ============================================================
-  const filteredProducts = useMemo(() => {
-    let filtered = Array.isArray(products) ? products : []
-    if (showOnlyAvailable) filtered = filtered.filter(p => isProductAvailable(p))
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase()
-      filtered = filtered.filter(p =>
-        (p.name || '').toLowerCase().includes(term)
-        || (p.reference || '').toLowerCase().includes(term)
-        || (p.barcode || '').toLowerCase().includes(term)
-        || (p.sku || '').toLowerCase().includes(term)
+  const filteredClients = useMemo(() => {
+    if (!debouncedClientSearch) return clients
+    const q = debouncedClientSearch.toLowerCase()
+    return clients.filter(c =>
+      (c.nom || '').toLowerCase().includes(q)
+      || (c.prenom || '').toLowerCase().includes(q)
+      || (c.telephone || '').toLowerCase().includes(q)
+      || (c.email || '').toLowerCase().includes(q)
+    )
+  }, [clients, debouncedClientSearch])
+
+  // ============================================================
+  // 10. BADGE PRODUIT
+  // ============================================================
+  const getStatusBadge = (product) => {
+    const stock = safeNumber(product?.stock_quantity, 0)
+    const minLevel = safeNumber(product?.min_stock_level, 0)
+    const price = safeNumber(product?.sale_price, 0)
+    const hasPrice = product?.has_price !== false && price > 0
+
+    if (!hasPrice) {
+      return (
+        <div className="badge badge-error gap-1 font-semibold">
+          <AlertTriangle className="w-3 h-3" /> Prix manquant
+        </div>
       )
     }
-    if (selectedCategory !== 'all') {
-      filtered = filtered.filter(p => safeInt(p.category) === safeInt(selectedCategory))
+    if (stock <= 0) {
+      return (
+        <div className="badge badge-error gap-1 font-semibold">
+          <AlertTriangle className="w-3 h-3" /> Rupture
+        </div>
+      )
     }
-    return filtered
-  }, [products, searchTerm, selectedCategory, showOnlyAvailable])
-
-  const sortedProducts = useMemo(() => {
-    const sorted = [...filteredProducts]
-    sorted.sort((a, b) => {
-      let aVal = a[sortField] ?? ''
-      let bVal = b[sortField] ?? ''
-      if (['stock_quantity', 'sale_price', 'wholesale_price'].includes(sortField)) {
-        aVal = safeNumber(aVal, 0)
-        bVal = safeNumber(bVal, 0)
-      } else if (typeof aVal === 'string') {
-        aVal = aVal.toLowerCase()
-        bVal = (bVal || '').toLowerCase()
-      }
-      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1
-      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1
-      return 0
-    })
-    return sorted
-  }, [filteredProducts, sortField, sortDirection])
-
-  const totalPages = Math.max(1, Math.ceil(sortedProducts.length / itemsPerPage))
-  const paginatedProducts = useMemo(() => sortedProducts.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  ), [sortedProducts, currentPage, itemsPerPage])
-
-  const unavailableCount = useMemo(
-    () => (products || []).filter(p => !isProductAvailable(p)).length,
-    [products]
-  )
+    if (minLevel > 0 && stock <= minLevel) {
+      return (
+        <div className="badge badge-warning gap-1 font-semibold">
+          <AlertCircle className="w-3 h-3" /> Stock faible
+        </div>
+      )
+    }
+    return (
+      <div className="badge badge-success gap-1 font-semibold">
+        <CheckCircle className="w-3 h-3" /> En stock
+      </div>
+    )
+  }
 
   // ============================================================
-  // COMPOSANT IMAGE
+  // 11. IMAGE FALLBACK
   // ============================================================
   const ProductImage = ({ src, alt, className }) => {
     const [errored, setErrored] = useState(false)
     if (!src || errored) {
       return (
         <div className={`${className} flex items-center justify-center bg-base-300`}>
-          <Package className="w-12 h-12 text-base-content/30" />
+          <Package className="w-8 h-8 text-base-content/30" />
         </div>
       )
     }
@@ -710,13 +828,13 @@ const PointDeVente = () => {
   }
 
   // ============================================================
-  // LOADING
+  // RENDU
   // ============================================================
-  if (loadingUser || (initialProductsLoad && loadingProducts)) {
+  if ((loadingUser || initialProductsLoad) && loadingProducts) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-200px)]">
         <div className="text-center space-y-6">
-          <div className="loading loading-spinner loading-lg text-primary w-16 h-16"></div>
+          <Loader className="w-16 h-16 text-primary animate-spin mx-auto" />
           <p className="text-xl font-semibold text-base-content/70 animate-pulse">
             Chargement du point de vente...
           </p>
@@ -725,14 +843,31 @@ const PointDeVente = () => {
     )
   }
 
+  if (error && !agence) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-200px)]">
+        <div className="text-center">
+          <AlertCircle className="w-16 h-16 text-error mx-auto mb-4" />
+          <h2 className="text-xl font-bold mb-2">Erreur</h2>
+          <p className="text-base-content/60 mb-4">{error}</p>
+          <button onClick={loadUserAndAgence} className="btn btn-primary gap-2">
+            <RefreshCw className="w-4 h-4" /> Réessayer
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="space-y-6 p-4 lg:p-6">
-      {/* Spinner overlay pendant refresh */}
-      {loadingProducts && !initialProductsLoad && (
+    <div className="space-y-4 p-4 lg:p-6">
+      {/* Spinner overlay */}
+      {(loadingProducts || loadingMore) && !initialProductsLoad && (
         <div className="fixed top-20 right-6 z-40">
           <div className="bg-base-100 shadow-lg rounded-full px-4 py-2 flex items-center gap-2 border border-base-300">
             <Loader className="w-3 h-3 animate-spin text-primary" />
-            <span className="text-xs text-base-content/60">Chargement...</span>
+            <span className="text-xs text-base-content/60">
+              {loadingMore ? 'Chargement...' : 'Actualisation...'}
+            </span>
           </div>
         </div>
       )}
@@ -765,17 +900,19 @@ const PointDeVente = () => {
           <h1 className="text-4xl font-black mb-2 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
             Point de Vente
           </h1>
-          <p className="text-base text-base-content/60">Vente rapide et intuitive</p>
+          <p className="text-base text-base-content/60">
+            {totalProducts.toLocaleString('fr-FR')} produits disponibles
+            {agence && ` • ${agence.nom}`}
+          </p>
         </div>
         <div className="flex flex-wrap gap-3">
           <button
-            onClick={() => {
-              cacheRef.current.clear()
-              window.location.reload()
-            }}
+            onClick={() => loadProducts(1, { append: false })}
             className="btn btn-outline gap-2"
+            disabled={loadingProducts}
           >
-            <RefreshCw className="w-4 h-4" /> Actualiser
+            <RefreshCw className={`w-4 h-4 ${loadingProducts ? 'animate-spin' : ''}`} />
+            Actualiser
           </button>
           <button
             onClick={() => navigate('/ventes')}
@@ -787,217 +924,158 @@ const PointDeVente = () => {
       </div>
 
       {/* Sélecteurs */}
-      <div className="bg-base-100 rounded-xl shadow-md border border-base-300 p-4 lg:p-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="bg-base-100 rounded-xl shadow-md border border-base-300 p-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {agences.length > 1 && (
-            <div className="flex items-center gap-3">
-              <Building2 className="w-5 h-5 text-primary flex-shrink-0" />
-              <div className="flex-1">
-                <label className="label py-0">
-                  <span className="label-text text-xs font-medium text-base-content/60">
-                    Agence
-                  </span>
-                </label>
-                <select
-                  className="select select-bordered w-full"
-                  value={selectedAgenceFilter || ''}
-                  onChange={(e) => handleAgenceChange(e.target.value)}
-                  disabled={submitting}
-                >
-                  <option value="">Sélectionner une agence</option>
-                  {agences.map(a => (
-                    <option key={a.id} value={a.id}>
-                      {a.nom} {a.type_agence ? `(${a.type_agence})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div>
+              <label className="label py-0">
+                <span className="label-text text-xs font-medium text-base-content/60">
+                  Agence
+                </span>
+              </label>
+              <select
+                className="select select-bordered w-full"
+                value={selectedAgenceFilter || ''}
+                onChange={(e) => handleAgenceChange(e.target.value)}
+                disabled={submitting}
+              >
+                {agences.map(a => (
+                  <option key={a.id} value={a.id}>{a.nom}</option>
+                ))}
+              </select>
             </div>
           )}
 
-          <div className="flex items-center gap-3">
-            <Warehouse className="w-5 h-5 text-primary flex-shrink-0" />
-            <div className="flex-1">
-              <label className="label py-0">
-                <span className="label-text text-xs font-medium text-base-content/60">
-                  Entrepôt {warehouses.length > 0 && `(${warehouses.length})`}
-                </span>
-              </label>
-
-              {loadingWarehouses ? (
-                <div className="flex items-center gap-2 bg-base-200 rounded-lg px-3 h-12 border border-base-300">
-                  <Loader className="w-4 h-4 animate-spin text-primary" />
-                  <span className="text-sm text-base-content/60">Chargement...</span>
-                </div>
-              ) : warehouses.length === 0 ? (
-                <div className="bg-error/10 rounded-lg px-3 h-12 border border-error/30 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-error" />
-                  <span className="text-sm text-error font-medium">Aucun entrepôt</span>
-                </div>
-              ) : (
-                <select
-                  className="select select-bordered w-full"
-                  value={entrepot?.id || ''}
-                  onChange={(e) => handleEntrepotChange(e.target.value)}
-                  disabled={submitting || warehouses.length === 1}
-                >
-                  {warehouses.length > 1 && (
-                    <option value="">Sélectionner un entrepôt</option>
-                  )}
-                  {warehouses.map(w => (
-                    <option key={w.id} value={w.id}>
-                      {w.name} {w.is_default ? '⭐' : ''} {w.code ? `(${w.code})` : ''}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
+          <div>
+            <label className="label py-0">
+              <span className="label-text text-xs font-medium text-base-content/60">
+                Entrepôt ({warehouses.length})
+              </span>
+            </label>
+            {loadingWarehouses ? (
+              <div className="flex items-center gap-2 bg-base-200 rounded-lg px-3 h-12">
+                <Loader className="w-4 h-4 animate-spin" />
+              </div>
+            ) : (
+              <select
+                className="select select-bordered w-full"
+                value={entrepot?.id || ''}
+                onChange={(e) => handleEntrepotChange(e.target.value)}
+                disabled={submitting || warehouses.length <= 1}
+              >
+                {warehouses.map(w => (
+                  <option key={w.id} value={w.id}>
+                    {w.name} {w.is_default ? '⭐' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
-          <div className="flex items-center gap-3">
-            <User className="w-5 h-5 text-primary flex-shrink-0" />
-            <div className="flex-1">
-              <label className="label py-0">
-                <span className="label-text text-xs font-medium text-base-content/60">
-                  Client
+          <div>
+            <label className="label py-0">
+              <span className="label-text text-xs font-medium text-base-content/60">
+                Client
+              </span>
+            </label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="btn btn-outline flex-1 justify-start gap-2"
+                onClick={() => setShowClientModal(true)}
+                disabled={submitting}
+              >
+                <User className="w-4 h-4" />
+                <span className="truncate">
+                  {selectedClient
+                    ? `${selectedClient.nom || ''} ${selectedClient.prenom || ''}`.trim()
+                    : 'Client anonyme'}
                 </span>
-              </label>
-              <div className="flex gap-2">
+              </button>
+              {selectedClient && (
                 <button
                   type="button"
-                  className="btn btn-outline flex-1 gap-2 justify-start"
-                  onClick={() => setShowClientModal(true)}
-                  disabled={submitting}
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setSelectedClient(null)}
                 >
-                  <span className="truncate">
-                    {selectedClient
-                      ? `${selectedClient.nom || ''} ${selectedClient.prenom || ''}`.trim()
-                      : 'Client anonyme'}
-                  </span>
+                  <X className="w-4 h-4" />
                 </button>
-                {selectedClient && (
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setSelectedClient(null)}
-                    disabled={submitting}
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
+              )}
             </div>
           </div>
         </div>
-
-        {entrepot && (
-          <div className="mt-4 pt-4 border-t border-base-300 flex flex-wrap items-center gap-4 text-xs">
-            <div className="flex items-center gap-1.5 text-base-content/70">
-              <Warehouse className="w-3.5 h-3.5 text-primary" />
-              <span className="font-medium">Entrepôt :</span>
-              <span className="font-bold text-primary">{entrepot.name}</span>
-              {entrepot.code && (
-                <span className="text-base-content/40 font-mono">({entrepot.code})</span>
-              )}
-              {entrepot.is_default && (
-                <span className="badge badge-warning badge-xs gap-1">
-                  <Star className="w-2.5 h-2.5" /> Par défaut
-                </span>
-              )}
-            </div>
-            {entrepot.city && (
-              <div className="flex items-center gap-1.5 text-base-content/60">
-                <MapPin className="w-3.5 h-3.5" />
-                <span>{entrepot.city}{entrepot.country ? `, ${entrepot.country}` : ''}</span>
-              </div>
-            )}
-            {agence && (
-              <div className="flex items-center gap-1.5 text-base-content/60">
-                <Building2 className="w-3.5 h-3.5" />
-                <span>Agence : <strong className="text-base-content/80">{agence.nom}</strong></span>
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Filtres */}
-      <div className="bg-base-100 rounded-xl shadow-md border border-base-300 p-4 lg:p-6">
-        <div className="flex flex-col lg:flex-row gap-4">
-          <div className="flex-1">
-            <div className="relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-base-content/40" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                placeholder="Rechercher par nom, référence, code-barres..."
-                className="input input-bordered w-full pl-12"
-                value={searchTerm}
-                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1) }}
-              />
-            </div>
+      <div className="bg-base-100 rounded-xl shadow-md border border-base-300 p-4">
+        <div className="flex flex-col lg:flex-row gap-3">
+          <div className="flex-1 relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-base-content/40" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Rechercher par nom, référence, code-barres..."
+              className="input input-bordered w-full pl-12"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 btn btn-ghost btn-xs btn-circle"
+                onClick={() => setSearchTerm('')}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
           </div>
-          <div className="flex flex-wrap gap-3 items-center">
+          <div className="flex flex-wrap gap-2 items-center">
             <select
-              className="select select-bordered min-w-[150px]"
+              className="select select-bordered min-w-[160px]"
               value={selectedCategory}
-              onChange={(e) => { setSelectedCategory(e.target.value); setCurrentPage(1) }}
+              onChange={(e) => setSelectedCategory(e.target.value)}
             >
               <option value="all">Toutes catégories</option>
               {categories.map(cat => (
                 <option key={cat.id} value={cat.id}>
-                  {cat.name || cat.nom || 'Catégorie'}
+                  {cat.name || cat.nom}
                 </option>
               ))}
             </select>
-
             <select
-              className="select select-bordered min-w-[130px]"
+              className="select select-bordered min-w-[150px]"
               value={sortField}
               onChange={(e) => setSortField(e.target.value)}
             >
-              <option value="name">Trier par nom</option>
-              <option value="sale_price">Prix détail</option>
-              <option value="wholesale_price">Prix gros</option>
+              <option value="name">Nom</option>
+              <option value="sale_price">Prix</option>
               <option value="stock_quantity">Stock</option>
             </select>
-
             <button
               className="btn btn-ghost"
               onClick={() => setSortDirection(d => d === 'asc' ? 'desc' : 'asc')}
             >
               <ArrowUpDown className="w-4 h-4" />
             </button>
-
             <label className="label cursor-pointer gap-2 bg-base-200 px-3 py-2 rounded-lg">
-              <span className="label-text text-sm">
-                Disponibles
-                {unavailableCount > 0 && (
-                  <span className="badge badge-warning badge-sm ml-1">
-                    {unavailableCount}
-                  </span>
-                )}
-              </span>
+              <span className="label-text text-sm">Dispo</span>
               <input
                 type="checkbox"
                 className="toggle toggle-sm toggle-primary"
                 checked={showOnlyAvailable}
-                onChange={(e) => { setShowOnlyAvailable(e.target.checked); setCurrentPage(1) }}
+                onChange={(e) => setShowOnlyAvailable(e.target.checked)}
               />
             </label>
-
             <button
               className="btn btn-outline"
               onClick={() => {
                 setSelectedCategory('all')
                 setSearchTerm('')
                 setShowOnlyAvailable(true)
-                setCurrentPage(1)
               }}
             >
-              <Filter className="w-4 h-4" /> Réinitialiser
+              <Filter className="w-4 h-4" />
             </button>
-
             <div className="join">
               <button
                 className={`join-item btn ${viewMode === 'grid' ? 'btn-primary' : 'btn-ghost'}`}
@@ -1016,332 +1094,191 @@ const PointDeVente = () => {
         </div>
       </div>
 
-      {/* Contenu */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      {/* Grille : produits + panier */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
         {/* Produits */}
-        <div className="lg:col-span-3 bg-base-100 rounded-xl shadow-xl border border-base-300 overflow-hidden">
-          {loadingProducts && !initialProductsLoad ? (
-            <div className="flex justify-center items-center py-20">
-              <div className="text-center space-y-3">
-                <Loader className="w-10 h-10 animate-spin text-primary mx-auto" />
-                <p className="text-base-content/60">Chargement des produits...</p>
+        <div className="lg:col-span-3 bg-base-100 rounded-xl shadow-xl border border-base-300 overflow-hidden flex flex-col">
+          <div className="p-3 border-b border-base-300 bg-base-200/50 flex items-center justify-between">
+            <h2 className="font-semibold text-sm">
+              Produits
+              <span className="badge badge-ghost badge-sm ml-2">
+                {products.length.toLocaleString('fr-FR')} / {totalProducts.toLocaleString('fr-FR')}
+              </span>
+            </h2>
+          </div>
+
+          <div
+            ref={scrollContainerRef}
+            onScroll={handleScroll}
+            className="flex-1 overflow-y-auto max-h-[70vh]"
+          >
+            {products.length === 0 && !loadingProducts ? (
+              <div className="p-12 text-center">
+                <Package className="w-16 h-16 mx-auto mb-4 text-base-content/30" />
+                <p className="text-lg font-semibold text-base-content/50">
+                  Aucun produit trouvé
+                </p>
+                <p className="text-sm text-base-content/40 mt-2">
+                  {debouncedSearch
+                    ? `Aucun résultat pour "${debouncedSearch}"`
+                    : 'Essayez de modifier vos filtres'}
+                </p>
               </div>
-            </div>
-          ) : paginatedProducts.length === 0 ? (
-            <div className="p-12 text-center">
-              <Package className="w-20 h-20 mx-auto mb-4 text-base-content/30" />
-              <p className="text-xl font-semibold text-base-content/50">
-                Aucun produit trouvé
-              </p>
-              <p className="text-base text-base-content/40 mt-2">
-                {!entrepot
-                  ? 'Sélectionnez un entrepôt pour afficher les produits'
-                  : 'Essayez de modifier vos critères de recherche'}
-              </p>
-              {showOnlyAvailable && unavailableCount > 0 && (
-                <div className="mt-4">
-                  <p className="text-sm text-warning mb-2">
-                    {unavailableCount} produit(s) indisponible(s) masqué(s)
-                  </p>
-                  <button
-                    className="btn btn-sm btn-outline"
-                    onClick={() => setShowOnlyAvailable(false)}
-                  >
-                    Afficher tous les produits
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : viewMode === 'grid' ? (
-            <div className="p-6">
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                {paginatedProducts.map((product) => {
+            ) : viewMode === 'grid' ? (
+              <div className="p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {products.map((product) => {
                   const pid = safeInt(product.id)
                   const isInCart = isProductAlreadyAdded(pid)
                   const stock = safeNumber(product.stock_quantity, 0)
                   const price = safeNumber(product.sale_price, 0)
                   const isAvailable = isProductAvailable(product)
-                  const hasPrice = product.has_price !== false && price > 0
 
                   return (
                     <button
                       key={pid}
                       type="button"
-                      className={`bg-base-200 rounded-xl overflow-hidden hover:shadow-lg transition-all duration-300 border text-left ${
+                      className={`bg-base-200 rounded-lg overflow-hidden hover:shadow-lg transition-all text-left relative ${
                         !isAvailable
-                          ? 'border-error/30 opacity-70 cursor-not-allowed'
+                          ? 'opacity-60 cursor-not-allowed'
                           : isInCart
-                            ? 'border-primary hover:-translate-y-1'
-                            : 'border-base-300 hover:border-primary/50 hover:-translate-y-1'
-                      } group relative`}
+                            ? 'border-2 border-primary'
+                            : 'border border-base-300 hover:border-primary/50'
+                      }`}
                       onClick={() => isAvailable && handleAddItem(product)}
                       disabled={!isAvailable || submitting}
-                      title={
-                        !hasPrice ? 'Prix manquant'
-                          : stock <= 0 ? 'Rupture de stock'
-                            : 'Cliquer pour ajouter'
-                      }
                     >
-                      <div className="relative h-40 bg-base-300 overflow-hidden">
+                      <div className="relative h-32 bg-base-300 overflow-hidden">
                         <ProductImage
                           src={product.image_url}
                           alt={product.name}
                           className="w-full h-full object-cover"
                         />
-                        <div className="absolute top-2 right-2">
+                        <div className="absolute top-1.5 right-1.5">
                           {getStatusBadge(product)}
                         </div>
-                        {!isAvailable && (
-                          <div className="absolute inset-0 bg-black/60 flex items-center justify-center flex-col gap-1">
-                            <span className="text-white font-bold text-sm bg-red-500 px-3 py-1 rounded">
-                              {!hasPrice ? 'Prix manquant' : 'Rupture'}
-                            </span>
+                        {isInCart && (
+                          <div className="absolute top-1.5 left-1.5">
+                            <span className="badge badge-primary badge-xs">✓</span>
                           </div>
                         )}
-                        {isInCart && isAvailable && (
-                          <div className="absolute top-2 left-2">
-                            <span className="badge badge-primary badge-sm">✓ Ajouté</span>
-                          </div>
-                        )}
-                        <div className="absolute bottom-2 left-2 right-2 flex gap-1 flex-wrap">
-                          {hasPrice ? (
-                            <span className="badge badge-sm bg-black/70 text-white border-0">
-                              {formatPrice(price)}
-                            </span>
-                          ) : (
-                            <span className="badge badge-sm bg-error text-white border-0">
-                              Prix manquant
-                            </span>
-                          )}
-                          {product.has_wholesale && product.wholesale_price != null && (
-                            <span className="badge badge-sm bg-primary/80 text-white border-0">
-                              Gros: {formatPrice(product.wholesale_price)}
-                            </span>
-                          )}
-                        </div>
                       </div>
-                      <div className="p-3">
-                        <h3 className="font-bold text-base-content truncate text-sm">
+                      <div className="p-2">
+                        <h3 className="font-semibold text-xs truncate">
                           {product.name || 'Sans nom'}
                         </h3>
-                        <p className="text-xs text-base-content/50 flex items-center gap-1">
-                          <Barcode className="w-3 h-3" />
-                          {product.reference || product.sku || '—'}
+                        <p className="text-[10px] text-base-content/50 truncate">
+                          {product.reference || '—'}
                         </p>
-                        <div className="flex items-center gap-2 text-xs text-base-content/50 mt-1">
-                          <Tag className="w-3 h-3" />
-                          <span>{product.category_name || 'Non catégorisé'}</span>
-                        </div>
-                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-base-300">
-                          <span className="text-sm font-bold text-primary">
-                            {hasPrice ? formatPrice(price) : '—'}
+                        <div className="flex items-center justify-between mt-1">
+                          <span className="text-xs font-bold text-primary">
+                            {formatPrice(price)}
                           </span>
-                          <div className="flex items-center gap-1">
-                            <Warehouse className="w-3 h-3 text-base-content/40" />
-                            <span className={`text-xs font-semibold ${
-                              stock <= 0 ? 'text-error'
-                              : (product.min_stock_level > 0 && stock <= product.min_stock_level)
-                                ? 'text-warning' : 'text-success'
-                            }`}>
-                              {stock}
-                            </span>
-                          </div>
+                          <span className={`text-[10px] font-semibold ${
+                            stock <= 0 ? 'text-error' : 'text-success'
+                          }`}>
+                            {stock}
+                          </span>
                         </div>
                       </div>
                     </button>
                   )
                 })}
               </div>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Produit</th>
-                    <th>Référence</th>
-                    <th>Catégorie</th>
-                    <th>Prix détail</th>
-                    <th>Prix gros</th>
-                    <th>Stock</th>
-                    <th>Statut</th>
-                    <th className="text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paginatedProducts.map((product) => {
-                    const pid = safeInt(product.id)
-                    const stock = safeNumber(product.stock_quantity, 0)
-                    const price = safeNumber(product.sale_price, 0)
-                    const isAvailable = isProductAvailable(product)
-                    const hasPrice = product.has_price !== false && price > 0
-
-                    return (
-                      <tr key={pid} className={`hover ${!isAvailable ? 'opacity-60' : ''}`}>
-                        <td>
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg overflow-hidden">
-                              <ProductImage
-                                src={product.image_url}
-                                alt={product.name}
-                                className="w-full h-full object-cover"
-                              />
-                            </div>
-                            <span className="font-semibold">{product.name || 'Sans nom'}</span>
-                          </div>
-                        </td>
-                        <td className="text-sm font-mono">
-                          {product.reference || product.sku || '—'}
-                        </td>
-                        <td>
-                          <span className="badge badge-ghost">
-                            {product.category_name || 'Non catégorisé'}
-                          </span>
-                        </td>
-                        <td className="font-semibold text-primary">
-                          {hasPrice ? formatPrice(price) : <span className="text-error">—</span>}
-                        </td>
-                        <td>
-                          {product.has_wholesale && product.wholesale_price != null ? (
-                            <span className="font-semibold text-secondary">
-                              {formatPrice(product.wholesale_price)}
-                            </span>
-                          ) : (
-                            <span className="text-base-content/40">-</span>
-                          )}
-                        </td>
-                        <td>
-                          <span className={`badge ${
-                            stock <= 0 ? 'badge-error'
-                            : (product.min_stock_level > 0 && stock <= product.min_stock_level)
-                              ? 'badge-warning' : 'badge-success'
-                          }`}>
-                            {stock}
-                          </span>
-                        </td>
-                        <td>{getStatusBadge(product)}</td>
-                        <td className="text-center">
-                          <button
-                            type="button"
-                            className="btn btn-primary btn-sm gap-1"
-                            onClick={() => handleAddItem(product)}
-                            disabled={!isAvailable || submitting}
-                          >
-                            <Plus className="w-4 h-4" /> Ajouter
-                          </button>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Pagination */}
-          {sortedProducts.length > 0 && (
-            <div className="p-4 border-t border-base-300">
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div className="text-sm text-base-content/60">
-                  Affichage de {((currentPage - 1) * itemsPerPage) + 1} à{' '}
-                  {Math.min(currentPage * itemsPerPage, sortedProducts.length)} sur{' '}
-                  {sortedProducts.length} produits
-                </div>
-                <div className="flex items-center gap-2">
-                  <select
-                    className="select select-bordered select-sm"
-                    value={itemsPerPage}
-                    onChange={(e) => {
-                      setItemsPerPage(parseInt(e.target.value))
-                      setCurrentPage(1)
-                    }}
-                  >
-                    <option value="12">12 par page</option>
-                    <option value="24">24 par page</option>
-                    <option value="48">48 par page</option>
-                    <option value="96">96 par page</option>
-                  </select>
-                  <div className="join">
-                    <button
-                      type="button"
-                      className="join-item btn btn-sm"
-                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                      disabled={currentPage === 1}
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    {[...Array(Math.min(5, totalPages))].map((_, i) => {
-                      let pageNum
-                      if (totalPages <= 5) pageNum = i + 1
-                      else if (currentPage <= 3) pageNum = i + 1
-                      else if (currentPage >= totalPages - 2) pageNum = totalPages - 4 + i
-                      else pageNum = currentPage - 2 + i
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="table table-sm">
+                  <thead>
+                    <tr>
+                      <th>Produit</th>
+                      <th>Référence</th>
+                      <th>Prix</th>
+                      <th>Stock</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {products.map(product => {
+                      const pid = safeInt(product.id)
+                      const stock = safeNumber(product.stock_quantity, 0)
+                      const price = safeNumber(product.sale_price, 0)
+                      const isAvailable = isProductAvailable(product)
                       return (
-                        <button
-                          key={pageNum}
-                          type="button"
-                          className={`join-item btn btn-sm ${currentPage === pageNum ? 'btn-primary' : ''}`}
-                          onClick={() => setCurrentPage(pageNum)}
-                        >
-                          {pageNum}
-                        </button>
+                        <tr key={pid} className={!isAvailable ? 'opacity-60' : ''}>
+                          <td className="font-semibold text-sm">{product.name}</td>
+                          <td className="font-mono text-xs">{product.reference || '—'}</td>
+                          <td className="font-semibold text-primary">{formatPrice(price)}</td>
+                          <td>
+                            <span className={`badge ${stock <= 0 ? 'badge-error' : 'badge-success'} badge-sm`}>
+                              {stock}
+                            </span>
+                          </td>
+                          <td>
+                            <button
+                              className="btn btn-primary btn-xs gap-1"
+                              onClick={() => handleAddItem(product)}
+                              disabled={!isAvailable || submitting}
+                            >
+                              <Plus className="w-3 h-3" /> Ajouter
+                            </button>
+                          </td>
+                        </tr>
                       )
                     })}
-                    <button
-                      type="button"
-                      className="join-item btn btn-sm"
-                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                      disabled={currentPage === totalPages}
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
+                  </tbody>
+                </table>
               </div>
-            </div>
-          )}
+            )}
+
+            {/* Load more indicator */}
+            {loadingMore && (
+              <div className="p-4 text-center">
+                <Loader className="w-6 h-6 animate-spin text-primary mx-auto" />
+                <p className="text-xs text-base-content/60 mt-2">Chargement...</p>
+              </div>
+            )}
+
+            {!hasNextPage && products.length > 0 && (
+              <div className="p-4 text-center text-xs text-base-content/40 border-t border-base-300">
+                ✓ Tous les produits sont chargés ({products.length})
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Panier */}
-        <div className="lg:col-span-1 bg-base-100 rounded-xl shadow-xl border border-base-300 overflow-hidden flex flex-col">
-          <div className="p-4 border-b border-base-300 bg-base-200/50">
-            <div className="flex items-center justify-between">
-              <h2 className="font-bold text-lg flex items-center gap-2">
-                <ShoppingCart className="w-5 h-5 text-primary" />
-                Panier
-                <span className="badge badge-primary badge-sm">{items.length}</span>
-              </h2>
-              {items.length > 0 && (
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm text-error hover:bg-error/10"
-                  onClick={() => setItems([])}
-                  disabled={submitting}
-                >
-                  <Trash2 className="w-4 h-4" /> Vider
-                </button>
-              )}
-            </div>
+        <div className="lg:col-span-1 bg-base-100 rounded-xl shadow-xl border border-base-300 overflow-hidden flex flex-col max-h-[80vh]">
+          <div className="p-3 border-b border-base-300 bg-base-200/50 flex items-center justify-between">
+            <h2 className="font-bold flex items-center gap-2">
+              <ShoppingCart className="w-5 h-5 text-primary" />
+              Panier
+              <span className="badge badge-primary badge-sm">{items.length}</span>
+            </h2>
+            {items.length > 0 && (
+              <button
+                className="btn btn-ghost btn-xs text-error"
+                onClick={() => setItems([])}
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            )}
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 max-h-[400px]">
+          <div className="flex-1 overflow-y-auto p-3">
             {items.length === 0 ? (
               <div className="text-center py-12">
-                <ShoppingCart className="w-16 h-16 mx-auto text-base-content/30 mb-3" />
-                <p className="text-base-content/50">Panier vide</p>
-                <p className="text-sm text-base-content/40">
-                  Ajoutez des produits en cliquant sur leurs cartes
-                </p>
+                <ShoppingCart className="w-12 h-12 mx-auto text-base-content/30 mb-3" />
+                <p className="text-sm text-base-content/50">Panier vide</p>
               </div>
             ) : (
               <div className="space-y-2">
-                {items.map((item) => {
-                  const availableLots = lotsByProduct[safeInt(item.product_id)] || []
-                  const isLoadingLots = loadingLots[safeInt(item.product_id)]
+                {items.map(item => {
+                  const pid = safeInt(item.product_id)
+                  const availableLots = lotsByProduct[pid] || []
+                  const isLoadingLots = loadingLots[pid]
                   return (
-                    <div key={item.id} className="bg-base-200 rounded-lg p-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 bg-base-300 rounded-lg overflow-hidden flex-shrink-0">
+                    <div key={item.id} className="bg-base-200 rounded-lg p-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-10 h-10 bg-base-300 rounded overflow-hidden flex-shrink-0">
                           <ProductImage
                             src={item.image_url}
                             alt={item.product_name}
@@ -1349,89 +1286,52 @@ const PointDeVente = () => {
                           />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm truncate">{item.product_name}</p>
-                          <div className="flex items-center gap-2 mt-1 flex-wrap">
-                            <select
-                              className="select select-bordered select-xs w-24"
-                              value={item.price_type || 'retail'}
-                              onChange={(e) => handlePriceTypeChange(item.id, e.target.value)}
-                              disabled={submitting}
-                            >
-                              <option value="retail">Détail</option>
-                              <option value="wholesale" disabled={!item.has_wholesale}>
-                                {item.has_wholesale ? 'Gros' : 'Gros (ND)'}
-                              </option>
-                            </select>
-                            <span className="text-xs font-semibold text-primary">
-                              {formatPrice(item.unit_price)}
-                            </span>
-                          </div>
-                          {item.has_wholesale && item.price_type === 'wholesale' && (
-                            <p className="text-xs text-success">
-                              ✅ Économie: {formatPrice(
-                                (safeNumber(item.sale_price) - safeNumber(item.wholesale_price)) * safeNumber(item.quantity, 1)
-                              )}
-                            </p>
-                          )}
-                          <div className="mt-1">
-                            <select
-                              className="select select-bordered select-xs w-full max-w-[180px]"
-                              value={item.lot || ''}
-                              onChange={(e) => {
-                                const val = e.target.value
-                                handleItemChange(item.id, 'lot', val ? safeInt(val) : null)
-                              }}
-                              disabled={submitting || !item.product_id || isLoadingLots}
-                            >
-                              <option value="">Automatique (FIFO)</option>
-                              {availableLots.map(lot => (
-                                <option key={lot.id} value={lot.id}>
-                                  {lot.lot_number} ({lot.quantity} u.)
-                                  {lot.expiry_date ? ` - Exp: ${new Date(lot.expiry_date).toLocaleDateString()}` : ''}
-                                </option>
-                              ))}
-                            </select>
-                            {isLoadingLots && <span className="text-xs text-info ml-1">⏳</span>}
-                            {!isLoadingLots && item.product_id && availableLots.length === 0 && (
-                              <span className="text-xs text-warning ml-1">⚠️ Aucun lot</span>
-                            )}
-                          </div>
+                          <p className="font-medium text-xs truncate">{item.product_name}</p>
+                          <p className="text-[10px] text-primary font-semibold">
+                            {formatPrice(item.unit_price)}
+                          </p>
                         </div>
+                        <button
+                          className="btn btn-ghost btn-xs btn-square text-error"
+                          onClick={() => handleRemoveItem(item.id)}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between mt-2">
                         <div className="flex items-center gap-1">
                           <button
-                            type="button"
                             className="btn btn-ghost btn-xs btn-square"
                             onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
-                            disabled={item.quantity <= 1 || submitting}
+                            disabled={item.quantity <= 1}
                           >
                             <Minus className="w-3 h-3" />
                           </button>
-                          <span className="w-6 text-center font-semibold text-sm">
+                          <span className="w-6 text-center text-xs font-semibold">
                             {item.quantity}
                           </span>
                           <button
-                            type="button"
                             className="btn btn-ghost btn-xs btn-square"
                             onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
-                            disabled={item.quantity >= item.stock_max || submitting}
+                            disabled={item.quantity >= item.stock_max}
                           >
                             <Plus className="w-3 h-3" />
                           </button>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-xs btn-square text-error"
-                            onClick={() => handleRemoveItem(item.id)}
-                            disabled={submitting}
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
                         </div>
-                      </div>
-                      <div className="mt-1 text-right">
-                        <span className="text-sm font-semibold text-primary">
-                          Total: {formatPrice(item.total)}
+                        <span className="text-xs font-bold text-primary">
+                          {formatPrice(item.total)}
                         </span>
                       </div>
+                      {item.has_wholesale && (
+                        <select
+                          className="select select-bordered select-xs w-full mt-1"
+                          value={item.price_type}
+                          onChange={(e) => handlePriceTypeChange(item.id, e.target.value)}
+                        >
+                          <option value="retail">Détail</option>
+                          <option value="wholesale">Gros</option>
+                        </select>
+                      )}
                     </div>
                   )
                 })}
@@ -1439,112 +1339,95 @@ const PointDeVente = () => {
             )}
           </div>
 
-          <div className="p-4 border-t border-base-300 bg-base-200/50">
+          <div className="p-3 border-t border-base-300 bg-base-200/50">
             {items.length > 0 ? (
               <>
-                <div className="space-y-1 mb-3">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-base-content/60">Sous-total</span>
-                    <span className="font-semibold">{formatPrice(totals.subtotal)}</span>
-                  </div>
-                  <div className="flex justify-between text-lg font-bold border-t border-base-300 pt-2">
-                    <span>Total</span>
-                    <span className="text-primary">{formatPrice(totals.total)}</span>
-                  </div>
+                <div className="flex justify-between mb-2">
+                  <span className="text-sm">Total</span>
+                  <span className="text-lg font-bold text-primary">
+                    {formatPrice(totals.total)}
+                  </span>
                 </div>
-                <div className="mb-3">
-                  <input
-                    type="text"
-                    className="input input-bordered w-full input-sm"
-                    placeholder="Notes (optionnel)"
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    disabled={submitting}
-                  />
-                </div>
+                <input
+                  type="text"
+                  className="input input-bordered input-sm w-full mb-2"
+                  placeholder="Notes..."
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                />
                 <button
-                  type="button"
-                  className="btn btn-primary w-full gap-2 shadow-md hover:shadow-lg transition-all"
+                  className="btn btn-primary w-full gap-2"
                   onClick={handleSubmit}
-                  disabled={items.length === 0 || submitting || !entrepot}
+                  disabled={submitting}
                 >
-                  {submitting ? (
-                    <><Loader className="w-4 h-4 animate-spin" /> Traitement...</>
-                  ) : (
-                    <><Receipt className="w-4 h-4" /> Valider {formatPrice(totals.total)}</>
-                  )}
+                  {submitting
+                    ? <><Loader className="w-4 h-4 animate-spin" /> Traitement...</>
+                    : <><Receipt className="w-4 h-4" /> Valider {formatPrice(totals.total)}</>}
                 </button>
-                {!entrepot && (
-                  <p className="text-xs text-error text-center mt-2">
-                    ⚠️ Sélectionnez un entrepôt
-                  </p>
-                )}
               </>
             ) : (
-              <p className="text-sm text-base-content/40 text-center">
-                Ajoutez des produits pour commencer
+              <p className="text-xs text-base-content/40 text-center">
+                Ajoutez des produits
               </p>
             )}
           </div>
         </div>
       </div>
 
-      {/* Modal client */}
+      {/* Modal client avec recherche */}
       {showClientModal && (
         <div className="modal modal-open">
           <div className="modal-box max-w-2xl">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="font-bold text-lg flex items-center gap-2">
-                <Users className="w-5 h-5 text-primary" /> Sélectionner un client
-              </h3>
+              <h3 className="font-bold text-lg">Sélectionner un client</h3>
               <button
-                type="button"
                 className="btn btn-sm btn-circle btn-ghost"
                 onClick={() => setShowClientModal(false)}
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
+            <div className="relative mb-3">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/40" />
+              <input
+                type="text"
+                placeholder="Rechercher..."
+                className="input input-bordered w-full pl-9 text-sm"
+                value={clientSearch}
+                onChange={(e) => setClientSearch(e.target.value)}
+              />
+            </div>
             <div className="space-y-2 max-h-96 overflow-y-auto">
               <button
-                type="button"
-                className="w-full text-left p-3 bg-base-200 rounded-lg hover:bg-primary/10 transition"
+                className="w-full text-left p-3 bg-base-200 rounded-lg hover:bg-primary/10"
                 onClick={() => { setSelectedClient(null); setShowClientModal(false) }}
               >
                 <div className="font-semibold">Client anonyme</div>
-                <div className="text-xs text-base-content/50">Vente sans client enregistré</div>
               </button>
-              {clients.map(client => (
-                <button
-                  key={client.id}
-                  type="button"
-                  className="w-full text-left p-3 bg-base-200 rounded-lg hover:bg-primary/10 transition"
-                  onClick={() => { setSelectedClient(client); setShowClientModal(false) }}
-                >
-                  <div className="font-semibold">
-                    {client.nom} {client.prenom || ''}
-                  </div>
-                  <div className="text-xs text-base-content/50 flex items-center gap-2">
-                    <Phone className="w-3 h-3" /> {client.telephone || '—'}
-                    <Mail className="w-3 h-3 ml-2" /> {client.email || '—'}
-                  </div>
-                </button>
-              ))}
+              {filteredClients.length === 0 ? (
+                <div className="text-center py-4 text-sm text-base-content/40">
+                  Aucun client trouvé
+                </div>
+              ) : (
+                filteredClients.map(client => (
+                  <button
+                    key={client.id}
+                    className="w-full text-left p-3 bg-base-200 rounded-lg hover:bg-primary/10"
+                    onClick={() => { setSelectedClient(client); setShowClientModal(false) }}
+                  >
+                    <div className="font-semibold">
+                      {client.nom} {client.prenom || ''}
+                    </div>
+                    <div className="text-xs text-base-content/50">
+                      {client.telephone || '—'}
+                    </div>
+                  </button>
+                ))
+              )}
             </div>
             <div className="modal-action">
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={() => setShowClientModal(false)}
-              >
+              <button className="btn btn-ghost" onClick={() => setShowClientModal(false)}>
                 Fermer
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary gap-2"
-                onClick={() => navigate('/clients/nouveau')}
-              >
-                <Plus className="w-4 h-4" /> Nouveau client
               </button>
             </div>
           </div>
