@@ -1,182 +1,195 @@
 // src/components/comptabilite/PlanComptableForm.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
 import {
-  ArrowLeft,
-  Save,
-  X,
-  AlertCircle,
-  CheckCircle,
-  Loader2,
-  Hash,
-  Tag,
-  FolderOpen,
-  Shield,
-  TrendingUp,
-  TrendingDown,
-  PiggyBank,
-  Info,
-  Building2
+  ArrowLeft, Save, X, AlertCircle, CheckCircle, Loader2,
+  Hash, Tag, FolderOpen, Shield, TrendingUp, TrendingDown,
+  PiggyBank, Info, Building2,
 } from 'lucide-react'
+
+const EMPTY_FORM = {
+  code: '',
+  nom: '',
+  type_compte: 'actif',
+  parent: '',
+  niveau: 1,
+  classe: '',
+  sous_classe: '',
+  solde_normal: 'debiteur',
+  is_active: true,
+  is_analytique: false,
+  description: '',
+}
+
+const typeOptions = [
+  { value: 'actif', label: 'Actif', icon: FolderOpen, color: 'text-blue-500' },
+  { value: 'passif', label: 'Passif', icon: Shield, color: 'text-orange-500' },
+  { value: 'capitaux', label: 'Capitaux propres', icon: PiggyBank, color: 'text-purple-500' },
+  { value: 'charges', label: 'Charges', icon: TrendingDown, color: 'text-red-500' },
+  { value: 'produits', label: 'Produits', icon: TrendingUp, color: 'text-green-500' },
+]
+
+const soldeOptions = [
+  { value: 'debiteur', label: 'Débiteur' },
+  { value: 'crediteur', label: 'Créditeur' },
+]
+
+const niveauOptions = [
+  { value: 1, label: 'Classe' },
+  { value: 2, label: 'Compte' },
+  { value: 3, label: 'Sous-compte' },
+  { value: 4, label: 'Sous-sous-compte' },
+]
+
+const typeLabels = {
+  actif: 'Actif',
+  passif: 'Passif',
+  capitaux: 'Capitaux propres',
+  charges: 'Charges',
+  produits: 'Produits',
+}
+
+const unwrapList = (payload) =>
+  Array.isArray(payload) ? payload : (payload?.results || [])
 
 const PlanComptableForm = () => {
   const navigate = useNavigate()
   const { id } = useParams()
   const isEditing = Boolean(id)
 
-  const [loading, setLoading] = useState(false)
+  const [formData, setFormData] = useState(EMPTY_FORM)
+  const [comptesParents, setComptesParents] = useState([])
+  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  const [fieldErrors, setFieldErrors] = useState({})
   const [success, setSuccess] = useState(false)
-  const [comptesParents, setComptesParents] = useState([])
-  
-  const [formData, setFormData] = useState({
-    code: '',
-    nom: '',
-    type_compte: 'actif',
-    parent: '',
-    niveau: 1,
-    classe: '',
-    sous_classe: '',
-    solde_normal: 'debiteur',
-    is_active: true,
-    is_analytique: false,
-    description: ''
-  })
 
-  const typeOptions = [
-    { value: 'actif', label: 'Actif', icon: FolderOpen, color: 'text-blue-500' },
-    { value: 'passif', label: 'Passif', icon: Shield, color: 'text-orange-500' },
-    { value: 'capitaux', label: 'Capitaux propres', icon: PiggyBank, color: 'text-purple-500' },
-    { value: 'charges', label: 'Charges', icon: TrendingDown, color: 'text-red-500' },
-    { value: 'produits', label: 'Produits', icon: TrendingUp, color: 'text-green-500' }
-  ]
-
-  const soldeOptions = [
-    { value: 'debiteur', label: 'Débiteur' },
-    { value: 'crediteur', label: 'Créditeur' }
-  ]
-
-  const niveauOptions = [
-    { value: 1, label: 'Classe' },
-    { value: 2, label: 'Compte' },
-    { value: 3, label: 'Sous-compte' },
-    { value: 4, label: 'Sous-sous-compte' }
-  ]
-
-  const typeLabels = {
-    actif: 'Actif',
-    passif: 'Passif',
-    capitaux: 'Capitaux propres',
-    charges: 'Charges',
-    produits: 'Produits'
-  }
+  const abortRef = useRef(null)
+  const redirectTimerRef = useRef(null)
 
   useEffect(() => {
-    fetchComptesParents()
-    if (isEditing) {
-      fetchCompte()
-    }
-  }, [id])
+    const controller = new AbortController()
+    abortRef.current = controller
 
-  const fetchCompte = async () => {
-    setLoading(true)
-    try {
-      // ✅ URL CORRECTE
-      const response = await AxiosInstance.get(`/plan-comptable/${id}/`)
-      const data = response.data
-      setFormData({
-        code: data.code || '',
-        nom: data.nom || '',
-        type_compte: data.type_compte || 'actif',
-        parent: data.parent || '',
-        niveau: data.niveau || 1,
-        classe: data.classe || '',
-        sous_classe: data.sous_classe || '',
-        solde_normal: data.solde_normal || 'debiteur',
-        is_active: data.is_active !== undefined ? data.is_active : true,
-        is_analytique: data.is_analytique || false,
-        description: data.description || ''
-      })
-    } catch (error) {
-      console.error('Erreur chargement compte:', error)
-      setError('Erreur de chargement du compte')
-    } finally {
-      setLoading(false)
-    }
-  }
+    const loadData = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const [parentsRes, compteRes] = await Promise.allSettled([
+          AxiosInstance.get('/plan-comptable/', {
+            params: { is_active: true, page_size: 500 },
+            signal: controller.signal,
+          }),
+          isEditing
+            ? AxiosInstance.get(`/plan-comptable/${id}/`, { signal: controller.signal })
+            : Promise.resolve({ data: null }),
+        ])
 
-  const fetchComptesParents = async () => {
-    try {
-      // ✅ URL CORRECTE
-      const response = await AxiosInstance.get('/plan-comptable/?is_active=true')
-      const data = response.data || []
-      const parents = data.filter(c => c.niveau < 4 && c.id !== parseInt(id))
-      setComptesParents(parents)
-    } catch (error) {
-      console.error('Erreur chargement comptes parents:', error)
+        if (controller.signal.aborted) return
+
+        if (parentsRes.status === 'fulfilled') {
+          const data = unwrapList(parentsRes.value.data)
+          const parents = data.filter(c => c.niveau < 4 && c.id !== parseInt(id))
+          setComptesParents(parents)
+        }
+
+        if (isEditing && compteRes.status === 'fulfilled' && compteRes.value.data) {
+          const d = compteRes.value.data
+          setFormData({
+            code: d.code || '',
+            nom: d.nom || '',
+            type_compte: d.type_compte || 'actif',
+            parent: d.parent || '',
+            niveau: d.niveau || 1,
+            classe: d.classe || '',
+            sous_classe: d.sous_classe || '',
+            solde_normal: d.solde_normal || 'debiteur',
+            is_active: d.is_active !== undefined ? d.is_active : true,
+            is_analytique: d.is_analytique || false,
+            description: d.description || '',
+          })
+        }
+      } catch (err) {
+        if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return
+        console.error('Erreur chargement:', err)
+        setError('Erreur de chargement des données')
+      } finally {
+        if (abortRef.current === controller) setLoading(false)
+      }
     }
-  }
+
+    loadData()
+    return () => {
+      controller.abort()
+      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current)
+    }
+  }, [id, isEditing])
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value
+      [name]: type === 'checkbox' ? checked : value,
     }))
-    setError(null)
+    if (fieldErrors[name]) {
+      setFieldErrors(prev => { const n = { ...prev }; delete n[name]; return n })
+    }
+  }
+
+  const validate = () => {
+    const errors = {}
+    if (!formData.code?.trim()) errors.code = 'Le code est requis'
+    if (!formData.nom?.trim()) errors.nom = 'Le nom est requis'
+    return errors
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    setSaving(true)
     setError(null)
+    setFieldErrors({})
     setSuccess(false)
 
-    if (!formData.code) {
-      setError('Le code est requis')
-      setSaving(false)
-      return
-    }
-    if (!formData.nom) {
-      setError('Le nom est requis')
-      setSaving(false)
+    const clientErrors = validate()
+    if (Object.keys(clientErrors).length > 0) {
+      setFieldErrors(clientErrors)
+      setError('Veuillez corriger les champs en rouge')
       return
     }
 
+    setSaving(true)
     try {
-      const dataToSend = { ...formData }
-      if (dataToSend.parent === '' || dataToSend.parent === 'null') {
-        dataToSend.parent = null
-      }
+      const payload = { ...formData }
+      if (payload.parent === '' || payload.parent === 'null') payload.parent = null
+      if (payload.parent) payload.parent = Number(payload.parent)
+      payload.niveau = Number(payload.niveau)
 
       if (isEditing) {
-        // ✅ URL CORRECTE
-        await AxiosInstance.put(`/plan-comptable/${id}/`, dataToSend)
+        await AxiosInstance.put(`/plan-comptable/${id}/`, payload)
       } else {
-        // ✅ URL CORRECTE
-        await AxiosInstance.post('/plan-comptable/', dataToSend)
+        await AxiosInstance.post('/plan-comptable/', payload)
       }
 
       setSuccess(true)
-      setTimeout(() => {
-        navigate('/plan-comptable')
-      }, 1500)
-    } catch (error) {
-      console.error('Erreur sauvegarde:', error)
-      if (error.response?.data) {
-        const errors = error.response.data
-        if (typeof errors === 'object') {
-          const messages = Object.entries(errors)
-            .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`)
-            .join('\n')
-          setError(messages)
+      redirectTimerRef.current = setTimeout(() => navigate('/plan-comptable'), 900)
+    } catch (err) {
+      console.error('Erreur sauvegarde:', err)
+      const data = err.response?.data
+      if (data && typeof data === 'object') {
+        if (data.detail || data.error || data.message) {
+          setError(data.detail || data.error || data.message)
         } else {
-          setError('Erreur lors de la sauvegarde')
+          const fe = {}
+          Object.keys(data).forEach(k => {
+            const v = data[k]
+            fe[k] = Array.isArray(v) ? v[0] : String(v)
+          })
+          setFieldErrors(fe)
+          setError('Certains champs sont invalides')
         }
       } else {
-        setError('Erreur de connexion au serveur')
+        setError('Erreur lors de la sauvegarde')
       }
     } finally {
       setSaving(false)
@@ -187,7 +200,7 @@ const PlanComptableForm = () => {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-base-200">
         <div className="text-center space-y-4">
-          <div className="loading loading-spinner loading-lg text-primary w-12 h-12 sm:w-16 sm:h-16"></div>
+          <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto" />
           <p className="text-base sm:text-xl font-semibold text-base-content/70 animate-pulse">
             Chargement du compte...
           </p>
@@ -196,110 +209,74 @@ const PlanComptableForm = () => {
     )
   }
 
+  const FieldError = ({ name }) => fieldErrors[name] ? (
+    <span className="text-xs text-error mt-1">{fieldErrors[name]}</span>
+  ) : null
+
   return (
     <div className="space-y-4 sm:space-y-6 p-3 sm:p-4 lg:p-6 bg-base-200 min-h-screen">
-      
-      {/* En-tête */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
         <div className="flex items-center gap-3 sm:gap-4">
-          <button
-            onClick={() => navigate('/plan-comptable')}
-            className="btn btn-ghost btn-sm gap-2 hover:bg-base-200 transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Retour
+          <button onClick={() => navigate('/plan-comptable')} className="btn btn-ghost btn-sm gap-2">
+            <ArrowLeft className="w-4 h-4" /> Retour
           </button>
           <div>
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-base-content">
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black">
               {isEditing ? 'Modifier le compte' : 'Nouveau compte'}
             </h1>
             <p className="text-xs sm:text-sm text-base-content/60 mt-1">
-              {isEditing 
-                ? 'Modifiez les informations du compte comptable'
-                : 'Créez un nouveau compte dans le plan comptable'
-              }
+              {isEditing ? 'Modifiez les informations du compte' : 'Créez un nouveau compte comptable'}
             </p>
           </div>
         </div>
-        
         <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => navigate('/plan-comptable')}
-            className="btn btn-ghost gap-2 btn-sm sm:btn-md"
-          >
-            <X className="w-4 h-4" />
-            Annuler
+          <button type="button" onClick={() => navigate('/plan-comptable')} className="btn btn-ghost gap-2 btn-sm sm:btn-md" disabled={saving}>
+            <X className="w-4 h-4" /> Annuler
           </button>
-          <button
-            type="submit"
-            form="compte-form"
-            className="btn btn-primary gap-2 btn-sm sm:btn-md shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all"
-            disabled={saving}
-          >
+          <button type="submit" form="compte-form" className="btn btn-primary gap-2 btn-sm sm:btn-md" disabled={saving}>
             {saving ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Enregistrement...
-              </>
+              <><Loader2 className="w-4 h-4 animate-spin" /> Enregistrement...</>
             ) : (
-              <>
-                <Save className="w-4 h-4" />
-                {isEditing ? 'Mettre à jour' : 'Créer'}
-              </>
+              <><Save className="w-4 h-4" /> {isEditing ? 'Mettre à jour' : 'Créer'}</>
             )}
           </button>
         </div>
       </div>
 
-      {/* Succès */}
       {success && (
-        <div className="alert alert-success shadow-lg animate-slideDown">
+        <div className="alert alert-success shadow-lg">
           <CheckCircle className="w-5 h-5" />
           <div>
             <span className="font-bold">
               {isEditing ? 'Compte modifié' : 'Compte créé'} avec succès !
             </span>
-            <p className="text-sm opacity-80">Redirection vers la liste...</p>
+            <p className="text-sm opacity-80">Redirection...</p>
           </div>
-          <button 
-            className="btn btn-ghost btn-sm btn-circle"
-            onClick={() => setSuccess(false)}
-          >
-            <X className="w-4 h-4" />
-          </button>
         </div>
       )}
 
-      {/* Erreur */}
       {error && (
-        <div className="alert alert-error shadow-lg animate-slideDown">
+        <div className="alert alert-error shadow-lg">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
           <div className="flex-1">
             <span className="font-bold">Erreur</span>
-            <pre className="text-sm whitespace-pre-wrap mt-1">{error}</pre>
+            <p className="text-sm mt-1">{error}</p>
           </div>
-          <button 
-            className="btn btn-ghost btn-sm btn-circle"
-            onClick={() => setError(null)}
-          >
+          <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setError(null)}>
             <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
-      {/* Formulaire */}
       <form id="compte-form" onSubmit={handleSubmit} className="bg-base-100 rounded-xl shadow-lg border border-base-200 overflow-hidden">
         <div className="p-4 sm:p-6 space-y-6">
-          
-          {/* Code et Nom */}
+          {/* Code + Nom */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="form-control">
               <label className="label">
                 <span className="label-text font-medium flex items-center gap-2">
                   <Hash className="w-4 h-4 text-primary" />
-                  Code du compte
-                  <span className="text-error">*</span>
+                  Code du compte <span className="text-error">*</span>
                 </span>
               </label>
               <input
@@ -308,21 +285,17 @@ const PlanComptableForm = () => {
                 placeholder="Ex: 411, 701, 601..."
                 value={formData.code}
                 onChange={handleChange}
-                className="input input-bordered w-full focus:input-primary transition-all font-mono"
+                className={`input input-bordered w-full font-mono ${fieldErrors.code ? 'input-error' : ''}`}
                 required
                 disabled={isEditing}
               />
-              {isEditing && (
-                <p className="text-xs text-base-content/40 mt-1">Le code ne peut pas être modifié</p>
-              )}
+              <FieldError name="code" />
             </div>
-
             <div className="form-control">
               <label className="label">
                 <span className="label-text font-medium flex items-center gap-2">
                   <Tag className="w-4 h-4 text-primary" />
-                  Nom du compte
-                  <span className="text-error">*</span>
+                  Nom du compte <span className="text-error">*</span>
                 </span>
               </label>
               <input
@@ -331,35 +304,28 @@ const PlanComptableForm = () => {
                 placeholder="Ex: Clients, Ventes, Achats..."
                 value={formData.nom}
                 onChange={handleChange}
-                className="input input-bordered w-full focus:input-primary transition-all"
+                className={`input input-bordered w-full ${fieldErrors.nom ? 'input-error' : ''}`}
                 required
               />
+              <FieldError name="nom" />
             </div>
           </div>
 
-          {/* Type et Niveau */}
+          {/* Type + Niveau */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="form-control">
               <label className="label">
                 <span className="label-text font-medium flex items-center gap-2">
                   <FolderOpen className="w-4 h-4 text-primary" />
-                  Type de compte
-                  <span className="text-error">*</span>
+                  Type de compte <span className="text-error">*</span>
                 </span>
               </label>
-              <select
-                name="type_compte"
-                value={formData.type_compte}
-                onChange={handleChange}
-                className="select select-bordered w-full focus:select-primary transition-all"
-                required
-              >
+              <select name="type_compte" value={formData.type_compte} onChange={handleChange} className="select select-bordered w-full" required>
                 {typeOptions.map(opt => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
             </div>
-
             <div className="form-control">
               <label className="label">
                 <span className="label-text font-medium flex items-center gap-2">
@@ -367,12 +333,7 @@ const PlanComptableForm = () => {
                   Niveau
                 </span>
               </label>
-              <select
-                name="niveau"
-                value={formData.niveau}
-                onChange={handleChange}
-                className="select select-bordered w-full focus:select-primary transition-all"
-              >
+              <select name="niveau" value={formData.niveau} onChange={handleChange} className="select select-bordered w-full">
                 {niveauOptions.map(opt => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
@@ -380,7 +341,7 @@ const PlanComptableForm = () => {
             </div>
           </div>
 
-          {/* Parent et Solde */}
+          {/* Parent + Solde */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="form-control">
               <label className="label">
@@ -389,12 +350,7 @@ const PlanComptableForm = () => {
                   Compte parent
                 </span>
               </label>
-              <select
-                name="parent"
-                value={formData.parent || ''}
-                onChange={handleChange}
-                className="select select-bordered w-full focus:select-primary transition-all"
-              >
+              <select name="parent" value={formData.parent || ''} onChange={handleChange} className="select select-bordered w-full">
                 <option value="">Aucun (compte racine)</option>
                 {comptesParents.map(c => (
                   <option key={c.id} value={c.id}>
@@ -403,7 +359,6 @@ const PlanComptableForm = () => {
                 ))}
               </select>
             </div>
-
             <div className="form-control">
               <label className="label">
                 <span className="label-text font-medium flex items-center gap-2">
@@ -411,12 +366,7 @@ const PlanComptableForm = () => {
                   Solde normal
                 </span>
               </label>
-              <select
-                name="solde_normal"
-                value={formData.solde_normal}
-                onChange={handleChange}
-                className="select select-bordered w-full focus:select-primary transition-all"
-              >
+              <select name="solde_normal" value={formData.solde_normal} onChange={handleChange} className="select select-bordered w-full">
                 {soldeOptions.map(opt => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
@@ -428,26 +378,13 @@ const PlanComptableForm = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="form-control">
               <label className="label cursor-pointer justify-start gap-3">
-                <input
-                  type="checkbox"
-                  name="is_active"
-                  checked={formData.is_active}
-                  onChange={handleChange}
-                  className="checkbox checkbox-primary"
-                />
+                <input type="checkbox" name="is_active" checked={formData.is_active} onChange={handleChange} className="checkbox checkbox-primary" />
                 <span className="label-text font-medium">Compte actif</span>
               </label>
             </div>
-
             <div className="form-control">
               <label className="label cursor-pointer justify-start gap-3">
-                <input
-                  type="checkbox"
-                  name="is_analytique"
-                  checked={formData.is_analytique}
-                  onChange={handleChange}
-                  className="checkbox checkbox-primary"
-                />
+                <input type="checkbox" name="is_analytique" checked={formData.is_analytique} onChange={handleChange} className="checkbox checkbox-primary" />
                 <span className="label-text font-medium">Compte analytique</span>
               </label>
             </div>
@@ -466,43 +403,11 @@ const PlanComptableForm = () => {
               placeholder="Description détaillée du compte..."
               value={formData.description || ''}
               onChange={handleChange}
-              className="textarea textarea-bordered w-full h-24 focus:textarea-primary transition-all resize-none"
+              className="textarea textarea-bordered w-full h-24 resize-none"
             />
-          </div>
-
-          {/* Type de compte actuel */}
-          <div className="bg-base-200/50 rounded-lg p-4">
-            <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-lg bg-primary/10`}>
-                {typeOptions.find(t => t.value === formData.type_compte)?.icon && 
-                  React.createElement(
-                    typeOptions.find(t => t.value === formData.type_compte).icon,
-                    { className: `w-5 h-5 ${typeOptions.find(t => t.value === formData.type_compte).color}` }
-                  )
-                }
-              </div>
-              <div>
-                <p className="text-sm font-medium">
-                  {typeOptions.find(t => t.value === formData.type_compte)?.label || formData.type_compte}
-                </p>
-                <p className="text-xs text-base-content/40">
-                  Solde normal: {soldeOptions.find(s => s.value === formData.solde_normal)?.label || formData.solde_normal}
-                </p>
-              </div>
-            </div>
           </div>
         </div>
       </form>
-
-      <style>{`
-        @keyframes slideDown {
-          from { opacity: 0; transform: translateY(-10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-slideDown {
-          animation: slideDown 0.3s ease-out;
-        }
-      `}</style>
     </div>
   )
 }
