@@ -41,8 +41,8 @@ const ProductForm = () => {
   const [variants, setVariants] = useState([])
   const [showVariantModal, setShowVariantModal] = useState(false)
   const [editingVariant, setEditingVariant] = useState(null)
-  const [variantForm, setVariantForm] = useState({ 
-    sku: '', attributes: {}, stock_quantity: 0, image: null, is_active: true 
+  const [variantForm, setVariantForm] = useState({
+    sku: '', attributes: {}, stock_quantity: 0, image: null, is_active: true
   })
   const [attributeKey, setAttributeKey] = useState('')
   const [attributeValue, setAttributeValue] = useState('')
@@ -55,31 +55,43 @@ const ProductForm = () => {
     setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 5000)
   }
 
+  // ✅ Helper : lit results ou array
+  const unwrap = (data) => Array.isArray(data) ? data : (data?.results || [])
+
   const fetchData = async () => {
     setLoading(true)
     try {
+      // ✅ page_size=200 pour les selects → pas de pagination gênante
       const [catRes, brandRes, unitRes] = await Promise.all([
-        AxiosInstance.get('/categories/'),
-        AxiosInstance.get('/brands/'),
-        AxiosInstance.get('/units/')
+        AxiosInstance.get('/categories/?page_size=200&is_active=true'),
+        AxiosInstance.get('/brands/?page_size=200&is_active=true'),
+        AxiosInstance.get('/units/?page_size=200')
       ])
-      setCategories(catRes.data)
-      setBrands(brandRes.data)
-      setUnits(unitRes.data)
+      setCategories(unwrap(catRes.data))
+      setBrands(unwrap(brandRes.data))
+      setUnits(unwrap(unitRes.data))
 
       if (isEditMode) {
         const prodRes = await AxiosInstance.get(`/products/${id}/`)
         const p = prodRes.data
         setFormData({
-          reference: p.reference || '', barcode: p.barcode || '', name: p.name || '', 
-          description: p.description || '', product_type: p.product_type || 'simple',
-          category: p.category?.id || p.category || '', brand: p.brand?.id || p.brand || '', 
+          reference: p.reference || '',
+          barcode: p.barcode || '',
+          name: p.name || '',
+          description: p.description || '',
+          product_type: p.product_type || 'simple',
+          category: p.category?.id || p.category || '',
+          brand: p.brand?.id || p.brand || '',
           unit: p.unit?.id || p.unit || '',
-          stock_quantity: p.stock_quantity || 0, minimum_stock: p.minimum_stock || 5,
-          maximum_stock: p.maximum_stock || '', location: p.location || '',
-          is_active: p.is_active !== undefined ? p.is_active : true, 
-          is_featured: p.is_featured || false, has_variants: p.has_variants || false,
-          weight: p.weight || '', volume: p.volume || ''
+          stock_quantity: p.stock_quantity || 0,
+          minimum_stock: p.minimum_stock || 5,
+          maximum_stock: p.maximum_stock || '',
+          location: p.location || '',
+          is_active: p.is_active !== undefined ? p.is_active : true,
+          is_featured: p.is_featured || false,
+          has_variants: p.has_variants || false,
+          weight: p.weight || '',
+          volume: p.volume || ''
         })
         if (p.main_image) {
           setImagePreview(p.main_image)
@@ -87,14 +99,16 @@ const ProductForm = () => {
           setImagePreview(null)
         }
         setRemoveMainImage(false)
-        
+
         const varRes = await AxiosInstance.get(`/products/${id}/variants/`).catch(() => ({ data: [] }))
-        setVariants(varRes.data || [])
+        setVariants(unwrap(varRes.data))
       }
     } catch (error) {
       console.error(error)
       showNotification('Erreur de chargement des données', 'error')
-    } finally { setLoading(false) }
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { fetchData() }, [id])
@@ -143,8 +157,7 @@ const ProductForm = () => {
     const { name, value, type, checked } = e.target
     const newValue = type === 'checkbox' ? checked : value
     setFormData(prev => ({ ...prev, [name]: newValue }))
-    
-    // Validation en temps réel
+
     if (touched[name]) {
       const error = validateField(name, newValue)
       setErrors(prev => ({ ...prev, [name]: error }))
@@ -153,7 +166,7 @@ const ProductForm = () => {
 
   const handleMainImageFile = (file) => {
     if (!file) return
-    
+
     if (!file.type.match('image.*')) {
       showNotification('Veuillez sélectionner une image valide (PNG, JPG, JPEG, GIF)', 'error')
       return
@@ -184,12 +197,8 @@ const ProductForm = () => {
   const validateVariants = () => {
     const newErrors = {}
     variants.forEach((v, index) => {
-      if (!v.sku?.trim()) {
-        newErrors[`variant_${index}`] = 'SKU obligatoire'
-      }
-      if (Object.keys(v.attributes).length === 0) {
-        newErrors[`variant_${index}_attrs`] = 'Au moins un attribut requis'
-      }
+      if (!v.sku?.trim()) newErrors[`variant_${index}`] = 'SKU obligatoire'
+      if (Object.keys(v.attributes).length === 0) newErrors[`variant_${index}_attrs`] = 'Au moins un attribut requis'
     })
     setVariantErrors(newErrors)
     return Object.keys(newErrors).length === 0
@@ -204,9 +213,9 @@ const ProductForm = () => {
       showNotification('Ajoutez au moins un attribut (ex: Couleur, Taille)', 'error')
       return
     }
-    
+
     if (editingVariant) {
-      setVariants(prev => prev.map(v => 
+      setVariants(prev => prev.map(v =>
         v.id === editingVariant.id ? { ...variantForm, id: editingVariant.id } : v
       ))
     } else {
@@ -215,7 +224,6 @@ const ProductForm = () => {
     setShowVariantModal(false)
     setEditingVariant(null)
     setVariantForm({ sku: '', attributes: {}, stock_quantity: 0, image: null, is_active: true })
-    setVariantImagePreview(null)
     setAttributeKey(''); setAttributeValue('')
     setVariantErrors({})
   }
@@ -226,9 +234,9 @@ const ProductForm = () => {
 
   const addAttribute = () => {
     if (attributeKey && attributeValue) {
-      setVariantForm(prev => ({ 
-        ...prev, 
-        attributes: { ...prev.attributes, [attributeKey]: attributeValue } 
+      setVariantForm(prev => ({
+        ...prev,
+        attributes: { ...prev.attributes, [attributeKey]: attributeValue }
       }))
       setAttributeKey('')
       setAttributeValue('')
@@ -245,22 +253,20 @@ const ProductForm = () => {
 
   const validateForm = () => {
     const newErrors = {}
-    
-    // Validation des champs obligatoires
+
     if (!formData.reference?.trim()) newErrors.reference = 'La référence est obligatoire'
     else if (formData.reference.length < 3) newErrors.reference = 'La référence doit contenir au moins 3 caractères'
-    
+
     if (!formData.name?.trim()) newErrors.name = 'Le nom du produit est obligatoire'
     else if (formData.name.length < 2) newErrors.name = 'Le nom doit contenir au moins 2 caractères'
-    
+
     if (!formData.category) newErrors.category = 'La catégorie est obligatoire'
     if (!formData.unit) newErrors.unit = 'L\'unité est obligatoire'
-    
+
     if (formData.maximum_stock && formData.minimum_stock > formData.maximum_stock) {
       newErrors.maximum_stock = 'Le stock maximum doit être supérieur au stock minimum'
     }
-    
-    // Validation des variantes
+
     if (formData.has_variants) {
       if (variants.length === 0) {
         newErrors.variants = 'Ajoutez au moins une variante'
@@ -271,11 +277,10 @@ const ProductForm = () => {
         }
       }
     }
-    
+
     setErrors(newErrors)
-    
+
     if (Object.keys(newErrors).length > 0) {
-      // Trouver le premier champ en erreur et faire défiler
       const firstError = Object.keys(newErrors)[0]
       const element = document.querySelector(`[name="${firstError}"]`)
       if (element) {
@@ -283,7 +288,7 @@ const ProductForm = () => {
         element.scrollIntoView({ behavior: 'smooth', block: 'center' })
       }
     }
-    
+
     return Object.keys(newErrors).length === 0
   }
 
@@ -293,25 +298,22 @@ const ProductForm = () => {
       showNotification('Veuillez corriger les erreurs avant de continuer', 'error')
       return
     }
-    
+
     setSubmitting(true)
     try {
       const productPayload = new FormData()
-      
-      // Ajouter tous les champs du formulaire
+
       Object.keys(formData).forEach(key => {
         const value = formData[key]
         if (value !== null && value !== undefined && value !== '') {
           productPayload.append(key, value)
         }
       })
-      
-      // Gérer l'image principale
+
       if (selectedImage) {
         productPayload.append('main_image', selectedImage)
       }
-      
-      // Si on est en mode édition et qu'on a supprimé l'image
+
       if (isEditMode && removeMainImage) {
         productPayload.append('remove_main_image', 'true')
       }
@@ -328,14 +330,13 @@ const ProductForm = () => {
       }
       const productId = productResponse.data.id
 
-      // Gérer les variantes
       if (formData.has_variants) {
         for (const v of variants) {
           const variantPayload = {
-            product: productId, 
-            sku: v.sku, 
+            product: productId,
+            sku: v.sku,
             attributes: v.attributes,
-            stock_quantity: v.stock_quantity || 0, 
+            stock_quantity: v.stock_quantity || 0,
             is_active: v.is_active !== undefined ? v.is_active : true
           }
           if (v.id && !String(v.id).includes('temp') && !String(v.id).includes('_')) {
@@ -369,10 +370,11 @@ const ProductForm = () => {
       } else {
         showNotification('❌ Erreur de connexion au serveur', 'error')
       }
-    } finally { setSubmitting(false) }
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  // Helper pour afficher les erreurs
   const renderError = (fieldName) => {
     if (errors[fieldName] && touched[fieldName]) {
       return (
@@ -387,9 +389,7 @@ const ProductForm = () => {
 
   const getInputClass = (fieldName) => {
     let baseClass = 'input input-bordered input-sm w-full'
-    if (errors[fieldName] && touched[fieldName]) {
-      return `${baseClass} input-error`
-    }
+    if (errors[fieldName] && touched[fieldName]) return `${baseClass} input-error`
     return baseClass
   }
 
@@ -415,15 +415,12 @@ const ProductForm = () => {
       {notification.show && (
         <div className="fixed top-16 lg:top-20 right-3 lg:right-6 z-50 animate-slideDown w-[calc(100%-1.5rem)] lg:w-auto max-w-md">
           <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-lg`}>
-            {notification.type === 'success' ? 
-              <CheckCircle className="w-4 h-4 flex-shrink-0" /> : 
+            {notification.type === 'success' ?
+              <CheckCircle className="w-4 h-4 flex-shrink-0" /> :
               <AlertTriangle className="w-4 h-4 flex-shrink-0" />
             }
             <span className="text-sm lg:text-base font-medium">{notification.message}</span>
-            <button 
-              className="btn btn-ghost btn-xs btn-circle" 
-              onClick={() => setNotification({ ...notification, show: false })}
-            >
+            <button className="btn btn-ghost btn-xs btn-circle" onClick={() => setNotification({ ...notification, show: false })}>
               <X className="w-3 h-3" />
             </button>
           </div>
@@ -462,9 +459,9 @@ const ProductForm = () => {
           const Icon = tab.icon
           const hasError = tab.id === 'general' && Object.keys(errors).length > 0
           return (
-            <button 
-              key={tab.id} 
-              className={`tab gap-2 text-sm whitespace-nowrap ${activeTab === tab.id ? 'tab-active' : ''} ${hasError ? 'text-error' : ''}`} 
+            <button
+              key={tab.id}
+              className={`tab gap-2 text-sm whitespace-nowrap ${activeTab === tab.id ? 'tab-active' : ''} ${hasError ? 'text-error' : ''}`}
               onClick={() => setActiveTab(tab.id)}
             >
               <Icon className="w-4 h-4" /> {tab.label}
@@ -485,7 +482,7 @@ const ProductForm = () => {
                   <div className="flex items-center gap-2">
                     <div className="p-1.5 bg-primary/10 rounded-lg"><Hash className="w-4 h-4 text-primary" /></div>
                     <h2 className="text-base font-bold">Identification</h2>
-                    {errors.reference || errors.name ? (
+                    {(errors.reference || errors.name) ? (
                       <span className="badge badge-error badge-sm ml-2">Champs obligatoires</span>
                     ) : null}
                   </div>
@@ -496,14 +493,14 @@ const ProductForm = () => {
                       <label className="label pb-1 text-sm font-medium">
                         Référence <span className="text-error">*</span>
                       </label>
-                      <input 
-                        type="text" 
-                        name="reference" 
-                        value={formData.reference} 
+                      <input
+                        type="text"
+                        name="reference"
+                        value={formData.reference}
                         onChange={handleInputChange}
                         onBlur={handleBlur}
                         className={getInputClass('reference')}
-                        placeholder="ex: REF-001" 
+                        placeholder="ex: REF-001"
                       />
                       {renderError('reference')}
                     </div>
@@ -511,52 +508,52 @@ const ProductForm = () => {
                       <label className="label pb-1 text-sm font-medium">
                         <Barcode className="w-3 h-3 inline mr-1" /> Code-barres
                       </label>
-                      <input 
-                        type="text" 
-                        name="barcode" 
-                        value={formData.barcode} 
+                      <input
+                        type="text"
+                        name="barcode"
+                        value={formData.barcode}
                         onChange={handleInputChange}
                         onBlur={handleBlur}
-                        className="input input-bordered input-sm w-full" 
-                        placeholder="ex: 1234567890123" 
+                        className="input input-bordered input-sm w-full"
+                        placeholder="ex: 1234567890123"
                       />
                       <span className="text-xs text-base-content/40 mt-1">Optionnel - Format EAN-13</span>
                     </div>
                   </div>
-                  
+
                   <div className="form-control">
                     <label className="label pb-1 text-sm font-medium">
                       Nom du produit <span className="text-error">*</span>
                     </label>
-                    <input 
-                      type="text" 
-                      name="name" 
-                      value={formData.name} 
+                    <input
+                      type="text"
+                      name="name"
+                      value={formData.name}
                       onChange={handleInputChange}
                       onBlur={handleBlur}
                       className={getInputClass('name')}
-                      placeholder="ex: Ordinateur Portable Dell XPS" 
+                      placeholder="ex: Ordinateur Portable Dell XPS"
                     />
                     {renderError('name')}
                   </div>
-                  
+
                   <div className="form-control">
                     <label className="label pb-1 text-sm font-medium">Description</label>
-                    <textarea 
-                      name="description" 
-                      value={formData.description} 
+                    <textarea
+                      name="description"
+                      value={formData.description}
                       onChange={handleInputChange}
-                      className="textarea textarea-bordered text-sm w-full h-24" 
-                      placeholder="Description détaillée du produit..." 
+                      className="textarea textarea-bordered text-sm w-full h-24"
+                      placeholder="Description détaillée du produit..."
                     />
                   </div>
-                  
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="form-control">
                       <label className="label pb-1 text-sm font-medium">Type de produit</label>
-                      <select 
-                        name="product_type" 
-                        value={formData.product_type} 
+                      <select
+                        name="product_type"
+                        value={formData.product_type}
                         onChange={handleInputChange}
                         className="select select-bordered select-sm w-full"
                       >
@@ -569,9 +566,9 @@ const ProductForm = () => {
                       <label className="label pb-1 text-sm font-medium">
                         Catégorie <span className="text-error">*</span>
                       </label>
-                      <select 
-                        name="category" 
-                        value={formData.category} 
+                      <select
+                        name="category"
+                        value={formData.category}
                         onChange={handleInputChange}
                         onBlur={handleBlur}
                         className={getInputClass('category')}
@@ -587,9 +584,9 @@ const ProductForm = () => {
                       <label className="label pb-1 text-sm font-medium">
                         <Building2 className="w-3 h-3 inline mr-1" /> Marque
                       </label>
-                      <select 
-                        name="brand" 
-                        value={formData.brand} 
+                      <select
+                        name="brand"
+                        value={formData.brand}
                         onChange={handleInputChange}
                         className="select select-bordered select-sm w-full"
                       >
@@ -603,9 +600,9 @@ const ProductForm = () => {
                       <label className="label pb-1 text-sm font-medium">
                         Unité <span className="text-error">*</span>
                       </label>
-                      <select 
-                        name="unit" 
-                        value={formData.unit} 
+                      <select
+                        name="unit"
+                        value={formData.unit}
                         onChange={handleInputChange}
                         onBlur={handleBlur}
                         className={getInputClass('unit')}
@@ -618,15 +615,15 @@ const ProductForm = () => {
                       {renderError('unit')}
                     </div>
                   </div>
-                  
+
                   <div className="form-control bg-base-200/50 rounded-lg p-3">
                     <label className="label cursor-pointer justify-start gap-3">
-                      <input 
-                        type="checkbox" 
-                        name="has_variants" 
-                        checked={formData.has_variants} 
+                      <input
+                        type="checkbox"
+                        name="has_variants"
+                        checked={formData.has_variants}
                         onChange={handleInputChange}
-                        className="toggle toggle-primary toggle-sm" 
+                        className="toggle toggle-primary toggle-sm"
                       />
                       <span className="label-text font-medium">Ce produit a des variantes (taille, couleur, etc.)</span>
                     </label>
@@ -649,52 +646,52 @@ const ProductForm = () => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="form-control">
                       <label className="label pb-1 text-sm font-medium">Quantité en stock</label>
-                      <input 
-                        type="number" 
-                        name="stock_quantity" 
-                        value={formData.stock_quantity} 
+                      <input
+                        type="number"
+                        name="stock_quantity"
+                        value={formData.stock_quantity}
                         onChange={handleInputChange}
                         onBlur={handleBlur}
-                        className="input input-bordered input-sm w-full" 
-                        min="0" 
+                        className="input input-bordered input-sm w-full"
+                        min="0"
                       />
                     </div>
                     <div className="form-control">
                       <label className="label pb-1 text-sm font-medium">Stock minimum</label>
-                      <input 
-                        type="number" 
-                        name="minimum_stock" 
-                        value={formData.minimum_stock} 
+                      <input
+                        type="number"
+                        name="minimum_stock"
+                        value={formData.minimum_stock}
                         onChange={handleInputChange}
                         onBlur={handleBlur}
-                        className="input input-bordered input-sm w-full" 
-                        min="0" 
+                        className="input input-bordered input-sm w-full"
+                        min="0"
                       />
                       <span className="text-xs text-base-content/40 mt-1">Alerte si stock en dessous</span>
                     </div>
                     <div className="form-control">
                       <label className="label pb-1 text-sm font-medium">Stock maximum</label>
-                      <input 
-                        type="number" 
-                        name="maximum_stock" 
-                        value={formData.maximum_stock} 
+                      <input
+                        type="number"
+                        name="maximum_stock"
+                        value={formData.maximum_stock}
                         onChange={handleInputChange}
                         onBlur={handleBlur}
-                        className={getInputClass('maximum_stock')} 
-                        min="0" 
-                        placeholder="Illimité" 
+                        className={getInputClass('maximum_stock')}
+                        min="0"
+                        placeholder="Illimité"
                       />
                       {renderError('maximum_stock')}
                     </div>
                     <div className="form-control">
                       <label className="label pb-1 text-sm font-medium">Emplacement</label>
-                      <input 
-                        type="text" 
-                        name="location" 
-                        value={formData.location} 
+                      <input
+                        type="text"
+                        name="location"
+                        value={formData.location}
                         onChange={handleInputChange}
-                        className="input input-bordered input-sm w-full" 
-                        placeholder="ex: A12 - Rayon 3" 
+                        className="input input-bordered input-sm w-full"
+                        placeholder="ex: A12 - Rayon 3"
                       />
                     </div>
                   </div>
@@ -715,26 +712,26 @@ const ProductForm = () => {
                       <label className="label pb-1 text-sm font-medium">
                         <Weight className="w-3 h-3 inline mr-1" /> Poids (kg)
                       </label>
-                      <input 
-                        type="number" 
-                        name="weight" 
-                        value={formData.weight} 
+                      <input
+                        type="number"
+                        name="weight"
+                        value={formData.weight}
                         onChange={handleInputChange}
-                        className="input input-bordered input-sm w-full" 
-                        step="0.001" 
-                        placeholder="0.000" 
+                        className="input input-bordered input-sm w-full"
+                        step="0.001"
+                        placeholder="0.000"
                       />
                     </div>
                     <div className="form-control">
                       <label className="label pb-1 text-sm font-medium">Volume (m³)</label>
-                      <input 
-                        type="number" 
-                        name="volume" 
-                        value={formData.volume} 
+                      <input
+                        type="number"
+                        name="volume"
+                        value={formData.volume}
                         onChange={handleInputChange}
-                        className="input input-bordered input-sm w-full" 
-                        step="0.001" 
-                        placeholder="0.000" 
+                        className="input input-bordered input-sm w-full"
+                        step="0.001"
+                        placeholder="0.000"
                       />
                     </div>
                   </div>
@@ -752,23 +749,23 @@ const ProductForm = () => {
                   </div>
                 </div>
                 <div className="p-4 lg:p-6">
-                  <div 
+                  <div
                     className={`relative border-2 border-dashed rounded-xl p-4 text-center transition-colors ${dragActive ? 'border-primary bg-primary/5' : 'border-base-300 bg-base-200/30'}`}
-                    onDragEnter={() => setDragActive(true)} 
-                    onDragLeave={() => setDragActive(false)} 
+                    onDragEnter={() => setDragActive(true)}
+                    onDragLeave={() => setDragActive(false)}
                     onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => { 
-                      e.preventDefault(); 
-                      setDragActive(false); 
-                      if (e.dataTransfer.files[0]) handleMainImageFile(e.dataTransfer.files[0]);
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      setDragActive(false)
+                      if (e.dataTransfer.files[0]) handleMainImageFile(e.dataTransfer.files[0])
                     }}
                   >
                     {imagePreview ? (
                       <div className="space-y-3">
                         <div className="relative">
                           <img src={imagePreview} alt="Aperçu" className="w-full h-36 object-contain rounded-lg bg-white" />
-                          <button 
-                            type="button" 
+                          <button
+                            type="button"
                             onClick={handleRemoveImage}
                             className="absolute -top-2 -right-2 btn btn-error btn-circle btn-xs shadow-md"
                           >
@@ -784,8 +781,8 @@ const ProductForm = () => {
                         </div>
                         <p className="text-sm font-medium mb-1">Ajouter une image</p>
                         <p className="text-xs text-base-content/50 mb-3">PNG, JPG, JPEG, GIF jusqu'à 5MB</p>
-                        <button 
-                          type="button" 
+                        <button
+                          type="button"
                           onClick={() => document.getElementById('main-image-input').click()}
                           className="btn btn-outline btn-xs gap-1"
                         >
@@ -793,17 +790,17 @@ const ProductForm = () => {
                         </button>
                       </>
                     )}
-                    <input 
-                      id="main-image-input" 
-                      type="file" 
-                      accept="image/*" 
-                      onChange={handleMainImageSelect} 
-                      className="hidden" 
+                    <input
+                      id="main-image-input"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleMainImageSelect}
+                      className="hidden"
                     />
                   </div>
                   {removeMainImage && isEditMode && (
                     <div className="mt-2 text-xs text-warning flex items-center gap-1 bg-warning/10 p-2 rounded-lg">
-                      <AlertTriangle className="w-3 h-3 flex-shrink-0" /> 
+                      <AlertTriangle className="w-3 h-3 flex-shrink-0" />
                       <span>L'image sera supprimée lors de la mise à jour</span>
                     </div>
                   )}
@@ -815,22 +812,22 @@ const ProductForm = () => {
                   <h3 className="font-semibold text-sm mb-3">Options du produit</h3>
                   <div className="space-y-3">
                     <label className="label cursor-pointer justify-start gap-3 p-0">
-                      <input 
-                        type="checkbox" 
-                        name="is_active" 
-                        checked={formData.is_active} 
+                      <input
+                        type="checkbox"
+                        name="is_active"
+                        checked={formData.is_active}
                         onChange={handleInputChange}
-                        className="toggle toggle-success toggle-sm" 
+                        className="toggle toggle-success toggle-sm"
                       />
                       <span className="label-text text-sm">Produit actif</span>
                     </label>
                     <label className="label cursor-pointer justify-start gap-3 p-0">
-                      <input 
-                        type="checkbox" 
-                        name="is_featured" 
-                        checked={formData.is_featured} 
+                      <input
+                        type="checkbox"
+                        name="is_featured"
+                        checked={formData.is_featured}
                         onChange={handleInputChange}
-                        className="toggle toggle-warning toggle-sm" 
+                        className="toggle toggle-warning toggle-sm"
                       />
                       <span className="label-text text-sm">Mettre en avant</span>
                     </label>
@@ -838,7 +835,6 @@ const ProductForm = () => {
                 </div>
               </div>
 
-              {/* Informations supplémentaires */}
               <div className="bg-base-100 rounded-xl shadow-sm border border-base-300 overflow-hidden">
                 <div className="p-4 lg:p-6">
                   <h3 className="font-semibold text-sm mb-3">Statut du produit</h3>
@@ -886,9 +882,9 @@ const ProductForm = () => {
                   </span>
                 )}
               </div>
-              <button 
-                type="button" 
-                onClick={() => setShowVariantModal(true)} 
+              <button
+                type="button"
+                onClick={() => setShowVariantModal(true)}
                 className="btn btn-primary btn-sm gap-1"
               >
                 <Plus className="w-3 h-3" /> Ajouter une variante
@@ -901,15 +897,15 @@ const ProductForm = () => {
                   <span>{errors.variants}</span>
                 </div>
               )}
-              
+
               {variants.length === 0 ? (
                 <div className="text-center py-12">
                   <Layers className="w-12 h-12 mx-auto mb-3 text-base-content/30" />
                   <p className="text-base-content/50">Aucune variante définie</p>
                   <p className="text-xs text-base-content/40 mt-1">Ajoutez des variantes pour gérer les différentes versions du produit</p>
-                  <button 
-                    type="button" 
-                    onClick={() => setShowVariantModal(true)} 
+                  <button
+                    type="button"
+                    onClick={() => setShowVariantModal(true)}
                     className="btn btn-primary btn-sm mt-4 gap-1"
                   >
                     <Plus className="w-3 h-3" /> Ajouter une variante
@@ -933,33 +929,33 @@ const ProductForm = () => {
                           <td className="font-mono text-sm">{v.sku}</td>
                           <td>
                             <div className="flex flex-wrap gap-1">
-                              {Object.entries(v.attributes).map(([key, val]) => (
+                              {Object.entries(v.attributes || {}).map(([key, val]) => (
                                 <span key={key} className="badge badge-ghost badge-sm">{key}: {val}</span>
                               ))}
                             </div>
                           </td>
                           <td className="text-center text-sm font-medium">{v.stock_quantity || 0}</td>
                           <td className="text-center">
-                            {v.is_active !== undefined && v.is_active ? 
-                              <span className="badge badge-success badge-sm">Actif</span> : 
+                            {v.is_active !== undefined && v.is_active ?
+                              <span className="badge badge-success badge-sm">Actif</span> :
                               <span className="badge badge-ghost badge-sm">Inactif</span>}
                           </td>
                           <td>
                             <div className="flex justify-end gap-1">
-                              <button 
-                                type="button" 
-                                className="btn btn-ghost btn-xs" 
-                                onClick={() => { 
-                                  setEditingVariant(v); 
-                                  setVariantForm({...v}); 
-                                  setShowVariantModal(true); 
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-xs"
+                                onClick={() => {
+                                  setEditingVariant(v)
+                                  setVariantForm({ ...v })
+                                  setShowVariantModal(true)
                                 }}
                               >
                                 <Edit className="w-3 h-3" />
                               </button>
-                              <button 
-                                type="button" 
-                                className="btn btn-ghost btn-xs text-error" 
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-xs text-error"
                                 onClick={() => handleDeleteVariant(v.id)}
                               >
                                 <Trash2 className="w-3 h-3" />
@@ -985,13 +981,13 @@ const ProductForm = () => {
               <h3 className="font-bold text-lg">
                 {editingVariant ? '✏️ Modifier la variante' : '➕ Nouvelle variante'}
               </h3>
-              <button 
-                className="btn btn-sm btn-circle btn-ghost" 
-                onClick={() => { 
-                  setShowVariantModal(false); 
-                  setEditingVariant(null); 
-                  setVariantForm({ sku: '', attributes: {}, stock_quantity: 0, image: null, is_active: true });
-                  setVariantErrors({});
+              <button
+                className="btn btn-sm btn-circle btn-ghost"
+                onClick={() => {
+                  setShowVariantModal(false)
+                  setEditingVariant(null)
+                  setVariantForm({ sku: '', attributes: {}, stock_quantity: 0, image: null, is_active: true })
+                  setVariantErrors({})
                 }}
               >
                 <X className="w-4 h-4" />
@@ -1002,12 +998,12 @@ const ProductForm = () => {
                 <label className="label py-1 text-sm font-medium">
                   SKU <span className="text-error">*</span>
                 </label>
-                <input 
-                  type="text" 
-                  className={`input input-bordered input-sm w-full ${variantErrors.sku ? 'input-error' : ''}`} 
+                <input
+                  type="text"
+                  className={`input input-bordered input-sm w-full ${variantErrors.sku ? 'input-error' : ''}`}
                   value={variantForm.sku}
                   onChange={(e) => setVariantForm({ ...variantForm, sku: e.target.value })}
-                  placeholder="ex: SKU-001" 
+                  placeholder="ex: SKU-001"
                 />
                 {variantErrors.sku && (
                   <div className="flex items-center gap-1 text-error text-xs mt-1">
@@ -1016,29 +1012,29 @@ const ProductForm = () => {
                   </div>
                 )}
               </div>
-              
+
               <div>
                 <label className="label py-1 text-sm font-medium">
                   Attributs <span className="text-error">*</span>
                 </label>
                 <div className="flex gap-2 mb-2">
-                  <input 
-                    type="text" 
-                    placeholder="ex: Couleur" 
-                    className="input input-bordered input-sm flex-1" 
-                    value={attributeKey} 
-                    onChange={(e) => setAttributeKey(e.target.value)} 
+                  <input
+                    type="text"
+                    placeholder="ex: Couleur"
+                    className="input input-bordered input-sm flex-1"
+                    value={attributeKey}
+                    onChange={(e) => setAttributeKey(e.target.value)}
                   />
-                  <input 
-                    type="text" 
-                    placeholder="ex: Rouge" 
-                    className="input input-bordered input-sm flex-1" 
-                    value={attributeValue} 
-                    onChange={(e) => setAttributeValue(e.target.value)} 
+                  <input
+                    type="text"
+                    placeholder="ex: Rouge"
+                    className="input input-bordered input-sm flex-1"
+                    value={attributeValue}
+                    onChange={(e) => setAttributeValue(e.target.value)}
                   />
-                  <button 
-                    type="button" 
-                    className="btn btn-outline btn-sm" 
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
                     onClick={addAttribute}
                     disabled={!attributeKey || !attributeValue}
                   >
@@ -1049,9 +1045,9 @@ const ProductForm = () => {
                   {Object.entries(variantForm.attributes).map(([key, val]) => (
                     <span key={key} className="badge badge-lg gap-1 bg-primary/10">
                       {key}: {val}
-                      <button 
-                        type="button" 
-                        onClick={() => removeAttribute(key)} 
+                      <button
+                        type="button"
+                        onClick={() => removeAttribute(key)}
                         className="hover:text-error"
                       >
                         <X className="w-3 h-3" />
@@ -1071,39 +1067,39 @@ const ProductForm = () => {
                   </div>
                 )}
               </div>
-              
+
               <div className="form-control">
                 <label className="label py-1 text-sm font-medium">Quantité en stock</label>
-                <input 
-                  type="number" 
-                  className="input input-bordered input-sm w-full" 
+                <input
+                  type="number"
+                  className="input input-bordered input-sm w-full"
                   value={variantForm.stock_quantity}
-                  onChange={(e) => setVariantForm({ ...variantForm, stock_quantity: parseInt(e.target.value) || 0 })} 
-                  min="0" 
+                  onChange={(e) => setVariantForm({ ...variantForm, stock_quantity: parseInt(e.target.value) || 0 })}
+                  min="0"
                 />
               </div>
-              
+
               <div className="form-control">
                 <label className="label cursor-pointer justify-start gap-3">
-                  <input 
-                    type="checkbox" 
-                    className="toggle toggle-success toggle-sm" 
+                  <input
+                    type="checkbox"
+                    className="toggle toggle-success toggle-sm"
                     checked={variantForm.is_active}
-                    onChange={(e) => setVariantForm({ ...variantForm, is_active: e.target.checked })} 
+                    onChange={(e) => setVariantForm({ ...variantForm, is_active: e.target.checked })}
                   />
                   <span className="label-text">Variante active</span>
                 </label>
               </div>
             </div>
             <div className="modal-action">
-              <button 
-                className="btn btn-ghost btn-sm" 
+              <button
+                className="btn btn-ghost btn-sm"
                 onClick={() => setShowVariantModal(false)}
               >
                 Annuler
               </button>
-              <button 
-                className="btn btn-primary btn-sm gap-1" 
+              <button
+                className="btn btn-primary btn-sm gap-1"
                 onClick={handleAddVariant}
               >
                 <Save className="w-3 h-3" />
@@ -1126,21 +1122,17 @@ const ProductForm = () => {
       </div>
 
       {/* Styles CSS personnalisés */}
-      <style jsx>{`
+      <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(-5px); }
           to { opacity: 1; transform: translateY(0); }
         }
-        .animate-fadeIn {
-          animation: fadeIn 0.3s ease-out;
-        }
+        .animate-fadeIn { animation: fadeIn 0.3s ease-out; }
         @keyframes slideDown {
           from { opacity: 0; transform: translateY(-20px); }
           to { opacity: 1; transform: translateY(0); }
         }
-        .animate-slideDown {
-          animation: slideDown 0.4s ease-out;
-        }
+        .animate-slideDown { animation: slideDown 0.4s ease-out; }
       `}</style>
     </div>
   )

@@ -1,31 +1,14 @@
 // src/components/Units.jsx
-import React, { useEffect, useState } from 'react'
+import React, {
+  useEffect, useState, useCallback, useRef, useMemo
+} from 'react'
 import { useNavigate } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
 import {
-  Plus,
-  Edit,
-  Trash2,
-  Search,
-  RefreshCw,
-  X,
-  AlertCircle,
-  CheckCircle,
-  ChevronLeft,
-  ChevronRight,
-  AlertTriangle,
-  ArrowUpDown,
-  ChevronUp,
-  ChevronDown,
-  Weight,
-  Droplet,
-  Ruler,
-  Square,
-  Package,
-  Clock,
-  Thermometer,
-  Box,
-  Filter
+  Plus, Edit, Trash2, Search, RefreshCw, X, AlertCircle, CheckCircle,
+  ChevronLeft, ChevronRight, AlertTriangle, ArrowUpDown, ChevronUp,
+  ChevronDown, Weight, Droplet, Ruler, Square, Package, Clock,
+  Thermometer, Box, Filter
 } from 'lucide-react'
 
 const Units = () => {
@@ -33,6 +16,7 @@ const Units = () => {
 
   const [units, setUnits] = useState([])
   const [loading, setLoading] = useState(true)
+  const [initialLoad, setInitialLoad] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(10)
@@ -42,14 +26,18 @@ const Units = () => {
   const [sortField, setSortField] = useState('name')
   const [sortDirection, setSortDirection] = useState('asc')
   const [showMobileFilters, setShowMobileFilters] = useState(false)
-  const [stats, setStats] = useState({ 
-    total: 0, 
-    weightUnits: 0, 
-    volumeUnits: 0, 
-    pieceUnits: 0,
-    lengthUnits: 0,
-    otherUnits: 0
-  })
+
+  // ✅ Refs cache
+  const cacheRef = useRef(new Map())
+  const fetchingRef = useRef(false)
+
+  // ---------- Helpers ----------
+  const showNotification = (message, type = 'success') => {
+    setNotification({ show: true, message, type })
+    setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 4000)
+  }
+
+  const unwrap = (data) => Array.isArray(data) ? data : (data?.results || [])
 
   const getUnitIconAndColor = (name, abbreviation) => {
     const lowerName = (name || '').toLowerCase()
@@ -104,73 +92,98 @@ const Units = () => {
     return { label: 'Autre', color: 'badge-ghost' }
   }
 
-  const showNotification = (message, type = 'success') => {
-    setNotification({ show: true, message, type })
-    setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 4000)
-  }
+  // ---------- Fetch avec cache ----------
+  const fetchData = useCallback(async ({ bypassCache = false } = {}) => {
+    const key = 'units_list'
 
-  const fetchData = async () => {
+    if (!bypassCache && cacheRef.current.has(key)) {
+      setUnits(cacheRef.current.get(key))
+      setLoading(false)
+      setInitialLoad(false)
+      return
+    }
+
+    if (fetchingRef.current) return
+    fetchingRef.current = true
     setLoading(true)
+
     try {
-      const res = await AxiosInstance.get('/units/')
-      const data = res.data
+      // ✅ page_size=200 pour unifier le contrat
+      const res = await AxiosInstance.get('/units/?page_size=200')
+      const data = unwrap(res.data)
+
+      cacheRef.current.set(key, data)
+      if (cacheRef.current.size > 10) {
+        const firstKey = cacheRef.current.keys().next().value
+        cacheRef.current.delete(firstKey)
+      }
+
       setUnits(data)
-      
-      let weightCount = 0, volumeCount = 0, pieceCount = 0, lengthCount = 0, otherCount = 0
-      data.forEach(u => {
-        const lowerName = (u.name || '').toLowerCase()
-        const lowerAbbr = (u.abbreviation || '').toLowerCase()
-        if (lowerAbbr.includes('kg') || lowerAbbr.includes('g') || lowerName.includes('kilo') || lowerName.includes('gramme')) weightCount++
-        else if (lowerAbbr.includes('l') || lowerAbbr.includes('ml') || lowerName.includes('litre')) volumeCount++
-        else if (lowerAbbr.includes('pcs') || lowerAbbr.includes('pc') || lowerName.includes('pièce')) pieceCount++
-        else if (lowerAbbr.includes('m') || lowerAbbr.includes('cm') || lowerName.includes('mètre')) lengthCount++
-        else otherCount++
-      })
-      
-      setStats({
-        total: data.length,
-        weightUnits: weightCount,
-        volumeUnits: volumeCount,
-        pieceUnits: pieceCount,
-        lengthUnits: lengthCount,
-        otherUnits: otherCount
-      })
     } catch (error) {
       console.error(error)
       showNotification('Erreur de chargement des unités', 'error')
     } finally {
       setLoading(false)
+      setInitialLoad(false)
+      fetchingRef.current = false
     }
-  }
+  }, [])
 
   useEffect(() => {
     fetchData()
-  }, [])
+  }, [fetchData])
 
+  const refreshData = async () => {
+    cacheRef.current.clear()
+    await fetchData({ bypassCache: true })
+    showNotification('Données actualisées', 'success')
+  }
+
+  // ---------- Actions ----------
   const handleDeleteUnit = async () => {
     if (!unitToDelete) return
     try {
       await AxiosInstance.delete(`/units/${unitToDelete.id}/`)
       showNotification(`Unité "${unitToDelete.name}" supprimée avec succès`, 'success')
-      fetchData()
+      cacheRef.current.clear()
+      fetchData({ bypassCache: true })
       setShowDeleteModal(false)
       setUnitToDelete(null)
-    } catch (error) {
+    } catch {
       showNotification('Erreur lors de la suppression', 'error')
     }
   }
 
   const handleSort = (field) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortField(field)
-      setSortDirection('asc')
-    }
+    if (sortField === field) setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    else { setSortField(field); setSortDirection('asc') }
   }
 
-  const filteredAndSortedUnits = React.useMemo(() => {
-    let filtered = units.filter(u => {
+  // ---------- Stats mémoïsées ----------
+  const stats = useMemo(() => {
+    let weightCount = 0, volumeCount = 0, pieceCount = 0, lengthCount = 0, otherCount = 0
+    units.forEach(u => {
+      const lowerName = (u.name || '').toLowerCase()
+      const lowerAbbr = (u.abbreviation || '').toLowerCase()
+      if (lowerAbbr.includes('kg') || lowerAbbr.includes('g') || lowerName.includes('kilo') || lowerName.includes('gramme')) weightCount++
+      else if (lowerAbbr.includes('l') || lowerAbbr.includes('ml') || lowerName.includes('litre')) volumeCount++
+      else if (lowerAbbr.includes('pcs') || lowerAbbr.includes('pc') || lowerName.includes('pièce')) pieceCount++
+      else if (lowerAbbr.includes('m') || lowerAbbr.includes('cm') || lowerName.includes('mètre')) lengthCount++
+      else otherCount++
+    })
+    return {
+      total: units.length,
+      weightUnits: weightCount,
+      volumeUnits: volumeCount,
+      pieceUnits: pieceCount,
+      lengthUnits: lengthCount,
+      otherUnits: otherCount
+    }
+  }, [units])
+
+  // ---------- Filtrage et tri locaux ----------
+  const filteredAndSortedUnits = useMemo(() => {
+    const filtered = units.filter(u => {
       const search = searchTerm.toLowerCase()
       const name = (u.name || '').toLowerCase()
       const abbreviation = (u.abbreviation || '').toLowerCase()
@@ -180,7 +193,6 @@ const Units = () => {
     filtered.sort((a, b) => {
       let aVal = (a[sortField] || '').toLowerCase()
       let bVal = (b[sortField] || '').toLowerCase()
-      
       if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1
       if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1
       return 0
@@ -189,20 +201,25 @@ const Units = () => {
     return filtered
   }, [units, searchTerm, sortField, sortDirection])
 
-  const totalPages = Math.ceil(filteredAndSortedUnits.length / itemsPerPage)
-  const paginatedUnits = filteredAndSortedUnits.slice(
+  const totalPages = Math.max(1, Math.ceil(filteredAndSortedUnits.length / itemsPerPage))
+  const paginatedUnits = useMemo(() => filteredAndSortedUnits.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
-  )
+  ), [filteredAndSortedUnits, currentPage, itemsPerPage])
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(1)
+  }, [totalPages, currentPage])
 
   const SortIcon = ({ field }) => {
     if (sortField !== field) return <ArrowUpDown className="w-3 h-3 opacity-40" />
-    return sortDirection === 'asc' ? 
-      <ChevronUp className="w-3 h-3" /> : 
-      <ChevronDown className="w-3 h-3" />
+    return sortDirection === 'asc'
+      ? <ChevronUp className="w-3 h-3" />
+      : <ChevronDown className="w-3 h-3" />
   }
 
-  if (loading) {
+  // ---------- Rendu : premier chargement ----------
+  if (initialLoad && loading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-200px)]">
         <div className="text-center space-y-4">
@@ -217,17 +234,25 @@ const Units = () => {
 
   return (
     <div className="space-y-4 lg:space-y-6 p-3 lg:p-6">
+      {/* Spinner overlay discret */}
+      {loading && !initialLoad && (
+        <div className="fixed top-16 lg:top-20 right-3 lg:right-6 z-40 animate-slideDown">
+          <div className="bg-base-100 shadow-lg rounded-full px-4 py-2 flex items-center gap-2 border border-base-300">
+            <span className="loading loading-spinner loading-xs text-primary"></span>
+            <span className="text-xs text-base-content/60">Chargement...</span>
+          </div>
+        </div>
+      )}
+
       {/* Notification */}
       {notification.show && (
         <div className="fixed top-16 lg:top-20 right-3 lg:right-6 z-50 animate-slideDown w-[calc(100%-1.5rem)] lg:w-auto max-w-md">
           <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-lg`}>
-            {notification.type === 'success' ? (
-              <CheckCircle className="w-4 h-4 lg:w-5 lg:h-5" />
-            ) : (
-              <AlertCircle className="w-4 h-4 lg:w-5 lg:h-5" />
-            )}
+            {notification.type === 'success'
+              ? <CheckCircle className="w-4 h-4 lg:w-5 lg:h-5" />
+              : <AlertCircle className="w-4 h-4 lg:w-5 lg:h-5" />}
             <span className="text-sm lg:text-base font-medium">{notification.message}</span>
-            <button 
+            <button
               className="btn btn-ghost btn-xs btn-circle"
               onClick={() => setNotification({ ...notification, show: false })}
             >
@@ -247,16 +272,12 @@ const Units = () => {
             Gérez les unités physiques et commerciales
           </p>
         </div>
-        
         <div className="flex gap-2">
-          <button 
-            onClick={fetchData}
-            className="btn btn-outline btn-sm lg:btn-md gap-1 lg:gap-2"
-          >
+          <button onClick={refreshData} className="btn btn-outline btn-sm lg:btn-md gap-1 lg:gap-2">
             <RefreshCw className="w-3 h-3 lg:w-4 lg:h-4" />
             <span className="hidden sm:inline">Actualiser</span>
           </button>
-          <button 
+          <button
             onClick={() => navigate('/units/nouveau')}
             className="btn btn-primary btn-sm lg:btn-md gap-1 lg:gap-2"
           >
@@ -267,58 +288,41 @@ const Units = () => {
         </div>
       </div>
 
-      {/* Cartes statistiques - Responsive */}
+      {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 lg:gap-3">
         <div className="stat bg-base-100 rounded-lg lg:rounded-xl shadow-sm border-l-4 border-primary p-2 lg:p-4">
-          <div className="stat-figure text-primary">
-            <Box className="w-5 h-5 lg:w-6 lg:h-6" />
-          </div>
+          <div className="stat-figure text-primary"><Box className="w-5 h-5 lg:w-6 lg:h-6" /></div>
           <div className="stat-title text-xs lg:text-sm">Total</div>
           <div className="stat-value text-lg lg:text-2xl">{stats.total}</div>
         </div>
-        
         <div className="stat bg-base-100 rounded-lg lg:rounded-xl shadow-sm border-l-4 border-blue-500 p-2 lg:p-4">
-          <div className="stat-figure text-blue-500">
-            <Weight className="w-5 h-5 lg:w-6 lg:h-6" />
-          </div>
+          <div className="stat-figure text-blue-500"><Weight className="w-5 h-5 lg:w-6 lg:h-6" /></div>
           <div className="stat-title text-xs lg:text-sm">Poids</div>
           <div className="stat-value text-lg lg:text-2xl">{stats.weightUnits}</div>
         </div>
-        
         <div className="stat bg-base-100 rounded-lg lg:rounded-xl shadow-sm border-l-4 border-info p-2 lg:p-4">
-          <div className="stat-figure text-info">
-            <Droplet className="w-5 h-5 lg:w-6 lg:h-6" />
-          </div>
+          <div className="stat-figure text-info"><Droplet className="w-5 h-5 lg:w-6 lg:h-6" /></div>
           <div className="stat-title text-xs lg:text-sm">Volume</div>
           <div className="stat-value text-lg lg:text-2xl">{stats.volumeUnits}</div>
         </div>
-        
         <div className="stat bg-base-100 rounded-lg lg:rounded-xl shadow-sm border-l-4 border-secondary p-2 lg:p-4">
-          <div className="stat-figure text-secondary">
-            <Ruler className="w-5 h-5 lg:w-6 lg:h-6" />
-          </div>
+          <div className="stat-figure text-secondary"><Ruler className="w-5 h-5 lg:w-6 lg:h-6" /></div>
           <div className="stat-title text-xs lg:text-sm">Longueur</div>
           <div className="stat-value text-lg lg:text-2xl">{stats.lengthUnits}</div>
         </div>
-        
         <div className="stat bg-base-100 rounded-lg lg:rounded-xl shadow-sm border-l-4 border-warning p-2 lg:p-4">
-          <div className="stat-figure text-warning">
-            <Package className="w-5 h-5 lg:w-6 lg:h-6" />
-          </div>
+          <div className="stat-figure text-warning"><Package className="w-5 h-5 lg:w-6 lg:h-6" /></div>
           <div className="stat-title text-xs lg:text-sm">Pièce</div>
           <div className="stat-value text-lg lg:text-2xl">{stats.pieceUnits}</div>
         </div>
-        
         <div className="stat bg-base-100 rounded-lg lg:rounded-xl shadow-sm border-l-4 border-neutral p-2 lg:p-4">
-          <div className="stat-figure text-neutral">
-            <Box className="w-5 h-5 lg:w-6 lg:h-6" />
-          </div>
+          <div className="stat-figure text-neutral"><Box className="w-5 h-5 lg:w-6 lg:h-6" /></div>
           <div className="stat-title text-xs lg:text-sm">Autre</div>
           <div className="stat-value text-lg lg:text-2xl">{stats.otherUnits}</div>
         </div>
       </div>
 
-      {/* Filtres - Desktop */}
+      {/* Filtres Desktop */}
       <div className="hidden lg:block bg-base-100 rounded-xl shadow-sm border border-base-300 p-4">
         <div className="flex items-center gap-3">
           <div className="flex-1 relative">
@@ -328,27 +332,19 @@ const Units = () => {
               placeholder="Rechercher par nom ou abréviation..."
               className="input input-bordered input-sm w-full pl-9"
               value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value)
-                setCurrentPage(1)
-              }}
+              onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1) }}
             />
           </div>
-          
-          <button 
+          <button
             className="btn btn-outline btn-sm"
-            onClick={() => {
-              setSearchTerm('')
-              setCurrentPage(1)
-            }}
+            onClick={() => { setSearchTerm(''); setCurrentPage(1) }}
           >
-            <Filter className="w-3 h-3" />
-            Réinitialiser
+            <Filter className="w-3 h-3" /> Réinitialiser
           </button>
         </div>
       </div>
 
-      {/* Filtres - Mobile */}
+      {/* Filtres Mobile */}
       <div className="lg:hidden">
         <div className="flex gap-2">
           <div className="flex-1 relative">
@@ -358,25 +354,19 @@ const Units = () => {
               placeholder="Rechercher..."
               className="input input-bordered input-sm w-full pl-8 text-sm"
               value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value)
-                setCurrentPage(1)
-              }}
+              onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1) }}
             />
           </div>
-          
-          <button 
+          <button
             className="btn btn-outline btn-sm"
             onClick={() => setShowMobileFilters(!showMobileFilters)}
           >
-            <Filter className="w-3 h-3" />
-            Filtres
+            <Filter className="w-3 h-3" /> Filtres
           </button>
         </div>
-
         {showMobileFilters && (
           <div className="mt-2 p-3 bg-base-100 rounded-lg border border-base-300">
-            <button 
+            <button
               className="btn btn-outline btn-sm w-full"
               onClick={() => {
                 setSearchTerm('')
@@ -390,7 +380,7 @@ const Units = () => {
         )}
       </div>
 
-      {/* Tableau - Desktop */}
+      {/* Tableau Desktop */}
       <div className="hidden lg:block bg-base-100 rounded-xl shadow-sm border border-base-300 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="table table-zebra">
@@ -398,21 +388,19 @@ const Units = () => {
               <tr className="bg-base-200">
                 <th className="w-16"></th>
                 <th>
-                  <button 
+                  <button
                     className="flex items-center gap-1 hover:text-primary font-semibold"
                     onClick={() => handleSort('name')}
                   >
-                    Nom de l'unité
-                    <SortIcon field="name" />
+                    Nom de l'unité <SortIcon field="name" />
                   </button>
                 </th>
                 <th>
-                  <button 
+                  <button
                     className="flex items-center gap-1 hover:text-primary font-semibold"
                     onClick={() => handleSort('abbreviation')}
                   >
-                    Abréviation
-                    <SortIcon field="abbreviation" />
+                    Abréviation <SortIcon field="abbreviation" />
                   </button>
                 </th>
                 <th>Catégorie</th>
@@ -426,7 +414,7 @@ const Units = () => {
                 return (
                   <tr key={unit.id} className="hover">
                     <td>
-                      <div className={`avatar placeholder`}>
+                      <div className="avatar placeholder">
                         <div className={`bg-${iconColor}/10 rounded-lg w-10 h-10`}>
                           <IconComponent className={`w-5 h-5 text-${iconColor}`} />
                         </div>
@@ -445,18 +433,15 @@ const Units = () => {
                     </td>
                     <td>
                       <div className="flex justify-end gap-1">
-                        <button 
+                        <button
                           className="btn btn-ghost btn-xs"
                           onClick={() => navigate(`/units/${unit.id}/modifier`)}
                         >
                           <Edit className="w-3 h-3" />
                         </button>
-                        <button 
+                        <button
                           className="btn btn-ghost btn-xs text-error"
-                          onClick={() => {
-                            setUnitToDelete(unit)
-                            setShowDeleteModal(true)
-                          }}
+                          onClick={() => { setUnitToDelete(unit); setShowDeleteModal(true) }}
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>
@@ -468,41 +453,28 @@ const Units = () => {
             </tbody>
           </table>
         </div>
-
         {filteredAndSortedUnits.length === 0 && (
           <div className="p-12 text-center">
             <Box className="w-16 h-16 mx-auto mb-3 text-base-content/30" />
-            <p className="text-base font-medium text-base-content/50">
-              Aucune unité trouvée
-            </p>
+            <p className="text-base font-medium text-base-content/50">Aucune unité trouvée</p>
             <p className="text-sm text-base-content/40 mt-1">
               Essayez de modifier vos critères de recherche
             </p>
-            <button 
-              className="btn btn-primary btn-sm mt-4"
-              onClick={() => navigate('/units/nouveau')}
-            >
-              <Plus className="w-3 h-3" />
-              Créer une unité
+            <button className="btn btn-primary btn-sm mt-4" onClick={() => navigate('/units/nouveau')}>
+              <Plus className="w-3 h-3" /> Créer une unité
             </button>
           </div>
         )}
       </div>
 
-      {/* Liste - Mobile */}
+      {/* Liste Mobile */}
       <div className="lg:hidden space-y-2">
         {paginatedUnits.length === 0 ? (
           <div className="bg-base-100 rounded-xl p-8 text-center border border-base-300">
             <Box className="w-12 h-12 mx-auto mb-2 text-base-content/30" />
-            <p className="text-sm font-medium text-base-content/50">
-              Aucune unité trouvée
-            </p>
-            <button 
-              className="btn btn-primary btn-sm mt-3"
-              onClick={() => navigate('/units/nouveau')}
-            >
-              <Plus className="w-3 h-3" />
-              Créer
+            <p className="text-sm font-medium text-base-content/50">Aucune unité trouvée</p>
+            <button className="btn btn-primary btn-sm mt-3" onClick={() => navigate('/units/nouveau')}>
+              <Plus className="w-3 h-3" /> Créer
             </button>
           </div>
         ) : (
@@ -515,7 +487,6 @@ const Units = () => {
                   <div className={`p-2 bg-${iconColor}/10 rounded-lg`}>
                     <IconComponent className={`w-5 h-5 text-${iconColor}`} />
                   </div>
-                  
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-sm">{unit.name}</h3>
                     <div className="flex items-center gap-2 mt-1">
@@ -528,21 +499,17 @@ const Units = () => {
                     </div>
                   </div>
                 </div>
-                
                 <div className="flex justify-end gap-1 mt-3 pt-2 border-t border-base-200">
-                  <button 
+                  <button
                     className="btn btn-ghost btn-xs"
                     onClick={() => navigate(`/units/${unit.id}/modifier`)}
                   >
                     <Edit className="w-3 h-3" />
                     <span className="text-xs">Modifier</span>
                   </button>
-                  <button 
+                  <button
                     className="btn btn-ghost btn-xs text-error"
-                    onClick={() => {
-                      setUnitToDelete(unit)
-                      setShowDeleteModal(true)
-                    }}
+                    onClick={() => { setUnitToDelete(unit); setShowDeleteModal(true) }}
                   >
                     <Trash2 className="w-3 h-3" />
                     <span className="text-xs">Supprimer</span>
@@ -558,37 +525,32 @@ const Units = () => {
       {filteredAndSortedUnits.length > 0 && (
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="text-xs lg:text-sm text-base-content/60">
-            {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, filteredAndSortedUnits.length)} sur {filteredAndSortedUnits.length} unités
+            {((currentPage - 1) * itemsPerPage) + 1} -{' '}
+            {Math.min(currentPage * itemsPerPage, filteredAndSortedUnits.length)} sur{' '}
+            {filteredAndSortedUnits.length} unités
           </div>
-          
           <div className="flex items-center gap-2">
-            <select 
+            <select
               className="select select-bordered select-xs lg:select-sm w-20 lg:w-28"
               value={itemsPerPage}
-              onChange={(e) => {
-                setItemsPerPage(parseInt(e.target.value))
-                setCurrentPage(1)
-              }}
+              onChange={(e) => { setItemsPerPage(parseInt(e.target.value)); setCurrentPage(1) }}
             >
               <option value="10">10</option>
               <option value="25">25</option>
               <option value="50">50</option>
             </select>
-            
             <div className="join">
-              <button 
+              <button
                 className="join-item btn btn-xs lg:btn-sm"
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
               >
                 <ChevronLeft className="w-3 h-3 lg:w-4 lg:h-4" />
               </button>
-              
               <span className="join-item btn btn-xs lg:btn-sm no-animation">
                 {currentPage} / {totalPages}
               </span>
-              
-              <button 
+              <button
                 className="join-item btn btn-xs lg:btn-sm"
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
@@ -600,7 +562,7 @@ const Units = () => {
         </div>
       )}
 
-      {/* Modal de confirmation de suppression */}
+      {/* Modal suppression */}
       {showDeleteModal && (
         <div className="modal modal-open">
           <div className="modal-box w-11/12 max-w-md">
@@ -621,25 +583,25 @@ const Units = () => {
                 Cette action est irréversible. Les produits utilisant cette unité pourraient être affectés.
               </p>
             </div>
-            
             <div className="modal-action">
-              <button 
-                className="btn btn-ghost btn-sm"
-                onClick={() => setShowDeleteModal(false)}
-              >
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowDeleteModal(false)}>
                 Annuler
               </button>
-              <button 
-                className="btn btn-error btn-sm"
-                onClick={handleDeleteUnit}
-              >
-                <Trash2 className="w-3 h-3" />
-                Supprimer
+              <button className="btn btn-error btn-sm" onClick={handleDeleteUnit}>
+                <Trash2 className="w-3 h-3" /> Supprimer
               </button>
             </div>
           </div>
         </div>
       )}
+
+      <style>{`
+        @keyframes slideDown {
+          from { opacity: 0; transform: translateY(-20px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slideDown { animation: slideDown 0.35s ease-out; }
+      `}</style>
     </div>
   )
 }

@@ -1,55 +1,29 @@
 // src/components/logistique/ProductPricingManager.jsx
-import React, { useEffect, useState, useCallback } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import React, {
+  useEffect, useState, useCallback, useRef, useMemo
+} from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
 import {
-  ArrowLeft,
-  Save,
-  X,
-  DollarSign,
-  Warehouse,
-  Building2,
-  TrendingUp,
-  TrendingDown,
-  AlertCircle,
-  CheckCircle,
-  Edit,
-  Trash2,
-  Plus,
-  RefreshCw,
-  Percent,
-  Clock,
-  Tag,
-  Hash,
-  Shield,
-  AlertTriangle,
-  Info,
-  Loader2,
-  Search,
-  Filter,
-  Package,
-  LayoutGrid,
-  List,
-  MoreVertical,
-  Eye,
-  ChevronLeft,
-  ChevronRight,
-  ArrowUpDown,
-  ChevronUp,
-  ChevronDown,
-  Folder,
-  Barcode
+  ArrowLeft, Save, X, DollarSign, Warehouse, TrendingUp, AlertCircle,
+  CheckCircle, Edit, Trash2, Plus, RefreshCw, Percent, Tag, Hash,
+  Shield, Loader2, Search, Filter, Package, LayoutGrid, List,
+  MoreVertical, ChevronLeft, ChevronRight, ArrowUpDown, ChevronUp,
+  ChevronDown, Folder
 } from 'lucide-react'
 
 const ProductPricingManager = () => {
   const { id } = useParams()
   const navigate = useNavigate()
 
-  // États
+  // ---------- Data ----------
   const [product, setProduct] = useState(null)
   const [prices, setPrices] = useState([])
   const [warehouses, setWarehouses] = useState([])
+
+  // ---------- UI ----------
   const [loading, setLoading] = useState(true)
+  const [initialLoad, setInitialLoad] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -62,14 +36,16 @@ const ProductPricingManager = () => {
   const [sortField, setSortField] = useState('warehouse_name')
   const [sortDirection, setSortDirection] = useState('asc')
 
-  // Notification
+  // ---------- Refs ----------
+  const cacheRef = useRef(new Map())
+  const fetchingRef = useRef(false)
+
+  // ---------- Notification ----------
   const [notification, setNotification] = useState({
-    show: false,
-    message: '',
-    type: 'success'
+    show: false, message: '', type: 'success'
   })
 
-  // Formulaire (SANS TVA)
+  // ---------- Formulaire ----------
   const [formData, setFormData] = useState({
     warehouse_id: '',
     purchase_price: '',
@@ -79,76 +55,143 @@ const ProductPricingManager = () => {
   })
 
   const [formErrors, setFormErrors] = useState({
-    warehouse_id: '',
-    purchase_price: '',
-    sale_price: '',
-    wholesale_price: ''
+    warehouse_id: '', purchase_price: '', sale_price: '', wholesale_price: ''
   })
 
-  // Statistiques
+  // ---------- Stats ----------
   const [stats, setStats] = useState({
-    total: 0,
-    avgPurchase: 0,
-    avgSale: 0,
-    avgMargin: 0,
-    avgMarginPercent: 0
+    total: 0, avgPurchase: 0, avgSale: 0, avgMargin: 0, avgMarginPercent: 0
   })
 
+  // ---------- Helpers ----------
   const showNotification = (message, type = 'success') => {
     setNotification({ show: true, message, type })
     setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 4000)
   }
 
-  const fetchData = useCallback(async () => {
+  const unwrap = (data) => Array.isArray(data) ? data : (data?.results || [])
+
+  const formatNumber = (num) => {
+    if (!num && num !== 0) return '0'
+    return new Intl.NumberFormat('fr-FR').format(num)
+  }
+
+  const formatPrice = (price, currency = 'XOF') => {
+    if (!price && price !== 0) return '0 FCFA'
+    const symbols = { XOF: 'FCFA', GNF: 'GNF' }
+    const symbol = symbols[currency] || currency
+    return `${formatNumber(price)} ${symbol}`
+  }
+
+  const calculateMargin = (purchasePrice, salePrice) => {
+    const margin = (salePrice || 0) - (purchasePrice || 0)
+    const marginPercent = purchasePrice > 0 ? (margin / purchasePrice * 100) : 0
+    return { margin, marginPercent }
+  }
+
+  // ---------- Fetch avec cache ----------
+  const fetchData = useCallback(async ({ bypassCache = false } = {}) => {
+    const key = `pricing_product_${id}`
+
+    if (!bypassCache && cacheRef.current.has(key)) {
+      const c = cacheRef.current.get(key)
+      setProduct(c.product)
+      setPrices(c.prices)
+      setWarehouses(c.warehouses)
+      setStats(c.stats)
+      setLoading(false)
+      setInitialLoad(false)
+      return
+    }
+
+    if (fetchingRef.current) return
+    fetchingRef.current = true
     setLoading(true)
+
     try {
+      // ✅ page_size=200 sur warehouses pour éviter la pagination gênante
       const [productRes, pricesRes, warehousesRes] = await Promise.all([
         AxiosInstance.get(`/products/${id}/`),
         AxiosInstance.get(`/products/${id}/prices/`).catch(() => ({ data: [] })),
-        AxiosInstance.get('/warehouses/').catch(() => ({ data: [] }))
+        AxiosInstance.get('/warehouses/?page_size=200').catch(() => ({ data: [] }))
       ])
-      setProduct(productRes.data)
-      const pricesData = pricesRes.data || []
-      setPrices(pricesData)
-      setWarehouses(warehousesRes.data || [])
 
-      // Calculer les statistiques
+      const productData = productRes.data
+      const pricesData = unwrap(pricesRes.data)
+      const warehousesData = unwrap(warehousesRes.data)
+
+      // Calculer les stats
       const total = pricesData.length
-      const avgPurchase = total > 0 ? pricesData.reduce((sum, p) => sum + p.purchase_price, 0) / total : 0
-      const avgSale = total > 0 ? pricesData.reduce((sum, p) => sum + p.sale_price, 0) / total : 0
-      const avgMargin = total > 0 ? pricesData.reduce((sum, p) => sum + (p.sale_price - p.purchase_price), 0) / total : 0
-      const avgMarginPercent = total > 0 ? pricesData.reduce((sum, p) => {
-        return sum + (p.purchase_price > 0 ? ((p.sale_price - p.purchase_price) / p.purchase_price * 100) : 0)
-      }, 0) / total : 0
+      const avgPurchase = total > 0
+        ? pricesData.reduce((s, p) => s + (p.purchase_price || 0), 0) / total
+        : 0
+      const avgSale = total > 0
+        ? pricesData.reduce((s, p) => s + (p.sale_price || 0), 0) / total
+        : 0
+      const avgMargin = total > 0
+        ? pricesData.reduce((s, p) => s + ((p.sale_price || 0) - (p.purchase_price || 0)), 0) / total
+        : 0
+      const avgMarginPercent = total > 0
+        ? pricesData.reduce((s, p) => {
+            return s + (p.purchase_price > 0
+              ? ((p.sale_price - p.purchase_price) / p.purchase_price * 100)
+              : 0)
+          }, 0) / total
+        : 0
 
-      setStats({ total, avgPurchase, avgSale, avgMargin, avgMarginPercent })
+      const computedStats = { total, avgPurchase, avgSale, avgMargin, avgMarginPercent }
 
+      // Cache
+      cacheRef.current.set(key, {
+        product: productData,
+        prices: pricesData,
+        warehouses: warehousesData,
+        stats: computedStats
+      })
+      if (cacheRef.current.size > 10) {
+        const firstKey = cacheRef.current.keys().next().value
+        cacheRef.current.delete(firstKey)
+      }
+
+      setProduct(productData)
+      setPrices(pricesData)
+      setWarehouses(warehousesData)
+      setStats(computedStats)
     } catch (err) {
       console.error('Erreur:', err)
       showNotification('Erreur de chargement des données', 'error')
     } finally {
       setLoading(false)
+      setInitialLoad(false)
+      fetchingRef.current = false
     }
   }, [id])
 
   useEffect(() => {
     fetchData()
-  }, [fetchData])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id])
 
   const refreshData = async () => {
     setRefreshing(true)
-    await fetchData()
+    cacheRef.current.clear()
+    await fetchData({ bypassCache: true })
     setRefreshing(false)
     showNotification('Données actualisées avec succès', 'success')
   }
 
+  // ---------- Formulaire ----------
   const validateForm = () => {
     const errors = {}
     if (!formData.warehouse_id) errors.warehouse_id = 'Veuillez sélectionner un entrepôt'
-    if (!formData.purchase_price || formData.purchase_price === '') errors.purchase_price = 'Le prix d\'achat est requis'
-    if (parseFloat(formData.purchase_price) < 0) errors.purchase_price = 'Le prix d\'achat ne peut pas être négatif'
-    if (!formData.sale_price || formData.sale_price === '') errors.sale_price = 'Le prix de vente est requis'
-    if (parseFloat(formData.sale_price) < 0) errors.sale_price = 'Le prix de vente ne peut pas être négatif'
+    if (!formData.purchase_price || formData.purchase_price === '')
+      errors.purchase_price = 'Le prix d\'achat est requis'
+    if (parseFloat(formData.purchase_price) < 0)
+      errors.purchase_price = 'Le prix d\'achat ne peut pas être négatif'
+    if (!formData.sale_price || formData.sale_price === '')
+      errors.sale_price = 'Le prix de vente est requis'
+    if (parseFloat(formData.sale_price) < 0)
+      errors.sale_price = 'Le prix de vente ne peut pas être négatif'
     if (formData.purchase_price && parseFloat(formData.sale_price) < parseFloat(formData.purchase_price)) {
       errors.sale_price = 'Le prix de vente ne peut pas être inférieur au prix d\'achat'
     }
@@ -158,11 +201,8 @@ const ProductPricingManager = () => {
 
   const resetForm = () => {
     setFormData({
-      warehouse_id: '',
-      purchase_price: '',
-      sale_price: '',
-      wholesale_price: '',
-      currency: 'XOF'
+      warehouse_id: '', purchase_price: '', sale_price: '',
+      wholesale_price: '', currency: 'XOF'
     })
     setFormErrors({})
     setEditingId(null)
@@ -187,13 +227,20 @@ const ProductPricingManager = () => {
 
       await AxiosInstance.post('/product-prices/set_price/', payload)
 
-      showNotification(editingId ? 'Prix modifié avec succès' : 'Prix enregistré avec succès', 'success')
+      showNotification(
+        editingId ? 'Prix modifié avec succès' : 'Prix enregistré avec succès',
+        'success'
+      )
       setShowForm(false)
       resetForm()
-      fetchData()
+      cacheRef.current.clear()
+      fetchData({ bypassCache: true })
     } catch (err) {
       console.error('Erreur:', err)
-      showNotification(err.response?.data?.error || 'Erreur lors de l\'enregistrement', 'error')
+      showNotification(
+        err.response?.data?.error || 'Erreur lors de l\'enregistrement',
+        'error'
+      )
     } finally {
       setSubmitting(false)
     }
@@ -213,7 +260,9 @@ const ProductPricingManager = () => {
   }
 
   const handleDelete = async (price) => {
-    if (!window.confirm(`Êtes-vous sûr de vouloir supprimer le prix pour "${price.warehouse_name}" ?`)) return
+    if (!window.confirm(
+      `Êtes-vous sûr de vouloir supprimer le prix pour "${price.warehouse_name}" ?`
+    )) return
 
     setSubmitting(true)
     try {
@@ -225,8 +274,9 @@ const ProductPricingManager = () => {
         currency: 'XOF'
       })
       showNotification('Prix supprimé avec succès', 'success')
-      fetchData()
-    } catch (err) {
+      cacheRef.current.clear()
+      fetchData({ bypassCache: true })
+    } catch {
       showNotification('Erreur lors de la suppression', 'error')
     } finally {
       setSubmitting(false)
@@ -234,61 +284,39 @@ const ProductPricingManager = () => {
   }
 
   const handleSort = (field) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortField(field)
-      setSortDirection('asc')
-    }
+    if (sortField === field) setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    else { setSortField(field); setSortDirection('asc') }
   }
 
   const SortIcon = ({ field }) => {
     if (sortField !== field) return <ArrowUpDown className="w-3 h-3 opacity-40" />
-    return sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+    return sortDirection === 'asc'
+      ? <ChevronUp className="w-3 h-3" />
+      : <ChevronDown className="w-3 h-3" />
   }
 
-  const formatNumber = (num) => {
-    if (!num && num !== 0) return '0'
-    return new Intl.NumberFormat('fr-FR').format(num)
-  }
-
-  const formatPrice = (price, currency = 'XOF') => {
-    if (!price && price !== 0) return '0 FCFA'
-    const symbols = { XOF: 'FCFA', GNF: 'GNF' }
-    const symbol = symbols[currency] || currency
-    return `${formatNumber(price)} ${symbol}`
-  }
-
-  const calculateMargin = (purchasePrice, salePrice) => {
-    const margin = salePrice - purchasePrice
-    const marginPercent = purchasePrice > 0 ? (margin / purchasePrice * 100) : 0
-    return { margin, marginPercent }
-  }
-
-  // Filtrage et tri
-  const filteredPrices = React.useMemo(() => {
-    let filtered = prices.filter(price => {
-      const matchesSearch = searchTerm === '' ||
-        price.warehouse_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        price.warehouse_code?.toLowerCase().includes(searchTerm.toLowerCase())
-      const matchesWarehouse = selectedWarehouse === 'all' || price.warehouse === parseInt(selectedWarehouse)
+  // ---------- Filtrage / tri (local, petit volume) ----------
+  const filteredPrices = useMemo(() => {
+    const filtered = prices.filter(price => {
+      const matchesSearch = searchTerm === ''
+        || price.warehouse_name?.toLowerCase().includes(searchTerm.toLowerCase())
+        || price.warehouse_code?.toLowerCase().includes(searchTerm.toLowerCase())
+      const matchesWarehouse = selectedWarehouse === 'all'
+        || price.warehouse === parseInt(selectedWarehouse)
       return matchesSearch && matchesWarehouse
     })
 
     filtered.sort((a, b) => {
       let aVal = a[sortField] || ''
       let bVal = b[sortField] || ''
-
       if (['purchase_price', 'sale_price', 'wholesale_price'].includes(sortField)) {
         aVal = parseFloat(aVal) || 0
         bVal = parseFloat(bVal) || 0
       }
-
       if (sortField === 'warehouse_name') {
         aVal = (a.warehouse_name || '').toLowerCase()
         bVal = (b.warehouse_name || '').toLowerCase()
       }
-
       if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1
       if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1
       return 0
@@ -297,13 +325,21 @@ const ProductPricingManager = () => {
     return filtered
   }, [prices, searchTerm, selectedWarehouse, sortField, sortDirection])
 
-  const totalPages = Math.ceil(filteredPrices.length / itemsPerPage)
-  const paginatedPrices = filteredPrices.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  )
+  const totalPages = Math.max(1, Math.ceil(filteredPrices.length / itemsPerPage))
+  const paginatedPrices = useMemo(() => {
+    return filteredPrices.slice(
+      (currentPage - 1) * itemsPerPage,
+      currentPage * itemsPerPage
+    )
+  }, [filteredPrices, currentPage, itemsPerPage])
 
-  if (loading) {
+  // ✅ Reset page si la page courante dépasse (après filtre)
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(1)
+  }, [totalPages, currentPage])
+
+  // ---------- Rendu : premier chargement ----------
+  if (initialLoad && loading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-200px)]">
         <div className="text-center space-y-6">
@@ -325,7 +361,9 @@ const ProductPricingManager = () => {
           </div>
           <div>
             <h2 className="text-2xl font-bold">Produit non trouvé</h2>
-            <p className="text-base-content/60 mt-2">Le produit que vous recherchez n'existe pas</p>
+            <p className="text-base-content/60 mt-2">
+              Le produit que vous recherchez n'existe pas
+            </p>
           </div>
           <button onClick={() => navigate('/produits')} className="btn btn-primary gap-2">
             <ArrowLeft className="w-4 h-4" />
@@ -338,15 +376,23 @@ const ProductPricingManager = () => {
 
   return (
     <div className="space-y-6 p-4 lg:p-6 bg-gradient-to-br from-base-200 to-base-100 min-h-screen">
+      {/* Spinner overlay discret */}
+      {loading && !initialLoad && (
+        <div className="fixed top-20 right-6 z-40 animate-slideDown">
+          <div className="bg-base-100 shadow-lg rounded-full px-4 py-2 flex items-center gap-2 border border-base-300">
+            <span className="loading loading-spinner loading-xs text-primary"></span>
+            <span className="text-xs text-base-content/60">Chargement...</span>
+          </div>
+        </div>
+      )}
+
       {/* Notification */}
       {notification.show && (
         <div className="fixed top-20 right-6 z-50 animate-slideDown">
           <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-lg`}>
-            {notification.type === 'success' ? (
-              <CheckCircle className="w-5 h-5" />
-            ) : (
-              <AlertCircle className="w-5 h-5" />
-            )}
+            {notification.type === 'success'
+              ? <CheckCircle className="w-5 h-5" />
+              : <AlertCircle className="w-5 h-5" />}
             <span className="font-semibold">{notification.message}</span>
             <button
               className="btn btn-ghost btn-xs btn-circle"
@@ -409,7 +455,7 @@ const ProductPricingManager = () => {
         </div>
       </div>
 
-      {/* Formulaire d'ajout/modification */}
+      {/* Formulaire */}
       {showForm && (
         <div className="bg-base-100 rounded-xl shadow-xl border border-base-300 overflow-hidden animate-fadeIn">
           <div className="p-5 border-b border-base-300 bg-gradient-to-r from-primary/10 to-transparent">
@@ -418,8 +464,12 @@ const ProductPricingManager = () => {
                 <DollarSign className="w-5 h-5 text-primary" />
               </div>
               <div>
-                <h3 className="text-lg font-bold">{editingId ? 'Modifier le prix' : 'Définir un prix'}</h3>
-                <p className="text-sm text-base-content/60">Pour le produit {product.name}</p>
+                <h3 className="text-lg font-bold">
+                  {editingId ? 'Modifier le prix' : 'Définir un prix'}
+                </h3>
+                <p className="text-sm text-base-content/60">
+                  Pour le produit {product.name}
+                </p>
               </div>
             </div>
           </div>
@@ -443,7 +493,7 @@ const ProductPricingManager = () => {
                   <option value="">Sélectionner un entrepôt</option>
                   {warehouses.map(w => (
                     <option key={w.id} value={w.id}>
-                      {w.name} - {w.agence_nom}
+                      {w.name} - {w.agence_nom || w.agence_name || ''}
                     </option>
                   ))}
                 </select>
@@ -468,7 +518,8 @@ const ProductPricingManager = () => {
               {/* Prix d'achat */}
               <div className="form-control">
                 <label className="label font-medium">
-                  Prix d'achat ({formData.currency === 'XOF' ? 'FCFA' : 'GNF'}) <span className="text-error">*</span>
+                  Prix d'achat ({formData.currency === 'XOF' ? 'FCFA' : 'GNF'}){' '}
+                  <span className="text-error">*</span>
                 </label>
                 <input
                   type="number"
@@ -490,7 +541,8 @@ const ProductPricingManager = () => {
               {/* Prix de vente */}
               <div className="form-control">
                 <label className="label font-medium">
-                  Prix de vente ({formData.currency === 'XOF' ? 'FCFA' : 'GNF'}) <span className="text-error">*</span>
+                  Prix de vente ({formData.currency === 'XOF' ? 'FCFA' : 'GNF'}){' '}
+                  <span className="text-error">*</span>
                 </label>
                 <input
                   type="number"
@@ -532,21 +584,29 @@ const ProductPricingManager = () => {
               </div>
             </div>
 
-            {/* Aperçu des marges */}
+            {/* Aperçu marges */}
             {formData.purchase_price && formData.sale_price && (
               <div className="mt-6 p-4 bg-base-200 rounded-xl border border-base-300">
-                <p className="text-sm font-semibold text-base-content mb-3">Aperçu des marges</p>
+                <p className="text-sm font-semibold text-base-content mb-3">
+                  Aperçu des marges
+                </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="flex items-center justify-between p-3 bg-base-100 rounded-lg">
                     <span className="text-base-content/60">Marge brute</span>
                     <span className="font-bold text-success">
-                      {formatPrice(parseFloat(formData.sale_price) - parseFloat(formData.purchase_price), formData.currency)}
+                      {formatPrice(
+                        parseFloat(formData.sale_price) - parseFloat(formData.purchase_price),
+                        formData.currency
+                      )}
                     </span>
                   </div>
                   <div className="flex items-center justify-between p-3 bg-base-100 rounded-lg">
                     <span className="text-base-content/60">Taux de marge</span>
                     <span className="font-bold text-info">
-                      {((parseFloat(formData.sale_price) - parseFloat(formData.purchase_price)) / parseFloat(formData.purchase_price) * 100).toFixed(2)}%
+                      {(
+                        (parseFloat(formData.sale_price) - parseFloat(formData.purchase_price))
+                        / parseFloat(formData.purchase_price) * 100
+                      ).toFixed(2)}%
                     </span>
                   </div>
                 </div>
@@ -568,11 +628,9 @@ const ProductPricingManager = () => {
                 onClick={handleSave}
                 disabled={submitting}
               >
-                {submitting ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Save className="w-4 h-4" />
-                )}
+                {submitting
+                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  : <Save className="w-4 h-4" />}
                 {editingId ? 'Modifier' : 'Enregistrer'}
               </button>
             </div>
@@ -580,7 +638,7 @@ const ProductPricingManager = () => {
         </div>
       )}
 
-      {/* Cartes statistiques */}
+      {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300">
           <div className="stat-figure text-primary"><Warehouse className="w-8 h-8" /></div>
@@ -588,30 +646,33 @@ const ProductPricingManager = () => {
           <div className="stat-value text-3xl font-black">{stats.total}</div>
           <div className="stat-desc">sur {warehouses.length} disponibles</div>
         </div>
-
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300">
           <div className="stat-figure text-secondary"><DollarSign className="w-8 h-8" /></div>
           <div className="stat-title text-sm font-semibold">Prix moyen (vente)</div>
-          <div className="stat-value text-2xl font-black">{formatNumber(Math.round(stats.avgSale))}</div>
+          <div className="stat-value text-2xl font-black">
+            {formatNumber(Math.round(stats.avgSale))}
+          </div>
           <div className="stat-desc">moyenne toutes devises</div>
         </div>
-
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300">
           <div className="stat-figure text-success"><TrendingUp className="w-8 h-8" /></div>
           <div className="stat-title text-sm font-semibold">Marge moyenne</div>
-          <div className="stat-value text-2xl font-black text-success">{formatNumber(Math.round(stats.avgMargin))}</div>
+          <div className="stat-value text-2xl font-black text-success">
+            {formatNumber(Math.round(stats.avgMargin))}
+          </div>
           <div className="stat-desc">moyenne toutes devises</div>
         </div>
-
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300">
           <div className="stat-figure text-info"><Percent className="w-8 h-8" /></div>
           <div className="stat-title text-sm font-semibold">Taux de marge</div>
-          <div className="stat-value text-2xl font-black text-info">{stats.avgMarginPercent.toFixed(1)}%</div>
+          <div className="stat-value text-2xl font-black text-info">
+            {stats.avgMarginPercent.toFixed(1)}%
+          </div>
           <div className="stat-desc">moyen</div>
         </div>
       </div>
 
-      {/* Filtres et recherche */}
+      {/* Filtres */}
       <div className="bg-base-100 rounded-xl shadow-md border border-base-300 p-4 lg:p-6">
         <div className="flex flex-col lg:flex-row gap-4">
           <div className="flex-1">
@@ -629,7 +690,6 @@ const ProductPricingManager = () => {
               />
             </div>
           </div>
-
           <div className="flex flex-wrap gap-3">
             <select
               className="select select-bordered min-w-[180px]"
@@ -644,7 +704,6 @@ const ProductPricingManager = () => {
                 <option key={w.id} value={w.id}>{w.name}</option>
               ))}
             </select>
-
             <button
               className="btn btn-outline gap-2"
               onClick={() => {
@@ -653,10 +712,8 @@ const ProductPricingManager = () => {
                 setCurrentPage(1)
               }}
             >
-              <Filter className="w-4 h-4" />
-              Réinitialiser
+              <Filter className="w-4 h-4" /> Réinitialiser
             </button>
-
             <div className="join">
               <button
                 className={`join-item btn ${viewMode === 'list' ? 'btn-primary' : 'btn-ghost'}`}
@@ -680,7 +737,9 @@ const ProductPricingManager = () => {
         {prices.length === 0 ? (
           <div className="p-12 text-center">
             <DollarSign className="w-20 h-20 mx-auto mb-4 text-base-content/30" />
-            <p className="text-xl font-semibold text-base-content/50">Aucun prix défini</p>
+            <p className="text-xl font-semibold text-base-content/50">
+              Aucun prix défini
+            </p>
             <p className="text-base text-base-content/40 mt-2">
               Ce produit n'a pas encore de prix configuré pour les entrepôts
             </p>
@@ -688,8 +747,7 @@ const ProductPricingManager = () => {
               className="btn btn-primary mt-6 gap-2"
               onClick={() => setShowForm(true)}
             >
-              <Plus className="w-4 h-4" />
-              Définir un prix
+              <Plus className="w-4 h-4" /> Définir un prix
             </button>
           </div>
         ) : filteredPrices.length === 0 ? (
@@ -707,33 +765,43 @@ const ProductPricingManager = () => {
                 setCurrentPage(1)
               }}
             >
-              <Filter className="w-4 h-4" />
-              Réinitialiser les filtres
+              <Filter className="w-4 h-4" /> Réinitialiser les filtres
             </button>
           </div>
         ) : viewMode === 'list' ? (
-          /* Vue Liste */
           <div className="overflow-x-auto">
             <table className="table">
               <thead>
                 <tr>
                   <th>
-                    <button className="flex items-center gap-1 hover:text-primary" onClick={() => handleSort('warehouse_name')}>
+                    <button
+                      className="flex items-center gap-1 hover:text-primary"
+                      onClick={() => handleSort('warehouse_name')}
+                    >
                       Entrepôt <SortIcon field="warehouse_name" />
                     </button>
                   </th>
                   <th>
-                    <button className="flex items-center gap-1 hover:text-primary" onClick={() => handleSort('purchase_price')}>
+                    <button
+                      className="flex items-center gap-1 hover:text-primary"
+                      onClick={() => handleSort('purchase_price')}
+                    >
                       Prix achat <SortIcon field="purchase_price" />
                     </button>
                   </th>
                   <th>
-                    <button className="flex items-center gap-1 hover:text-primary" onClick={() => handleSort('sale_price')}>
+                    <button
+                      className="flex items-center gap-1 hover:text-primary"
+                      onClick={() => handleSort('sale_price')}
+                    >
                       Prix vente <SortIcon field="sale_price" />
                     </button>
                   </th>
                   <th>
-                    <button className="flex items-center gap-1 hover:text-primary" onClick={() => handleSort('wholesale_price')}>
+                    <button
+                      className="flex items-center gap-1 hover:text-primary"
+                      onClick={() => handleSort('wholesale_price')}
+                    >
                       Prix gros <SortIcon field="wholesale_price" />
                     </button>
                   </th>
@@ -743,8 +811,9 @@ const ProductPricingManager = () => {
               </thead>
               <tbody>
                 {paginatedPrices.map((price) => {
-                  const { margin, marginPercent } = calculateMargin(price.purchase_price, price.sale_price)
-
+                  const { margin, marginPercent } = calculateMargin(
+                    price.purchase_price, price.sale_price
+                  )
                   return (
                     <tr key={price.id} className="hover">
                       <td>
@@ -754,19 +823,31 @@ const ProductPricingManager = () => {
                           </div>
                           <div>
                             <div className="font-semibold">{price.warehouse_name}</div>
-                            <div className="text-xs text-base-content/50 font-mono">{price.warehouse_code}</div>
+                            <div className="text-xs text-base-content/50 font-mono">
+                              {price.warehouse_code}
+                            </div>
                           </div>
                         </div>
                       </td>
-                      <td className="font-medium">{formatPrice(price.purchase_price, price.currency)}</td>
-                      <td className="font-bold text-primary">{formatPrice(price.sale_price, price.currency)}</td>
-                      <td>{price.wholesale_price ? formatPrice(price.wholesale_price, price.currency) : '-'}</td>
+                      <td className="font-medium">
+                        {formatPrice(price.purchase_price, price.currency)}
+                      </td>
+                      <td className="font-bold text-primary">
+                        {formatPrice(price.sale_price, price.currency)}
+                      </td>
+                      <td>
+                        {price.wholesale_price
+                          ? formatPrice(price.wholesale_price, price.currency)
+                          : '-'}
+                      </td>
                       <td>
                         <div className="flex flex-col">
                           <span className={`font-semibold ${margin >= 0 ? 'text-success' : 'text-error'}`}>
                             {formatPrice(margin, price.currency)}
                           </span>
-                          <span className="text-xs text-base-content/50">{marginPercent.toFixed(1)}%</span>
+                          <span className="text-xs text-base-content/50">
+                            {marginPercent.toFixed(1)}%
+                          </span>
                         </div>
                       </td>
                       <td>
@@ -792,22 +873,29 @@ const ProductPricingManager = () => {
             </table>
           </div>
         ) : (
-          /* Vue Grille */
           <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {paginatedPrices.map((price) => {
-                const { margin, marginPercent } = calculateMargin(price.purchase_price, price.sale_price)
-
+                const { margin, marginPercent } = calculateMargin(
+                  price.purchase_price, price.sale_price
+                )
                 return (
-                  <div key={price.id} className="bg-base-200 rounded-xl p-6 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 border border-base-300">
+                  <div
+                    key={price.id}
+                    className="bg-base-200 rounded-xl p-6 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 border border-base-300"
+                  >
                     <div className="flex items-start justify-between mb-4">
                       <div className="flex items-center gap-3">
                         <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
                           <Warehouse className="w-6 h-6 text-primary" />
                         </div>
                         <div>
-                          <h3 className="font-bold text-base-content">{price.warehouse_name}</h3>
-                          <p className="text-xs text-base-content/50 font-mono">{price.warehouse_code}</p>
+                          <h3 className="font-bold text-base-content">
+                            {price.warehouse_name}
+                          </h3>
+                          <p className="text-xs text-base-content/50 font-mono">
+                            {price.warehouse_code}
+                          </p>
                         </div>
                       </div>
                       <div className="dropdown dropdown-end" onClick={(e) => e.stopPropagation()}>
@@ -815,8 +903,16 @@ const ProductPricingManager = () => {
                           <MoreVertical className="w-4 h-4" />
                         </button>
                         <ul className="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-40">
-                          <li><button onClick={() => handleEdit(price)}><Edit className="w-4 h-4" /> Modifier</button></li>
-                          <li><button className="text-error" onClick={() => handleDelete(price)}><Trash2 className="w-4 h-4" /> Supprimer</button></li>
+                          <li>
+                            <button onClick={() => handleEdit(price)}>
+                              <Edit className="w-4 h-4" /> Modifier
+                            </button>
+                          </li>
+                          <li>
+                            <button className="text-error" onClick={() => handleDelete(price)}>
+                              <Trash2 className="w-4 h-4" /> Supprimer
+                            </button>
+                          </li>
                         </ul>
                       </div>
                     </div>
@@ -824,16 +920,22 @@ const ProductPricingManager = () => {
                     <div className="space-y-3">
                       <div className="flex items-center justify-between p-2 bg-base-100 rounded-lg">
                         <span className="text-sm text-base-content/60">Prix d'achat</span>
-                        <span className="font-semibold">{formatPrice(price.purchase_price, price.currency)}</span>
+                        <span className="font-semibold">
+                          {formatPrice(price.purchase_price, price.currency)}
+                        </span>
                       </div>
                       <div className="flex items-center justify-between p-2 bg-primary/10 rounded-lg border border-primary/20">
                         <span className="text-sm text-base-content/60">Prix de vente</span>
-                        <span className="font-bold text-primary">{formatPrice(price.sale_price, price.currency)}</span>
+                        <span className="font-bold text-primary">
+                          {formatPrice(price.sale_price, price.currency)}
+                        </span>
                       </div>
                       {price.wholesale_price && (
                         <div className="flex items-center justify-between p-2 bg-base-100 rounded-lg">
                           <span className="text-sm text-base-content/60">Prix de gros</span>
-                          <span className="font-semibold">{formatPrice(price.wholesale_price, price.currency)}</span>
+                          <span className="font-semibold">
+                            {formatPrice(price.wholesale_price, price.currency)}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -845,7 +947,9 @@ const ProductPricingManager = () => {
                           <span className={`font-bold ${margin >= 0 ? 'text-success' : 'text-error'}`}>
                             {formatPrice(margin, price.currency)}
                           </span>
-                          <span className="badge badge-ghost">{marginPercent.toFixed(1)}%</span>
+                          <span className="badge badge-ghost">
+                            {marginPercent.toFixed(1)}%
+                          </span>
                         </div>
                       </div>
                       <div className="flex items-center justify-between mt-1">
@@ -860,7 +964,7 @@ const ProductPricingManager = () => {
           </div>
         )}
 
-        {/* Pagination */}
+        {/* Pagination (client) */}
         {filteredPrices.length > 0 && (
           <div className="p-4 border-t border-base-300">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -869,7 +973,6 @@ const ProductPricingManager = () => {
                 {Math.min(currentPage * itemsPerPage, filteredPrices.length)} sur{' '}
                 {filteredPrices.length} prix
               </div>
-
               <div className="flex items-center gap-2">
                 <select
                   className="select select-bordered select-sm"
@@ -883,7 +986,6 @@ const ProductPricingManager = () => {
                   <option value="25">25 par page</option>
                   <option value="50">50 par page</option>
                 </select>
-
                 <div className="join">
                   <button
                     className="join-item btn btn-sm"
@@ -892,19 +994,12 @@ const ProductPricingManager = () => {
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
-
                   {[...Array(Math.min(5, totalPages))].map((_, i) => {
                     let pageNum
-                    if (totalPages <= 5) {
-                      pageNum = i + 1
-                    } else if (currentPage <= 3) {
-                      pageNum = i + 1
-                    } else if (currentPage >= totalPages - 2) {
-                      pageNum = totalPages - 4 + i
-                    } else {
-                      pageNum = currentPage - 2 + i
-                    }
-
+                    if (totalPages <= 5) pageNum = i + 1
+                    else if (currentPage <= 3) pageNum = i + 1
+                    else if (currentPage >= totalPages - 2) pageNum = totalPages - 4 + i
+                    else pageNum = currentPage - 2 + i
                     return (
                       <button
                         key={i}
@@ -915,7 +1010,6 @@ const ProductPricingManager = () => {
                       </button>
                     )
                   })}
-
                   <button
                     className="join-item btn btn-sm"
                     onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
@@ -941,18 +1035,14 @@ const ProductPricingManager = () => {
       <style>{`
         @keyframes slideDown {
           from { transform: translateY(-20px); opacity: 0; }
-          to { transform: translateY(0); opacity: 1; }
+          to   { transform: translateY(0);     opacity: 1; }
         }
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
+          to   { opacity: 1; transform: translateY(0); }
         }
-        .animate-slideDown {
-          animation: slideDown 0.3s ease-out;
-        }
-        .animate-fadeIn {
-          animation: fadeIn 0.3s ease-out;
-        }
+        .animate-slideDown { animation: slideDown 0.3s ease-out; }
+        .animate-fadeIn    { animation: fadeIn 0.3s ease-out; }
       `}</style>
     </div>
   )

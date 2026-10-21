@@ -1,58 +1,16 @@
 // src/components/inventaire/ProductDetails.jsx
-import React, { useEffect, useState } from 'react'
-import { useNavigate, useParams, Link } from 'react-router-dom'
+import React, {
+  useEffect, useState, useCallback, useRef, useMemo
+} from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
 import {
-  Edit,
-  ArrowLeft,
-  Package,
-  DollarSign,
-  AlertCircle,
-  CheckCircle,
-  XCircle,
-  Hash,
-  Warehouse,
-  Plus,
-  RefreshCw,
-  Building2,
-  Box,
-  X,
-  Eye,
-  MoreVertical,
-  Trash2,
-  Search,
-  Filter,
-  LayoutGrid,
-  List,
-  ChevronLeft,
-  ChevronRight,
-  ArrowUpDown,
-  ChevronUp,
-  ChevronDown,
-  Users,
-  ShoppingCart,
-  TrendingUp,
-  TrendingDown,
-  Clock,
-  Award,
-  Star,
-  MapPin,
-  Phone,
-  Mail,
-  User,
-  Info,
-  FileText,
-  CreditCard,
-  Layers,
-  Grid,
-  Printer,
-  Download,
-  AlertTriangle,
-  Check,
-  Loader2,
-  Folder,
-  Tag,
-  Barcode
+  Edit, ArrowLeft, Package, DollarSign, AlertCircle, CheckCircle,
+  XCircle, Hash, Warehouse, Plus, RefreshCw, Building2, Box, X,
+  Eye, MoreVertical, Trash2, Search, Filter, LayoutGrid, List,
+  ChevronLeft, ChevronRight, ArrowUpDown, ChevronUp, ChevronDown,
+  Award, Star, Info, FileText, Layers, Printer, AlertTriangle,
+  Check, Loader2, Folder, Barcode, TrendingDown, TrendingUp
 } from 'lucide-react'
 
 const ProductDetails = () => {
@@ -63,6 +21,7 @@ const ProductDetails = () => {
   const [pricesByWarehouse, setPricesByWarehouse] = useState([])
   const [stocksByWarehouse, setStocksByWarehouse] = useState([])
   const [loading, setLoading] = useState(true)
+  const [initialLoad, setInitialLoad] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' })
   const [selectedImage, setSelectedImage] = useState(null)
@@ -71,6 +30,18 @@ const ProductDetails = () => {
   const [sortDirection, setSortDirection] = useState('asc')
   const [searchTerm, setSearchTerm] = useState('')
 
+  // ✅ Cache mémoire : évite le refetch au retour
+  const cacheRef = useRef(new Map())
+  const fetchingRef = useRef(false)
+
+  // ---------- helpers ----------
+  const showNotification = (message, type = 'success') => {
+    setNotification({ show: true, message, type })
+    setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 4000)
+  }
+
+  const unwrap = (data) => Array.isArray(data) ? data : (data?.results || [])
+
   const formatNumber = (number) => {
     if (typeof number !== 'number') number = parseFloat(number) || 0
     return new Intl.NumberFormat('fr-FR').format(number)
@@ -78,77 +49,104 @@ const ProductDetails = () => {
 
   const formatPrice = (price) => {
     if (!price && price !== 0) return '0 FCFA'
-    return new Intl.NumberFormat('fr-FR', { 
-      minimumFractionDigits: 0, 
-      maximumFractionDigits: 0 
+    return new Intl.NumberFormat('fr-FR', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
     }).format(price) + ' FCFA'
   }
 
-  const showNotification = (message, type = 'success') => {
-    setNotification({ show: true, message, type })
-    setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 4000)
-  }
-
   const handleSort = (field) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortField(field)
-      setSortDirection('asc')
-    }
+    if (sortField === field) setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    else { setSortField(field); setSortDirection('asc') }
   }
 
   const SortIcon = ({ field }) => {
     if (sortField !== field) return <ArrowUpDown className="w-3 h-3 opacity-40" />
-    return sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+    return sortDirection === 'asc'
+      ? <ChevronUp className="w-3 h-3" />
+      : <ChevronDown className="w-3 h-3" />
   }
 
-  const fetchData = async () => {
+  // ---------- Fetch ----------
+  const fetchData = useCallback(async ({ bypassCache = false } = {}) => {
+    const key = `product_detail_${id}`
+
+    // ✅ Hit cache → instantané
+    if (!bypassCache && cacheRef.current.has(key)) {
+      const c = cacheRef.current.get(key)
+      setProduct(c.product)
+      setPricesByWarehouse(c.prices)
+      setStocksByWarehouse(c.stocks)
+      setLoading(false)
+      setInitialLoad(false)
+      return
+    }
+
+    // ✅ Anti-double-fetch
+    if (fetchingRef.current) return
+    fetchingRef.current = true
     setLoading(true)
+
     try {
-      // Récupérer le produit
+      // 1) Produit — endpoint optimisé (prefetch prices/images/variants côté backend)
       const prodRes = await AxiosInstance.get(`/products/${id}/`)
-      setProduct(prodRes.data)
-      
-      // Récupérer les prix par entrepôt
+      const productData = prodRes.data
+
+      // 2) Prix par entrepôt — réponse peut être array ou paginée
+      let prices = []
       try {
         const pricesRes = await AxiosInstance.get(`/products/${id}/prices/`)
-        setPricesByWarehouse(pricesRes.data || [])
+        prices = unwrap(pricesRes.data)
       } catch (err) {
         console.log('Pas de prix trouvés', err)
-        setPricesByWarehouse([])
       }
-      
-      // Récupérer les stocks par entrepôt
+
+      // 3) Stocks par entrepôt — page_size=200 pour éviter la pagination
+      let stocks = []
       try {
-        const stocksRes = await AxiosInstance.get(`/warehouse-stocks/by_product/?product_id=${id}`)
-        setStocksByWarehouse(stocksRes.data || [])
+        const stocksRes = await AxiosInstance.get(
+          `/warehouse-stocks/by_product/?product_id=${id}&page_size=200`
+        )
+        stocks = unwrap(stocksRes.data)
       } catch (err) {
         console.log('Pas de stocks trouvés', err)
-        setStocksByWarehouse([])
       }
-      
+
+      // ✅ Cache
+      cacheRef.current.set(key, { product: productData, prices, stocks })
+      if (cacheRef.current.size > 10) {
+        const firstKey = cacheRef.current.keys().next().value
+        cacheRef.current.delete(firstKey)
+      }
+
+      setProduct(productData)
+      setPricesByWarehouse(prices)
+      setStocksByWarehouse(stocks)
     } catch (error) {
       console.error(error)
       showNotification('Erreur de chargement du produit', 'error')
-    } finally { 
-      setLoading(false) 
+    } finally {
+      setLoading(false)
+      setInitialLoad(false)
+      fetchingRef.current = false
     }
-  }
+  }, [id])
+
+  useEffect(() => {
+    fetchData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id])
 
   const refreshData = async () => {
     setRefreshing(true)
-    await fetchData()
+    cacheRef.current.clear()
+    await fetchData({ bypassCache: true })
     setRefreshing(false)
     showNotification('Données actualisées', 'success')
   }
 
-  useEffect(() => { 
-    fetchData() 
-  }, [id])
-
-  // Filtrage et tri des stocks
-  const filteredAndSortedStocks = React.useMemo(() => {
+  // ---------- Filtrage & tri locaux ----------
+  const filteredAndSortedStocks = useMemo(() => {
     let filtered = stocksByWarehouse.filter(stock => {
       const warehouseName = (stock.warehouse_name || '').toLowerCase()
       const search = searchTerm.toLowerCase()
@@ -158,12 +156,10 @@ const ProductDetails = () => {
     filtered.sort((a, b) => {
       let aVal = a[sortField] || ''
       let bVal = b[sortField] || ''
-      
       if (sortField === 'quantity') {
         aVal = parseFloat(aVal) || 0
         bVal = parseFloat(bVal) || 0
       }
-      
       if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1
       if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1
       return 0
@@ -172,24 +168,41 @@ const ProductDetails = () => {
     return filtered
   }, [stocksByWarehouse, searchTerm, sortField, sortDirection])
 
-  const totalStock = stocksByWarehouse.reduce((sum, s) => sum + (s.quantity || 0), 0)
-  const totalValue = stocksByWarehouse.reduce((sum, s) => {
-    const price = pricesByWarehouse.find(p => p.warehouse_id === s.warehouse_id)
-    const salePrice = price?.sale_price || 0
-    return sum + (s.quantity * salePrice)
-  }, 0)
+  // ---------- Calculs dérivés ----------
+  const totalStock = useMemo(
+    () => stocksByWarehouse.reduce((sum, s) => sum + (s.quantity || 0), 0),
+    [stocksByWarehouse]
+  )
+
+  const totalValue = useMemo(() => {
+    return stocksByWarehouse.reduce((sum, s) => {
+      const price = pricesByWarehouse.find(p => p.warehouse_id === s.warehouse_id)
+      const salePrice = price?.sale_price || 0
+      return sum + (s.quantity * salePrice)
+    }, 0)
+  }, [stocksByWarehouse, pricesByWarehouse])
 
   const getStockStatus = (quantity) => {
     if (quantity === 0) {
-      return { label: 'Rupture', color: 'text-error', bgColor: 'bg-error/10', icon: <XCircle className="w-4 h-4" /> }
+      return {
+        label: 'Rupture', color: 'text-error', bgColor: 'bg-error/10',
+        icon: <XCircle className="w-4 h-4" />
+      }
     }
     if (quantity <= 5) {
-      return { label: 'Stock faible', color: 'text-warning', bgColor: 'bg-warning/10', icon: <AlertTriangle className="w-4 h-4" /> }
+      return {
+        label: 'Stock faible', color: 'text-warning', bgColor: 'bg-warning/10',
+        icon: <AlertTriangle className="w-4 h-4" />
+      }
     }
-    return { label: 'Normal', color: 'text-success', bgColor: 'bg-success/10', icon: <CheckCircle className="w-4 h-4" /> }
+    return {
+      label: 'Normal', color: 'text-success', bgColor: 'bg-success/10',
+      icon: <CheckCircle className="w-4 h-4" />
+    }
   }
 
-  if (loading) {
+  // ---------- Rendu : premier chargement ----------
+  if (initialLoad && loading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-200px)]">
         <div className="text-center space-y-6">
@@ -211,10 +224,12 @@ const ProductDetails = () => {
           </div>
           <div>
             <h2 className="text-2xl font-bold">Produit non trouvé</h2>
-            <p className="text-base-content/60 mt-2">Le produit que vous recherchez n'existe pas</p>
+            <p className="text-base-content/60 mt-2">
+              Le produit que vous recherchez n'existe pas
+            </p>
           </div>
-          <button 
-            onClick={() => navigate('/produits')} 
+          <button
+            onClick={() => navigate('/produits')}
             className="btn btn-primary gap-2"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -227,17 +242,25 @@ const ProductDetails = () => {
 
   return (
     <div className="space-y-6 p-4 lg:p-6 bg-gradient-to-br from-base-200 to-base-100 min-h-screen">
+      {/* Spinner overlay discret pendant les refreshs */}
+      {loading && !initialLoad && (
+        <div className="fixed top-20 right-6 z-40 animate-slideDown">
+          <div className="bg-base-100 shadow-lg rounded-full px-4 py-2 flex items-center gap-2 border border-base-300">
+            <span className="loading loading-spinner loading-xs text-primary"></span>
+            <span className="text-xs text-base-content/60">Chargement...</span>
+          </div>
+        </div>
+      )}
+
       {/* Notification */}
       {notification.show && (
         <div className="fixed top-20 right-6 z-50 animate-slideDown">
           <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-lg`}>
-            {notification.type === 'success' ? (
-              <CheckCircle className="w-5 h-5" />
-            ) : (
-              <AlertCircle className="w-5 h-5" />
-            )}
+            {notification.type === 'success'
+              ? <CheckCircle className="w-5 h-5" />
+              : <AlertCircle className="w-5 h-5" />}
             <span className="font-semibold">{notification.message}</span>
-            <button 
+            <button
               className="btn btn-ghost btn-xs btn-circle"
               onClick={() => setNotification({ ...notification, show: false })}
             >
@@ -250,8 +273,8 @@ const ProductDetails = () => {
       {/* En-tête */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div className="flex items-center gap-4">
-          <button 
-            onClick={() => navigate('/produits')} 
+          <button
+            onClick={() => navigate('/produits')}
             className="btn btn-ghost btn-circle btn-lg"
           >
             <ArrowLeft className="w-6 h-6" />
@@ -282,24 +305,24 @@ const ProductDetails = () => {
             </div>
           </div>
         </div>
-        
+
         <div className="flex flex-wrap gap-3">
-          <button 
-            onClick={refreshData} 
-            disabled={refreshing} 
+          <button
+            onClick={refreshData}
+            disabled={refreshing}
             className="btn btn-outline gap-2"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
             Actualiser
           </button>
-          <button 
+          <button
             onClick={() => navigate(`/produits/${id}/prix`)}
             className="btn btn-outline btn-primary gap-2"
           >
             <DollarSign className="w-4 h-4" />
             Prix
           </button>
-          <button 
+          <button
             onClick={() => navigate(`/produits/${id}/modifier`)}
             className="btn btn-primary gap-2"
           >
@@ -317,35 +340,39 @@ const ProductDetails = () => {
           <div className="stat-value text-3xl font-black">{formatNumber(totalStock)}</div>
           <div className="stat-desc">Unités</div>
         </div>
-        
+
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300">
           <div className="stat-figure text-secondary"><Warehouse className="w-8 h-8" /></div>
           <div className="stat-title text-sm font-semibold">Entrepôts</div>
           <div className="stat-value text-3xl font-black">{stocksByWarehouse.length}</div>
           <div className="stat-desc">Avec stock</div>
         </div>
-        
+
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300">
           <div className="stat-figure text-success"><DollarSign className="w-8 h-8" /></div>
           <div className="stat-title text-sm font-semibold">Valeur totale</div>
           <div className="stat-value text-2xl font-black">{formatPrice(totalValue)}</div>
           <div className="stat-desc">Stock estimé</div>
         </div>
-        
+
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300">
           <div className="stat-figure text-warning"><TrendingDown className="w-8 h-8" /></div>
           <div className="stat-title text-sm font-semibold">Prix d'achat</div>
           <div className="stat-value text-2xl font-black">
-            {pricesByWarehouse.length > 0 ? formatPrice(pricesByWarehouse[0]?.purchase_price) : '-'}
+            {pricesByWarehouse.length > 0
+              ? formatPrice(pricesByWarehouse[0]?.purchase_price)
+              : '-'}
           </div>
           <div className="stat-desc">Moyen</div>
         </div>
-        
+
         <div className="stat bg-base-100 rounded-xl shadow-md border border-base-300">
           <div className="stat-figure text-info"><TrendingUp className="w-8 h-8" /></div>
           <div className="stat-title text-sm font-semibold">Prix de vente</div>
           <div className="stat-value text-2xl font-black">
-            {pricesByWarehouse.length > 0 ? formatPrice(pricesByWarehouse[0]?.sale_price) : '-'}
+            {pricesByWarehouse.length > 0
+              ? formatPrice(pricesByWarehouse[0]?.sale_price)
+              : '-'}
           </div>
           <div className="stat-desc">Moyen</div>
         </div>
@@ -368,13 +395,14 @@ const ProductDetails = () => {
             <div className="p-6">
               {product.main_image ? (
                 <div className="relative group">
-                  <img 
-                    src={product.main_image} 
+                  <img
+                    src={product.main_image}
                     alt={product.name}
+                    loading="lazy"
                     className="w-full h-64 object-contain rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
                     onClick={() => setSelectedImage(product.main_image)}
                   />
-                  <button 
+                  <button
                     className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={() => setSelectedImage(product.main_image)}
                   >
@@ -487,10 +515,13 @@ const ProductDetails = () => {
                   </div>
                   <div>
                     <h2 className="text-lg font-bold">Prix par entrepôt</h2>
-                    <p className="text-sm text-base-content/60">{pricesByWarehouse.length} prix défini{pricesByWarehouse.length > 1 ? 's' : ''}</p>
+                    <p className="text-sm text-base-content/60">
+                      {pricesByWarehouse.length} prix défini
+                      {pricesByWarehouse.length > 1 ? 's' : ''}
+                    </p>
                   </div>
                 </div>
-                <button 
+                <button
                   className="btn btn-primary btn-sm gap-2"
                   onClick={() => navigate(`/produits/${id}/prix`)}
                 >
@@ -504,7 +535,7 @@ const ProductDetails = () => {
                 <div className="text-center py-12">
                   <DollarSign className="w-16 h-16 mx-auto mb-4 text-base-content/30" />
                   <p className="text-base-content/50">Aucun prix défini</p>
-                  <button 
+                  <button
                     className="btn btn-outline btn-primary mt-4 gap-2"
                     onClick={() => navigate(`/produits/${id}/prix`)}
                   >
@@ -515,7 +546,10 @@ const ProductDetails = () => {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {pricesByWarehouse.map((price) => (
-                    <div key={price.id} className="bg-base-200 rounded-xl p-4 border border-base-300 hover:shadow-md transition-shadow">
+                    <div
+                      key={price.id}
+                      className="bg-base-200 rounded-xl p-4 border border-base-300 hover:shadow-md transition-shadow"
+                    >
                       <div className="flex items-center gap-2 mb-3">
                         <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
                           <Warehouse className="w-4 h-4 text-primary" />
@@ -525,17 +559,31 @@ const ProductDetails = () => {
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-base-content/60">Achat</span>
-                          <span className="font-semibold">{formatPrice(price.purchase_price)}</span>
+                          <span className="font-semibold">
+                            {formatPrice(price.purchase_price)}
+                          </span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-base-content/60">Vente</span>
-                          <span className="font-bold text-primary text-lg">{formatPrice(price.sale_price)}</span>
+                          <span className="font-bold text-primary text-lg">
+                            {formatPrice(price.sale_price)}
+                          </span>
                         </div>
                         {price.purchase_price > 0 && price.sale_price > 0 && (
                           <div className="flex items-center justify-between pt-2 border-t border-base-300">
                             <span className="text-sm text-base-content/60">Marge</span>
-                            <span className={`font-semibold ${price.sale_price > price.purchase_price ? 'text-success' : 'text-error'}`}>
-                              {((price.sale_price - price.purchase_price) / price.purchase_price * 100).toFixed(1)}%
+                            <span
+                              className={`font-semibold ${
+                                price.sale_price > price.purchase_price
+                                  ? 'text-success'
+                                  : 'text-error'
+                              }`}
+                            >
+                              {(
+                                ((price.sale_price - price.purchase_price) /
+                                  price.purchase_price) * 100
+                              ).toFixed(1)}
+                              %
                             </span>
                           </div>
                         )}
@@ -557,7 +605,10 @@ const ProductDetails = () => {
                   </div>
                   <div>
                     <h2 className="text-lg font-bold">Stock par entrepôt</h2>
-                    <p className="text-sm text-base-content/60">{stocksByWarehouse.length} entrepôt{stocksByWarehouse.length > 1 ? 's' : ''}</p>
+                    <p className="text-sm text-base-content/60">
+                      {stocksByWarehouse.length} entrepôt
+                      {stocksByWarehouse.length > 1 ? 's' : ''}
+                    </p>
                   </div>
                 </div>
                 <div className="flex gap-2">
@@ -572,15 +623,17 @@ const ProductDetails = () => {
                     />
                   </div>
                   <div className="join">
-                    <button 
+                    <button
                       className={`join-item btn btn-sm ${viewMode === 'grid' ? 'btn-primary' : 'btn-ghost'}`}
                       onClick={() => setViewMode('grid')}
+                      title="Vue grille"
                     >
                       <LayoutGrid className="w-3 h-3" />
                     </button>
-                    <button 
+                    <button
                       className={`join-item btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-ghost'}`}
                       onClick={() => setViewMode('table')}
+                      title="Vue tableau"
                     >
                       <List className="w-3 h-3" />
                     </button>
@@ -598,11 +651,16 @@ const ProductDetails = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {filteredAndSortedStocks.map((stock) => {
                     const status = getStockStatus(stock.quantity)
-                    const price = pricesByWarehouse.find(p => p.warehouse_id === stock.warehouse_id)
+                    const price = pricesByWarehouse.find(
+                      p => p.warehouse_id === stock.warehouse_id
+                    )
                     const value = (stock.quantity || 0) * (price?.sale_price || 0)
-                    
+
                     return (
-                      <div key={stock.warehouse_id} className="bg-base-200 rounded-xl p-4 border border-base-300 hover:shadow-md transition-shadow">
+                      <div
+                        key={stock.warehouse_id}
+                        className="bg-base-200 rounded-xl p-4 border border-base-300 hover:shadow-md transition-shadow"
+                      >
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-2">
                             <div className="w-8 h-8 rounded-full bg-secondary/10 flex items-center justify-center">
@@ -618,16 +676,22 @@ const ProductDetails = () => {
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
                             <span className="text-sm text-base-content/60">Quantité</span>
-                            <span className="text-2xl font-bold">{formatNumber(stock.quantity)}</span>
+                            <span className="text-2xl font-bold">
+                              {formatNumber(stock.quantity)}
+                            </span>
                           </div>
                           <div className="flex items-center justify-between">
                             <span className="text-sm text-base-content/60">Valeur</span>
-                            <span className="font-semibold text-success">{formatPrice(value)}</span>
+                            <span className="font-semibold text-success">
+                              {formatPrice(value)}
+                            </span>
                           </div>
                           {stock.location_code && (
                             <div className="flex items-center justify-between pt-2 border-t border-base-300">
                               <span className="text-sm text-base-content/60">Emplacement</span>
-                              <span className="text-sm font-mono">{stock.location_code}</span>
+                              <span className="text-sm font-mono">
+                                {stock.location_code}
+                              </span>
                             </div>
                           )}
                         </div>
@@ -641,12 +705,18 @@ const ProductDetails = () => {
                     <thead>
                       <tr>
                         <th>
-                          <button className="flex items-center gap-1 hover:text-primary" onClick={() => handleSort('warehouse_name')}>
+                          <button
+                            className="flex items-center gap-1 hover:text-primary"
+                            onClick={() => handleSort('warehouse_name')}
+                          >
                             Entrepôt <SortIcon field="warehouse_name" />
                           </button>
                         </th>
                         <th>
-                          <button className="flex items-center gap-1 hover:text-primary" onClick={() => handleSort('quantity')}>
+                          <button
+                            className="flex items-center gap-1 hover:text-primary"
+                            onClick={() => handleSort('quantity')}
+                          >
                             Quantité <SortIcon field="quantity" />
                           </button>
                         </th>
@@ -657,20 +727,26 @@ const ProductDetails = () => {
                     <tbody>
                       {filteredAndSortedStocks.map((stock) => {
                         const status = getStockStatus(stock.quantity)
-                        const price = pricesByWarehouse.find(p => p.warehouse_id === stock.warehouse_id)
+                        const price = pricesByWarehouse.find(
+                          p => p.warehouse_id === stock.warehouse_id
+                        )
                         const value = (stock.quantity || 0) * (price?.sale_price || 0)
-                        
+
                         return (
                           <tr key={stock.warehouse_id} className="hover">
                             <td className="font-semibold">{stock.warehouse_name}</td>
-                            <td className="text-2xl font-bold">{formatNumber(stock.quantity)}</td>
+                            <td className="text-2xl font-bold">
+                              {formatNumber(stock.quantity)}
+                            </td>
                             <td>
                               <div className={`badge ${status.bgColor} ${status.color} gap-1`}>
                                 {status.icon}
                                 {status.label}
                               </div>
                             </td>
-                            <td className="text-right font-semibold text-success">{formatPrice(value)}</td>
+                            <td className="text-right font-semibold text-success">
+                              {formatPrice(value)}
+                            </td>
                           </tr>
                         )
                       })}
@@ -686,17 +762,20 @@ const ProductDetails = () => {
       {/* Modal image */}
       {selectedImage && (
         <div className="modal modal-open" onClick={() => setSelectedImage(null)}>
-          <div className="modal-box max-w-4xl p-2" onClick={(e) => e.stopPropagation()}>
-            <button 
-              className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2 z-10" 
+          <div
+            className="modal-box max-w-4xl p-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2 z-10"
               onClick={() => setSelectedImage(null)}
             >
               <X className="w-4 h-4" />
             </button>
-            <img 
-              src={selectedImage} 
-              alt="Aperçu" 
-              className="w-full h-auto max-h-[80vh] object-contain" 
+            <img
+              src={selectedImage}
+              alt="Aperçu"
+              className="w-full h-auto max-h-[80vh] object-contain"
             />
           </div>
         </div>
@@ -705,11 +784,9 @@ const ProductDetails = () => {
       <style>{`
         @keyframes slideDown {
           from { transform: translateY(-20px); opacity: 0; }
-          to { transform: translateY(0); opacity: 1; }
+          to   { transform: translateY(0);     opacity: 1; }
         }
-        .animate-slideDown {
-          animation: slideDown 0.3s ease-out;
-        }
+        .animate-slideDown { animation: slideDown 0.35s ease-out; }
       `}</style>
     </div>
   )

@@ -3,21 +3,8 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
 import {
-  Save,
-  X,
-  AlertCircle,
-  CheckCircle,
-  ArrowLeft,
-  Loader2,
-  Weight,
-  Droplet,
-  Ruler,
-  Square,
-  Package,
-  Clock,
-  Grid3x3,
-  Info,
-  Box
+  Save, X, AlertCircle, CheckCircle, ArrowLeft, Loader2,
+  Weight, Droplet, Ruler, Square, Package, Clock, Info, Box
 } from 'lucide-react'
 
 // Suggestions d'unités courantes
@@ -43,15 +30,12 @@ const UnitForm = () => {
   const isEditMode = !!id
 
   const [loading, setLoading] = useState(false)
+  const [initialLoad, setInitialLoad] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' })
   const [errors, setErrors] = useState({})
 
-  const [formData, setFormData] = useState({
-    name: '',
-    abbreviation: ''
-  })
-
+  const [formData, setFormData] = useState({ name: '', abbreviation: '' })
   const [previewIcon, setPreviewIcon] = useState(Box)
   const [previewColor, setPreviewColor] = useState('primary')
 
@@ -61,7 +45,10 @@ const UnitForm = () => {
   }
 
   const fetchData = async () => {
-    if (!isEditMode) return
+    if (!isEditMode) {
+      setInitialLoad(false)
+      return
+    }
     setLoading(true)
     try {
       const res = await AxiosInstance.get(`/units/${id}/`)
@@ -76,11 +63,13 @@ const UnitForm = () => {
       showNotification('Erreur de chargement', 'error')
     } finally {
       setLoading(false)
+      setInitialLoad(false)
     }
   }
 
   useEffect(() => {
     fetchData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
   const getIconFromText = (name, abbr) => {
@@ -116,58 +105,40 @@ const UnitForm = () => {
 
   const validateForm = () => {
     const newErrors = {}
-    
     if (!formData.name || formData.name.trim() === '') {
       newErrors.name = 'Le nom de l\'unité est obligatoire'
     } else if (formData.name.length < 2) {
       newErrors.name = 'Le nom doit contenir au moins 2 caractères'
     }
-    
     if (!formData.abbreviation || formData.abbreviation.trim() === '') {
       newErrors.abbreviation = 'L\'abréviation est obligatoire'
     } else if (formData.abbreviation.length > 10) {
       newErrors.abbreviation = 'L\'abréviation ne doit pas dépasser 10 caractères'
     }
-    
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
 
   const handleInputChange = (e) => {
     const { name, value } = e.target
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }))
-    
-    if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: null }))
-    }
-    
-    if (name === 'name') {
-      updatePreview(value, formData.abbreviation)
-    } else if (name === 'abbreviation') {
-      updatePreview(formData.name, value)
-    }
+    setFormData(prev => ({ ...prev, [name]: value }))
+    if (errors[name]) setErrors(prev => ({ ...prev, [name]: null }))
+    if (name === 'name') updatePreview(value, formData.abbreviation)
+    else if (name === 'abbreviation') updatePreview(formData.name, value)
   }
 
   const handleSuggestionSelect = (suggestion) => {
-    setFormData({
-      name: suggestion.name,
-      abbreviation: suggestion.abbreviation
-    })
+    setFormData({ name: suggestion.name, abbreviation: suggestion.abbreviation })
     updatePreview(suggestion.name, suggestion.abbreviation)
     setErrors({})
   }
 
   const handleSubmit = async (e) => {
-    e.preventDefault()
-    
+    e?.preventDefault?.()
     if (!validateForm()) {
       showNotification('Veuillez corriger les erreurs du formulaire', 'error')
       return
     }
-
     setSubmitting(true)
     try {
       if (isEditMode) {
@@ -192,14 +163,12 @@ const UnitForm = () => {
     }
   }
 
-  if (loading) {
+  if (initialLoad && loading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-200px)]">
         <div className="text-center space-y-4">
           <span className="loading loading-spinner loading-lg text-primary"></span>
-          <p className="text-base font-medium text-base-content/70 animate-pulse">
-            Chargement...
-          </p>
+          <p className="text-base font-medium text-base-content/70 animate-pulse">Chargement...</p>
         </div>
       </div>
     )
@@ -213,13 +182,11 @@ const UnitForm = () => {
       {notification.show && (
         <div className="fixed top-16 lg:top-20 right-3 lg:right-6 z-50 animate-slideDown w-[calc(100%-1.5rem)] lg:w-auto max-w-md">
           <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-lg`}>
-            {notification.type === 'success' ? (
-              <CheckCircle className="w-4 h-4 lg:w-5 lg:h-5" />
-            ) : (
-              <AlertCircle className="w-4 h-4 lg:w-5 lg:h-5" />
-            )}
+            {notification.type === 'success'
+              ? <CheckCircle className="w-4 h-4 lg:w-5 lg:h-5" />
+              : <AlertCircle className="w-4 h-4 lg:w-5 lg:h-5" />}
             <span className="text-sm lg:text-base font-medium">{notification.message}</span>
-            <button 
+            <button
               className="btn btn-ghost btn-xs btn-circle"
               onClick={() => setNotification({ ...notification, show: false })}
             >
@@ -232,10 +199,7 @@ const UnitForm = () => {
       {/* En-tête */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
-          <button 
-            onClick={() => navigate('/units')}
-            className="btn btn-ghost btn-sm btn-circle"
-          >
+          <button onClick={() => navigate('/units')} className="btn btn-ghost btn-sm btn-circle">
             <ArrowLeft className="w-4 h-4 lg:w-5 lg:h-5" />
           </button>
           <div>
@@ -247,40 +211,25 @@ const UnitForm = () => {
             </p>
           </div>
         </div>
-        
         <div className="flex gap-2">
-          <button 
-            onClick={() => navigate('/units')}
-            className="btn btn-outline btn-sm lg:btn-md gap-1 lg:gap-2"
-          >
+          <button onClick={() => navigate('/units')} className="btn btn-outline btn-sm lg:btn-md gap-1 lg:gap-2">
             <X className="w-3 h-3 lg:w-4 lg:h-4" />
             <span className="hidden sm:inline">Annuler</span>
           </button>
-          <button 
+          <button
             onClick={handleSubmit}
             disabled={submitting}
             className="btn btn-primary btn-sm lg:btn-md gap-1 lg:gap-2"
           >
-            {submitting ? (
-              <>
-                <Loader2 className="w-3 h-3 lg:w-4 lg:h-4 animate-spin" />
-                <span className="hidden sm:inline">Enregistrement...</span>
-                <span className="sm:hidden">En cours...</span>
-              </>
-            ) : (
-              <>
-                <Save className="w-3 h-3 lg:w-4 lg:h-4" />
-                <span className="hidden sm:inline">Enregistrer</span>
-                <span className="sm:hidden">Enregistrer</span>
-              </>
-            )}
+            {submitting
+              ? <><Loader2 className="w-3 h-3 lg:w-4 lg:h-4 animate-spin" /><span className="hidden sm:inline">Enregistrement...</span></>
+              : <><Save className="w-3 h-3 lg:w-4 lg:h-4" /><span className="hidden sm:inline">Enregistrer</span></>}
           </button>
         </div>
       </div>
 
       <form onSubmit={handleSubmit}>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
-          {/* Formulaire principal */}
           <div className="lg:col-span-2">
             <div className="bg-base-100 rounded-xl lg:rounded-2xl shadow-sm border border-base-300 overflow-hidden">
               <div className="p-4 lg:p-6 border-b border-base-300 bg-base-200/50">
@@ -293,9 +242,7 @@ const UnitForm = () => {
                   </h2>
                 </div>
               </div>
-              
               <div className="p-4 lg:p-6 space-y-4 lg:space-y-5">
-                {/* Nom de l'unité */}
                 <div className="form-control w-full">
                   <label className="label pb-1">
                     <span className="label-text font-medium text-sm lg:text-base">
@@ -313,8 +260,7 @@ const UnitForm = () => {
                   {errors.name ? (
                     <label className="label pt-1">
                       <span className="label-text-alt text-error flex items-center gap-1">
-                        <AlertCircle className="w-3 h-3" />
-                        {errors.name}
+                        <AlertCircle className="w-3 h-3" />{errors.name}
                       </span>
                     </label>
                   ) : (
@@ -326,7 +272,6 @@ const UnitForm = () => {
                   )}
                 </div>
 
-                {/* Abréviation */}
                 <div className="form-control w-full">
                   <label className="label pb-1">
                     <span className="label-text font-medium text-sm lg:text-base">
@@ -345,8 +290,7 @@ const UnitForm = () => {
                   {errors.abbreviation ? (
                     <label className="label pt-1">
                       <span className="label-text-alt text-error flex items-center gap-1">
-                        <AlertCircle className="w-3 h-3" />
-                        {errors.abbreviation}
+                        <AlertCircle className="w-3 h-3" />{errors.abbreviation}
                       </span>
                     </label>
                   ) : (
@@ -361,7 +305,7 @@ const UnitForm = () => {
             </div>
           </div>
 
-          {/* Prévisualisation */}
+          {/* Preview */}
           <div className="lg:col-span-1">
             <div className="bg-base-100 rounded-xl lg:rounded-2xl shadow-sm border border-base-300 overflow-hidden lg:sticky lg:top-20">
               <div className="p-4 lg:p-6 border-b border-base-300 bg-base-200/50">
@@ -369,44 +313,30 @@ const UnitForm = () => {
                   Aperçu en temps réel
                 </h2>
               </div>
-              
               <div className="p-4 lg:p-6">
                 <div className={`bg-${previewColor}/5 border-2 border-dashed border-${previewColor}/30 rounded-xl p-6 lg:p-8 text-center`}>
-                  <div className={`avatar placeholder mb-4`}>
+                  <div className="avatar placeholder mb-4">
                     <div className={`bg-${previewColor}/15 rounded-full w-20 h-20 lg:w-24 lg:h-24`}>
                       <PreviewIconComponent className={`w-10 h-10 lg:w-12 lg:h-12 text-${previewColor}`} />
                     </div>
                   </div>
-                  
                   <div className="text-3xl lg:text-4xl font-bold text-base-content mb-2">
                     {formData.abbreviation || 'symbole'}
                   </div>
-                  
                   <div className="text-sm lg:text-base text-base-content/60 mb-4">
                     {formData.name || 'Nom de l\'unité'}
                   </div>
-                  
                   <div className={`badge ${formData.name && formData.abbreviation ? 'badge-success' : 'badge-ghost'} gap-1`}>
-                    {formData.name && formData.abbreviation ? (
-                      <>
-                        <CheckCircle className="w-3 h-3" />
-                        Unité valide
-                      </>
-                    ) : (
-                      <>
-                        <AlertCircle className="w-3 h-3" />
-                        En attente
-                      </>
-                    )}
+                    {formData.name && formData.abbreviation
+                      ? <><CheckCircle className="w-3 h-3" />Unité valide</>
+                      : <><AlertCircle className="w-3 h-3" />En attente</>}
                   </div>
                 </div>
-
-                {/* Info */}
                 <div className="mt-4 p-3 bg-info/5 border border-info/20 rounded-lg">
                   <div className="flex items-start gap-2">
                     <Info className="w-4 h-4 text-info flex-shrink-0 mt-0.5" />
                     <p className="text-xs text-base-content/70">
-                      L'aperçu montre comment l'unité apparaîtra dans les listes et les sélecteurs.
+                      L'aperçu montre comment l'unité apparaîtra dans les listes et sélecteurs.
                     </p>
                   </div>
                 </div>
@@ -415,7 +345,7 @@ const UnitForm = () => {
           </div>
         </div>
 
-        {/* Suggestions d'unités courantes */}
+        {/* Suggestions */}
         {!isEditMode && (
           <div className="mt-4 lg:mt-6">
             <div className="bg-base-100 rounded-xl lg:rounded-2xl shadow-sm border border-base-300 overflow-hidden">
@@ -429,12 +359,10 @@ const UnitForm = () => {
                   </h2>
                 </div>
               </div>
-              
               <div className="p-4 lg:p-6">
                 <p className="text-sm text-base-content/60 mb-4">
                   Cliquez sur une suggestion pour la pré-remplir automatiquement
                 </p>
-                
                 <div className="flex flex-wrap gap-2">
                   {UNIT_SUGGESTIONS.map((suggestion, index) => {
                     const IconComponent = suggestion.icon
@@ -457,34 +385,27 @@ const UnitForm = () => {
         )}
       </form>
 
-      {/* Barre d'actions flottante pour mobile */}
+      {/* Barre mobile */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-base-100 border-t border-base-300 p-3 shadow-lg z-40">
         <div className="flex gap-2">
-          <button 
-            onClick={() => navigate('/units')}
-            className="btn btn-outline btn-sm flex-1"
-          >
+          <button onClick={() => navigate('/units')} className="btn btn-outline btn-sm flex-1">
             Annuler
           </button>
-          <button 
-            onClick={handleSubmit}
-            disabled={submitting}
-            className="btn btn-primary btn-sm flex-1"
-          >
-            {submitting ? (
-              <>
-                <Loader2 className="w-3 h-3 animate-spin" />
-                En cours...
-              </>
-            ) : (
-              <>
-                <Save className="w-3 h-3" />
-                Enregistrer
-              </>
-            )}
+          <button onClick={handleSubmit} disabled={submitting} className="btn btn-primary btn-sm flex-1">
+            {submitting
+              ? <><Loader2 className="w-3 h-3 animate-spin" />En cours...</>
+              : <><Save className="w-3 h-3" />Enregistrer</>}
           </button>
         </div>
       </div>
+
+      <style>{`
+        @keyframes slideDown {
+          from { opacity: 0; transform: translateY(-20px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slideDown { animation: slideDown 0.35s ease-out; }
+      `}</style>
     </div>
   )
 }
