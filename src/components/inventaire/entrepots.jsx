@@ -1,226 +1,229 @@
 // src/pages/entrepots/Entrepots.jsx
-import React, { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import React, {
+  useState, useEffect, useCallback, useRef, useMemo
+} from 'react'
+import { Link } from 'react-router-dom'
 import {
   Building2, MapPin, Phone, Mail, User, Plus, Eye,
   Warehouse as WarehouseIcon, Package, Box, AlertCircle,
   Search, Filter, RefreshCw, ChevronRight, Star, X,
   List, LayoutGrid
-} from 'lucide-react';
-import AxiosInstance from '../AxiosInstance';
+} from 'lucide-react'
+import AxiosInstance from '../AxiosInstance'
 
 const Entrepots = () => {
-  // ============================================================
-  // ÉTATS
-  // ============================================================
-  const [warehouses, setWarehouses] = useState([]);
-  const [agences, setAgences] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedType, setSelectedType] = useState('');
-  const [selectedAgence, setSelectedAgence] = useState('');       // ✅ Filtre agence
-  const [selectedStatus, setSelectedStatus] = useState('');       // ✅ Filtre actif/inactif
-  const [selectedDefault, setSelectedDefault] = useState('');     // ✅ Filtre défaut
-  const [viewMode, setViewMode] = useState('grid');               // ✅ grid | table
-  const [userAgence, setUserAgence] = useState(null);
-  const [userRole, setUserRole] = useState(null);
-  const [isMultiAgence, setIsMultiAgence] = useState(false);      // ✅ L'utilisateur voit-il plusieurs agences ?
+  const [warehouses, setWarehouses] = useState([])
+  const [agences, setAgences] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [initialLoad, setInitialLoad] = useState(true)
+  const [error, setError] = useState(null)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [selectedType, setSelectedType] = useState('')
+  const [selectedAgence, setSelectedAgence] = useState('')
+  const [selectedStatus, setSelectedStatus] = useState('')
+  const [selectedDefault, setSelectedDefault] = useState('')
+  const [viewMode, setViewMode] = useState('grid')
+  const [userAgence, setUserAgence] = useState(null)
+  const [userRole, setUserRole] = useState(null)
+  const [isMultiAgence, setIsMultiAgence] = useState(false)
 
-  // ============================================================
-  // RÉCUPÉRATION DES INFOS UTILISATEUR
-  // ============================================================
+  // ✅ Refs cache
+  const cacheRef = useRef(new Map())
+  const fetchingRef = useRef(false)
+
+  // ---------- Helpers ----------
+  const unwrap = (data) => Array.isArray(data) ? data : (data?.results || [])
+
   const getUserInfo = () => {
     try {
-      const userData = localStorage.getItem('User');
-      const user = userData ? JSON.parse(userData) : null;
-      const agenceCourante = JSON.parse(localStorage.getItem('AgenceCourante') || '{}');
+      const userData = localStorage.getItem('User')
+      const user = userData ? JSON.parse(userData) : null
+      const agenceCourante = JSON.parse(localStorage.getItem('AgenceCourante') || '{}')
 
-      let role = 'autre';
-      if (user?.role_global === 'pdg') {
-        role = 'pdg';
-      } else if (user?.role_global === 'drh') {
-        role = 'drh';
-      } else if (user?.roles_agence) {
+      let role = 'autre'
+      if (user?.role_global === 'pdg') role = 'pdg'
+      else if (user?.role_global === 'drh') role = 'drh'
+      else if (user?.roles_agence) {
         const currentRole = user.roles_agence.find(
           r => r.agence_id === agenceCourante.id && r.est_actif
-        );
-        if (currentRole) {
-          role = currentRole.role;
-        }
+        )
+        if (currentRole) role = currentRole.role
       }
-
-      return { user, role, agenceCourante };
+      return { user, role, agenceCourante }
     } catch {
-      return { user: null, role: 'autre', agenceCourante: {} };
+      return { user: null, role: 'autre', agenceCourante: {} }
     }
-  };
+  }
 
-  // ============================================================
-  // CHARGEMENT DES AGENCES
-  // ============================================================
-  const fetchAgences = async () => {
-    try {
-      const response = await AxiosInstance.get('/agences/');
-      setAgences(response.data || []);
-      return response.data || [];
-    } catch (error) {
-      console.error('Erreur chargement agences:', error);
-      setAgences([]);
-      return [];
+  // ✅ Index O(1) des agences
+  const agencesIndex = useMemo(() => {
+    const map = {}
+    agences.forEach(a => { map[a.id] = a })
+    return map
+  }, [agences])
+
+  // ---------- Fetch avec cache ----------
+  const fetchData = useCallback(async ({ bypassCache = false } = {}) => {
+    const key = 'warehouses_list'
+
+    if (!bypassCache && cacheRef.current.has(key)) {
+      const c = cacheRef.current.get(key)
+      setWarehouses(c.warehouses)
+      setAgences(c.agences)
+      // Recalcule les dérivés
+      const uniqueAgences = new Set(c.warehouses.map(w => w.agence || w.agence_nom))
+      setIsMultiAgence(uniqueAgences.size > 1)
+      setLoading(false)
+      setInitialLoad(false)
+      return
     }
-  };
 
-  // ============================================================
-  // CHARGEMENT DES ENTREPÔTS
-  // ============================================================
-  const fetchWarehouses = async () => {
-    setLoading(true);
-    setError(null);
+    if (fetchingRef.current) return
+    fetchingRef.current = true
+    setLoading(true)
+    setError(null)
+
     try {
-      // Récupérer TOUS les entrepôts (le backend filtre selon les permissions)
-      const response = await AxiosInstance.get('/warehouses/');
-      setWarehouses(response.data || []);
+      const { agenceCourante, role } = getUserInfo()
+      setUserAgence(agenceCourante)
+      setUserRole(role)
 
-      // Récupérer les infos utilisateur
-      const { agenceCourante, role } = getUserInfo();
-      setUserAgence(agenceCourante);
-      setUserRole(role);
+      // ✅ page_size=200 + agences en parallèle
+      const [whRes, agRes] = await Promise.all([
+        AxiosInstance.get('/warehouses/?page_size=200').catch(() => ({ data: [] })),
+        AxiosInstance.get('/agences/?page_size=200').catch(() => ({ data: [] }))
+      ])
 
-      // Vérifier si l'utilisateur voit plusieurs agences
-      const uniqueAgences = new Set(
-        (response.data || []).map(w => w.agence || w.agence_nom)
-      );
-      setIsMultiAgence(uniqueAgences.size > 1);
+      const whData = unwrap(whRes.data)
+      const agData = unwrap(agRes.data)
 
-      // Si mono-agence, pré-sélectionner cette agence
-      if (uniqueAgences.size === 1 && agenceCourante?.id) {
-        setSelectedAgence(String(agenceCourante.id));
+      cacheRef.current.set(key, { warehouses: whData, agences: agData })
+      if (cacheRef.current.size > 10) {
+        const firstKey = cacheRef.current.keys().next().value
+        cacheRef.current.delete(firstKey)
       }
 
-    } catch (error) {
-      console.error('Erreur lors du chargement des entrepôts:', error);
-      setError('Impossible de charger les entrepôts. Veuillez réessayer.');
+      setWarehouses(whData)
+      setAgences(agData)
+
+      const uniqueAgences = new Set(whData.map(w => w.agence || w.agence_nom))
+      setIsMultiAgence(uniqueAgences.size > 1)
+      if (uniqueAgences.size === 1 && agenceCourante?.id) {
+        setSelectedAgence(String(agenceCourante.id))
+      }
+    } catch (err) {
+      console.error('Erreur chargement:', err)
+      setError('Impossible de charger les entrepôts. Veuillez réessayer.')
     } finally {
-      setLoading(false);
+      setLoading(false)
+      setInitialLoad(false)
+      fetchingRef.current = false
     }
-  };
+  }, [])
 
-  // ============================================================
-  // INITIALISATION
-  // ============================================================
   useEffect(() => {
-    const init = async () => {
-      await fetchAgences();
-      await fetchWarehouses();
-    };
-    init();
-  }, []);
+    fetchData()
+  }, [fetchData])
 
-  // ============================================================
-  // TYPES D'ENTREPÔTS
-  // ============================================================
+  const refreshData = async () => {
+    cacheRef.current.clear()
+    await fetchData({ bypassCache: true })
+  }
+
+  // ---------- Types ----------
   const warehouseTypes = [
     { value: 'main', label: 'Entrepôt principal', icon: Building2 },
     { value: 'secondary', label: 'Entrepôt secondaire', icon: WarehouseIcon },
     { value: 'store', label: 'Magasin', icon: Package },
     { value: 'transit', label: 'Zone de transit', icon: Box },
     { value: 'returns', label: 'Zone de retour', icon: AlertCircle },
-    { value: 'quarantine', label: 'Zone de quarantaine', icon: AlertCircle },
-  ];
+    { value: 'quarantine', label: 'Zone de quarantaine', icon: AlertCircle }
+  ]
 
-  // ============================================================
-  // UTILITAIRES
-  // ============================================================
-  const getTypeLabel = (type) => {
-    const found = warehouseTypes.find(t => t.value === type);
-    return found ? found.label : type;
-  };
+  const getTypeLabel = (type) =>
+    warehouseTypes.find(t => t.value === type)?.label || type
 
   const getTypeIcon = (type) => {
-    const found = warehouseTypes.find(t => t.value === type);
-    const Icon = found?.icon || WarehouseIcon;
-    return <Icon className="w-4 h-4" />;
-  };
+    const Icon = warehouseTypes.find(t => t.value === type)?.icon || WarehouseIcon
+    return <Icon className="w-4 h-4" />
+  }
 
-  const getAgenceNom = (warehouse) => {
-    return warehouse.agence_nom ||
-           agences.find(a => a.id === warehouse.agence)?.nom ||
-           '—';
-  };
+  const getAgenceNom = (warehouse) =>
+    warehouse.agence_nom
+    || agencesIndex[warehouse.agence]?.nom
+    || '—'
 
-  const canCreateWarehouse = () => {
-    return userRole === 'pdg' || userRole === 'drh' || userRole === 'chef_agence';
-  };
+  const canCreateWarehouse = () =>
+    userRole === 'pdg' || userRole === 'drh' || userRole === 'chef_agence'
 
-  // ============================================================
-  // FILTRAGE
-  // ============================================================
+  // ---------- Filtrage ----------
   const filteredWarehouses = useMemo(() => {
     return warehouses.filter(warehouse => {
-      // Recherche texte
-      const search = searchTerm.toLowerCase();
-      const matchesSearch =
-        search === '' ||
-        warehouse.name?.toLowerCase().includes(search) ||
-        warehouse.code?.toLowerCase().includes(search) ||
-        warehouse.city?.toLowerCase().includes(search) ||
-        warehouse.address?.toLowerCase().includes(search);
+      const search = searchTerm.toLowerCase()
+      const matchesSearch = search === ''
+        || warehouse.name?.toLowerCase().includes(search)
+        || warehouse.code?.toLowerCase().includes(search)
+        || warehouse.city?.toLowerCase().includes(search)
+        || warehouse.address?.toLowerCase().includes(search)
 
-      // Type
-      const matchesType = selectedType === '' || warehouse.warehouse_type === selectedType;
+      const matchesType = selectedType === '' || warehouse.warehouse_type === selectedType
 
-      // ✅ Agence
-      let matchesAgence = true;
-      if (selectedAgence !== '') {
-        matchesAgence = String(warehouse.agence) === String(selectedAgence);
-      }
+      let matchesAgence = true
+      if (selectedAgence !== '') matchesAgence = String(warehouse.agence) === String(selectedAgence)
 
-      // Statut actif
-      let matchesStatus = true;
-      if (selectedStatus === 'active') matchesStatus = warehouse.is_active === true;
-      if (selectedStatus === 'inactive') matchesStatus = warehouse.is_active === false;
+      let matchesStatus = true
+      if (selectedStatus === 'active') matchesStatus = warehouse.is_active === true
+      if (selectedStatus === 'inactive') matchesStatus = warehouse.is_active === false
 
-      // Défaut
-      let matchesDefault = true;
-      if (selectedDefault === 'default') matchesDefault = warehouse.is_default === true;
-      if (selectedDefault === 'non-default') matchesDefault = warehouse.is_default === false;
+      let matchesDefault = true
+      if (selectedDefault === 'default') matchesDefault = warehouse.is_default === true
+      if (selectedDefault === 'non-default') matchesDefault = warehouse.is_default === false
 
-      return matchesSearch && matchesType && matchesAgence && matchesStatus && matchesDefault;
-    });
-  }, [warehouses, searchTerm, selectedType, selectedAgence, selectedStatus, selectedDefault]);
+      return matchesSearch && matchesType && matchesAgence && matchesStatus && matchesDefault
+    })
+  }, [warehouses, searchTerm, selectedType, selectedAgence, selectedStatus, selectedDefault])
 
-  // ============================================================
-  // STATISTIQUES
-  // ============================================================
   const stats = useMemo(() => {
-    const total = filteredWarehouses.length;
-    const active = filteredWarehouses.filter(w => w.is_active).length;
-    const inactive = filteredWarehouses.filter(w => !w.is_active).length;
-    const defaults = filteredWarehouses.filter(w => w.is_default).length;
-    return { total, active, inactive, defaults };
-  }, [filteredWarehouses]);
+    const total = filteredWarehouses.length
+    const active = filteredWarehouses.filter(w => w.is_active).length
+    const inactive = filteredWarehouses.filter(w => !w.is_active).length
+    const defaults = filteredWarehouses.filter(w => w.is_default).length
+    return { total, active, inactive, defaults }
+  }, [filteredWarehouses])
 
-  // ============================================================
-  // RESET FILTRES
-  // ============================================================
   const resetFilters = () => {
-    setSearchTerm('');
-    setSelectedType('');
-    setSelectedAgence('');
-    setSelectedStatus('');
-    setSelectedDefault('');
-  };
+    setSearchTerm('')
+    setSelectedType('')
+    setSelectedAgence('')
+    setSelectedStatus('')
+    setSelectedDefault('')
+  }
 
   const hasActiveFilters = () =>
-    searchTerm || selectedType || selectedAgence || selectedStatus || selectedDefault;
+    searchTerm || selectedType || selectedAgence || selectedStatus || selectedDefault
 
-  // ============================================================
-  // RENDU
-  // ============================================================
+  // ---------- Rendu : premier chargement ----------
+  if (initialLoad && loading) {
+    return (
+      <div className="flex justify-center items-center py-12">
+        <div className="loading loading-spinner loading-lg text-primary"></div>
+      </div>
+    )
+  }
+
   return (
     <div className="p-4 md:p-6">
-      {/* ===== EN-TÊTE ===== */}
+      {/* Spinner overlay */}
+      {loading && !initialLoad && (
+        <div className="fixed top-20 right-6 z-40 animate-slideDown">
+          <div className="bg-base-100 shadow-lg rounded-full px-4 py-2 flex items-center gap-2 border border-base-300">
+            <span className="loading loading-spinner loading-xs text-primary"></span>
+            <span className="text-xs text-base-content/60">Chargement...</span>
+          </div>
+        </div>
+      )}
+
+      {/* En-tête */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-base-content flex items-center gap-2">
@@ -253,7 +256,6 @@ const Entrepots = () => {
         </div>
 
         <div className="flex gap-2">
-          {/* Toggle vue */}
           <div className="join">
             <button
               className={`join-item btn btn-sm ${viewMode === 'grid' ? 'btn-primary' : 'btn-ghost'}`}
@@ -270,7 +272,6 @@ const Entrepots = () => {
               <List className="w-4 h-4" />
             </button>
           </div>
-
           {canCreateWarehouse() && (
             <Link to="/entrepots/nouveau" className="btn btn-primary btn-sm gap-2">
               <Plus className="w-4 h-4" />
@@ -280,7 +281,7 @@ const Entrepots = () => {
         </div>
       </div>
 
-      {/* ===== STATISTIQUES ===== */}
+      {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <div className="stat bg-base-100 rounded-xl shadow-sm border border-base-300 py-3">
           <div className="stat-title text-xs font-semibold">Total</div>
@@ -304,7 +305,7 @@ const Entrepots = () => {
         </div>
       </div>
 
-      {/* ===== FILTRES ===== */}
+      {/* Filtres */}
       <div className="card bg-base-100 shadow-md mb-6">
         <div className="card-body p-4">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
@@ -319,16 +320,13 @@ const Entrepots = () => {
             </div>
             <div className="flex gap-2">
               {hasActiveFilters() && (
-                <button
-                  onClick={resetFilters}
-                  className="btn btn-sm btn-ghost gap-1 text-error"
-                >
+                <button onClick={resetFilters} className="btn btn-sm btn-ghost gap-1 text-error">
                   <X className="w-4 h-4" />
                   Réinitialiser
                 </button>
               )}
               <button
-                onClick={fetchWarehouses}
+                onClick={refreshData}
                 className="btn btn-sm btn-outline gap-1"
                 disabled={loading}
               >
@@ -339,7 +337,6 @@ const Entrepots = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-            {/* Recherche */}
             <div className="form-control w-full">
               <label className="label py-1">
                 <span className="label-text text-xs font-medium">Recherche</span>
@@ -356,12 +353,10 @@ const Entrepots = () => {
               </div>
             </div>
 
-            {/* ✅ Filtre Agence */}
             <div className="form-control w-full">
               <label className="label py-1">
                 <span className="label-text text-xs font-medium flex items-center gap-1">
-                  <Building2 className="w-3 h-3" />
-                  Agence
+                  <Building2 className="w-3 h-3" /> Agence
                 </span>
               </label>
               <select
@@ -379,7 +374,6 @@ const Entrepots = () => {
               </select>
             </div>
 
-            {/* Type */}
             <div className="form-control w-full">
               <label className="label py-1">
                 <span className="label-text text-xs font-medium">Type</span>
@@ -396,7 +390,6 @@ const Entrepots = () => {
               </select>
             </div>
 
-            {/* Statut */}
             <div className="form-control w-full">
               <label className="label py-1">
                 <span className="label-text text-xs font-medium">Statut</span>
@@ -412,12 +405,10 @@ const Entrepots = () => {
               </select>
             </div>
 
-            {/* Défaut */}
             <div className="form-control w-full">
               <label className="label py-1">
                 <span className="label-text text-xs font-medium flex items-center gap-1">
-                  <Star className="w-3 h-3" />
-                  Entrepôt par défaut
+                  <Star className="w-3 h-3" /> Entrepôt par défaut
                 </span>
               </label>
               <select
@@ -434,22 +425,15 @@ const Entrepots = () => {
         </div>
       </div>
 
-      {/* ===== ÉTATS ===== */}
-      {loading && (
-        <div className="flex justify-center items-center py-12">
-          <div className="loading loading-spinner loading-lg text-primary"></div>
-        </div>
-      )}
-
       {error && (
-        <div className="alert alert-error shadow-lg">
+        <div className="alert alert-error shadow-lg mb-4">
           <AlertCircle className="w-6 h-6" />
           <span>{error}</span>
         </div>
       )}
 
-      {/* ===== LISTE ===== */}
-      {!loading && !error && (
+      {/* Liste */}
+      {!error && (
         <>
           {filteredWarehouses.length === 0 ? (
             <div className="card bg-base-100 shadow-md">
@@ -458,14 +442,11 @@ const Entrepots = () => {
                 <h3 className="text-lg font-medium">Aucun entrepôt trouvé</h3>
                 <p className="text-base-content/60">
                   {hasActiveFilters()
-                    ? "Aucun entrepôt ne correspond à vos critères"
+                    ? 'Aucun entrepôt ne correspond à vos critères'
                     : "Aucun entrepôt n'est configuré"}
                 </p>
                 {hasActiveFilters() && (
-                  <button
-                    onClick={resetFilters}
-                    className="btn btn-outline btn-sm w-fit mx-auto mt-2"
-                  >
+                  <button onClick={resetFilters} className="btn btn-outline btn-sm w-fit mx-auto mt-2">
                     Effacer les filtres
                   </button>
                 )}
@@ -477,7 +458,6 @@ const Entrepots = () => {
               </div>
             </div>
           ) : viewMode === 'grid' ? (
-            /* ===== VUE GRILLE ===== */
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredWarehouses.map((warehouse) => (
                 <div
@@ -487,7 +467,6 @@ const Entrepots = () => {
                   }`}
                 >
                   <div className="card-body">
-                    {/* En-tête */}
                     <div className="flex justify-between items-start">
                       <div className="flex items-center gap-2">
                         <div className="p-2 rounded-lg bg-primary/10">
@@ -510,7 +489,6 @@ const Entrepots = () => {
                       </div>
                     </div>
 
-                    {/* ✅ Badge agence */}
                     <div className="mt-2">
                       <div className="badge badge-outline badge-sm gap-1">
                         <Building2 className="w-3 h-3" />
@@ -518,7 +496,6 @@ const Entrepots = () => {
                       </div>
                     </div>
 
-                    {/* Adresse */}
                     <div className="space-y-2 mt-2 text-sm">
                       <div className="flex items-start gap-2 text-base-content/70">
                         <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0" />
@@ -528,32 +505,28 @@ const Entrepots = () => {
                           {warehouse.country}
                         </span>
                       </div>
-
                       {warehouse.phone && (
                         <div className="flex items-center gap-2 text-base-content/70">
                           <Phone className="w-4 h-4" />
                           <span>{warehouse.phone}</span>
                         </div>
                       )}
-
                       {warehouse.email && (
                         <div className="flex items-center gap-2 text-base-content/70">
                           <Mail className="w-4 h-4" />
                           <span className="text-sm truncate">{warehouse.email}</span>
                         </div>
                       )}
-
                       {warehouse.manager && (
                         <div className="flex items-center gap-2 text-base-content/70">
                           <User className="w-4 h-4" />
                           <span className="text-sm truncate">
-                            Responsable : {warehouse.manager.email || warehouse.manager}
+                            Responsable : {warehouse.manager_email || warehouse.manager}
                           </span>
                         </div>
                       )}
                     </div>
 
-                    {/* Statistiques */}
                     <div className="divider my-2"></div>
                     <div className="flex justify-between text-sm">
                       <div className="flex items-center gap-1 text-base-content/60">
@@ -565,7 +538,6 @@ const Entrepots = () => {
                       </div>
                     </div>
 
-                    {/* Actions */}
                     <div className="card-actions justify-end mt-4">
                       <Link
                         to={`/entrepots/${warehouse.id}`}
@@ -580,7 +552,6 @@ const Entrepots = () => {
               ))}
             </div>
           ) : (
-            /* ===== VUE TABLEAU ===== */
             <div className="card bg-base-100 shadow-md overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="table table-zebra">
@@ -588,7 +559,7 @@ const Entrepots = () => {
                     <tr>
                       <th>Code</th>
                       <th>Nom</th>
-                      <th>✅ Agence</th>
+                      <th>Agence</th>
                       <th>Type</th>
                       <th>Ville</th>
                       <th>Responsable</th>
@@ -620,7 +591,7 @@ const Entrepots = () => {
                         </td>
                         <td className="text-sm">{warehouse.city}</td>
                         <td className="text-sm text-base-content/70">
-                          {warehouse.manager?.email || warehouse.manager || '—'}
+                          {warehouse.manager_email || warehouse.manager || '—'}
                         </td>
                         <td>
                           <span className={`badge badge-sm ${warehouse.is_active ? 'badge-success' : 'badge-error'}`}>
@@ -648,8 +619,7 @@ const Entrepots = () => {
         </>
       )}
 
-      {/* ===== LÉGENDE ===== */}
-      {!loading && !error && filteredWarehouses.length > 0 && (
+      {!error && filteredWarehouses.length > 0 && (
         <div className="mt-6 p-3 bg-base-200 rounded-lg text-xs text-base-content/60">
           <div className="flex flex-wrap gap-4">
             <span className="flex items-center gap-1"><Building2 className="w-3 h-3" /> Entrepôt principal</span>
@@ -661,8 +631,16 @@ const Entrepots = () => {
           </div>
         </div>
       )}
-    </div>
-  );
-};
 
-export default Entrepots;
+      <style>{`
+        @keyframes slideDown {
+          from { opacity: 0; transform: translateY(-20px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slideDown { animation: slideDown 0.35s ease-out; }
+      `}</style>
+    </div>
+  )
+}
+
+export default Entrepots

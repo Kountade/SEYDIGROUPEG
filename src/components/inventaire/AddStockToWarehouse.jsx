@@ -1,5 +1,7 @@
 // src/components/inventaire/AddStockToWarehouse.jsx
-import React, { useEffect, useState } from 'react'
+import React, {
+  useEffect, useState, useCallback, useRef, useMemo
+} from 'react'
 import { useNavigate } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
 import {
@@ -12,7 +14,8 @@ import {
 const AddStockToWarehouse = () => {
   const navigate = useNavigate()
 
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [initialLoad, setInitialLoad] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' })
 
@@ -25,12 +28,16 @@ const AddStockToWarehouse = () => {
   const [existingStock, setExistingStock] = useState(null)
   const [checkingStock, setCheckingStock] = useState(false)
 
+  // ✅ Refs cache
+  const cacheRef = useRef(new Map())
+  const fetchingRef = useRef(false)
+  const checkingStockRef = useRef(null)
+
   const [formData, setFormData] = useState({
     product_id: '',
     warehouse_id: '',
     quantity: '',
     notes: '',
-    // Champs Lot
     create_lot: true,
     lot_number: '',
     serial_number: '',
@@ -39,92 +46,121 @@ const AddStockToWarehouse = () => {
     best_before_date: '',
     supplier: '',
     purchase_order: '',
-    quality_status: 'good',
+    quality_status: 'good'
   })
 
   const [errors, setErrors] = useState({})
   const [step, setStep] = useState(1)
 
-  // ===== NOTIFICATIONS =====
+  const unwrap = (data) => Array.isArray(data) ? data : (data?.results || [])
+
   const showNotification = (message, type = 'success') => {
     setNotification({ show: true, message, type })
     setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 4500)
   }
 
-  // ===== CHARGEMENT =====
-  const fetchData = async () => {
+  // ---------- Chargement initial avec cache ----------
+  const fetchData = useCallback(async () => {
+    if (fetchingRef.current) return
+    fetchingRef.current = true
     setLoading(true)
+
     try {
       const [productsRes, warehousesRes] = await Promise.all([
-        AxiosInstance.get('/products/'),
-        AxiosInstance.get('/warehouses/'),
+        cacheRef.current.has('products_all')
+          ? Promise.resolve({ data: cacheRef.current.get('products_all') })
+          : AxiosInstance.get('/products/?page_size=500').catch(() => ({ data: [] })),
+        cacheRef.current.has('warehouses_all')
+          ? Promise.resolve({ data: cacheRef.current.get('warehouses_all') })
+          : AxiosInstance.get('/warehouses/?page_size=200').catch(() => ({ data: [] }))
       ])
-      setProducts(productsRes.data || [])
-      setFilteredProducts(productsRes.data || [])
-      setWarehouses(warehousesRes.data || [])
+
+      const productsData = unwrap(productsRes.data)
+      const warehousesData = unwrap(warehousesRes.data)
+
+      cacheRef.current.set('products_all', productsData)
+      cacheRef.current.set('warehouses_all', warehousesData)
+
+      setProducts(productsData)
+      setFilteredProducts(productsData)
+      setWarehouses(warehousesData)
     } catch (error) {
       console.error(error)
       showNotification('Erreur de chargement des données', 'error')
     } finally {
       setLoading(false)
+      setInitialLoad(false)
+      fetchingRef.current = false
     }
-  }
+  }, [])
 
-  useEffect(() => { fetchData() }, [])
-
-  // ===== FILTRE PRODUITS =====
   useEffect(() => {
-    if (searchTerm) {
-      const filtered = products.filter(p =>
-        p.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.reference?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (p.category && p.category.toLowerCase().includes(searchTerm.toLowerCase()))
-      )
-      setFilteredProducts(filtered)
-    } else {
-      setFilteredProducts(products)
-    }
+    fetchData()
+  }, [fetchData])
+
+  // ---------- Filtre produits (debounce léger) ----------
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (!searchTerm) {
+        setFilteredProducts(products)
+        return
+      }
+      const s = searchTerm.toLowerCase()
+      setFilteredProducts(products.filter(p =>
+        p.name?.toLowerCase().includes(s)
+        || p.reference?.toLowerCase().includes(s)
+        || p.category_name?.toLowerCase().includes(s)
+      ))
+    }, 200)
+    return () => clearTimeout(t)
   }, [searchTerm, products])
 
-  // ===== VÉRIF STOCK EXISTANT =====
+  // ---------- Vérification stock existant (avec annulation) ----------
   useEffect(() => {
+    // Annule la requête précédente
+    if (checkingStockRef.current) {
+      checkingStockRef.current.abort?.()
+    }
+
     const checkExistingStock = async () => {
-      if (formData.product_id && formData.warehouse_id) {
-        setCheckingStock(true)
-        try {
-          const stockRes = await AxiosInstance.get(
-            `/warehouse-stocks/by_product/?product_id=${formData.product_id}`
-          )
-          const stock = stockRes.data.find(
-            s => s.warehouse === parseInt(formData.warehouse_id)
-          )
-          setExistingStock(stock || null)
-        } catch (error) {
-          console.error('Erreur vérification stock:', error)
-          setExistingStock(null)
-        } finally {
-          setCheckingStock(false)
-        }
-      } else {
+      if (!formData.product_id || !formData.warehouse_id) {
         setExistingStock(null)
+        return
+      }
+
+      setCheckingStock(true)
+      try {
+        const stockRes = await AxiosInstance.get(
+          `/warehouse-stocks/by_product/?product_id=${formData.product_id}&page_size=200`
+        )
+        const stocks = unwrap(stockRes.data)
+        const stock = stocks.find(s => s.warehouse === parseInt(formData.warehouse_id))
+        setExistingStock(stock || null)
+      } catch (error) {
+        if (error.name !== 'CanceledError' && error.name !== 'AbortError') {
+          console.error('Erreur vérification stock:', error)
+        }
+        setExistingStock(null)
+      } finally {
+        setCheckingStock(false)
       }
     }
+
     checkExistingStock()
   }, [formData.product_id, formData.warehouse_id])
 
-  // ===== GÉNÉRATION NUMÉRO DE LOT =====
+  // ---------- Helpers ----------
   const generateLotNumber = () => {
     const now = new Date()
-    const ts = now.getFullYear().toString() +
-      (now.getMonth() + 1).toString().padStart(2, '0') +
-      now.getDate().toString().padStart(2, '0') +
-      now.getHours().toString().padStart(2, '0') +
-      now.getMinutes().toString().padStart(2, '0') +
-      now.getSeconds().toString().padStart(2, '0')
+    const ts = now.getFullYear().toString()
+      + (now.getMonth() + 1).toString().padStart(2, '0')
+      + now.getDate().toString().padStart(2, '0')
+      + now.getHours().toString().padStart(2, '0')
+      + now.getMinutes().toString().padStart(2, '0')
+      + now.getSeconds().toString().padStart(2, '0')
     return `LOT-${ts}`
   }
 
-  // ===== HANDLE CHANGE =====
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target
     const newValue = type === 'checkbox' ? checked : value
@@ -148,7 +184,6 @@ const AddStockToWarehouse = () => {
     }
   }
 
-  // ===== VALIDATION =====
   const validateForm = () => {
     const newErrors = {}
 
@@ -161,18 +196,14 @@ const AddStockToWarehouse = () => {
     }
 
     if (formData.create_lot) {
-      if (!formData.lot_number) {
-        newErrors.lot_number = 'Le numéro de lot est requis'
-      }
+      if (!formData.lot_number) newErrors.lot_number = 'Le numéro de lot est requis'
       if (!formData.expiry_date) {
         newErrors.expiry_date = "La date d'expiration est requise"
       } else {
         const expiry = new Date(formData.expiry_date)
         const today = new Date()
         today.setHours(0, 0, 0, 0)
-        if (expiry < today) {
-          newErrors.expiry_date = "La date d'expiration doit être future"
-        }
+        if (expiry < today) newErrors.expiry_date = "La date d'expiration doit être future"
       }
       if (formData.manufacturing_date && formData.expiry_date) {
         if (new Date(formData.manufacturing_date) >= new Date(formData.expiry_date)) {
@@ -185,11 +216,9 @@ const AddStockToWarehouse = () => {
     return Object.keys(newErrors).length === 0
   }
 
-  // ============================================================
-  // ✅ SUBMIT CORRIGÉ : utilise TOUJOURS /add_stock/
-  // ============================================================
+  // ---------- Submit ----------
   const handleSubmit = async (e) => {
-    e.preventDefault()
+    e?.preventDefault?.()
     if (!validateForm()) {
       showNotification('Veuillez corriger les erreurs', 'error')
       return
@@ -199,13 +228,13 @@ const AddStockToWarehouse = () => {
     try {
       const quantity = parseInt(formData.quantity)
 
-      // 1️⃣ Ajout du stock (additif — jamais refusé)
+      // 1️⃣ Ajout du stock (additif)
       const stockResponse = await AxiosInstance.post('/warehouse-stocks/add_stock/', {
         product_id: parseInt(formData.product_id),
         warehouse_id: parseInt(formData.warehouse_id),
         quantity: quantity,
         notes: formData.notes || `Ajout manuel de ${quantity} unités`,
-        unit_price: getProductPrice(formData.product_id) || 0,
+        unit_price: getProductPrice(formData.product_id) || 0
       })
 
       const stockData = stockResponse.data
@@ -227,7 +256,7 @@ const AddStockToWarehouse = () => {
           best_before_date: formData.best_before_date || null,
           supplier: formData.supplier || null,
           purchase_order: formData.purchase_order || null,
-          notes: formData.notes || null,
+          notes: formData.notes || null
         }
 
         try {
@@ -239,10 +268,10 @@ const AddStockToWarehouse = () => {
         } catch (lotError) {
           console.error('Erreur création lot:', lotError)
           const lotErrMsg =
-            lotError.response?.data?.lot_number?.[0] ||
-            lotError.response?.data?.expiry_date?.[0] ||
-            lotError.response?.data?.error ||
-            'Erreur inconnue lors de la création du lot'
+            lotError.response?.data?.lot_number?.[0]
+            || lotError.response?.data?.expiry_date?.[0]
+            || lotError.response?.data?.error
+            || 'Erreur lors de la création du lot'
           showNotification(
             `⚠️ ${stockMessage} MAIS lot non créé : ${lotErrMsg}`,
             'warning'
@@ -252,30 +281,39 @@ const AddStockToWarehouse = () => {
         showNotification(`✅ ${stockMessage}`, 'success')
       }
 
+      // ✅ Purge cache
+      cacheRef.current.clear()
       setTimeout(() => navigate('/stocks'), 1800)
     } catch (error) {
       console.error(error)
       const msg =
-        error.response?.data?.error ||
-        error.response?.data?.detail ||
-        "Erreur lors de l'ajout"
+        error.response?.data?.error
+        || error.response?.data?.detail
+        || "Erreur lors de l'ajout"
       showNotification(msg, 'error')
     } finally {
       setSubmitting(false)
     }
   }
 
-  // ===== HELPERS =====
+  // ---------- Helpers dérivés ----------
   const getProductName = (id) => products.find(p => p.id === parseInt(id))?.name || ''
   const getProductRef = (id) => products.find(p => p.id === parseInt(id))?.reference || ''
-  const getProductPrice = (id) => products.find(p => p.id === parseInt(id))?.price || 0
+  const getProductPrice = (id) => {
+    const p = products.find(p => p.id === parseInt(id))
+    // ✅ Utilise sale_price annoté (backend) au lieu de .price inexistant
+    return p?.sale_price || p?.purchase_price || 0
+  }
   const getWarehouseName = (id) => warehouses.find(w => w.id === parseInt(id))?.name || ''
-  const getAgenceName = (id) => warehouses.find(w => w.id === parseInt(id))?.agence_nom || ''
+  const getAgenceName = (id) =>
+    warehouses.find(w => w.id === parseInt(id))?.agence_nom
+    || warehouses.find(w => w.id === parseInt(id))?.agence?.nom
+    || ''
 
   const formatCurrency = (amount) => new Intl.NumberFormat('fr-FR', {
-    style: 'currency', currency: 'EUR',
-    minimumFractionDigits: 2, maximumFractionDigits: 2,
-  }).format(amount || 0)
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(amount || 0) + ' FCFA'
 
   const formatNumber = (num) => new Intl.NumberFormat('fr-FR').format(num || 0)
 
@@ -284,7 +322,7 @@ const AddStockToWarehouse = () => {
       product_id: '', warehouse_id: '', quantity: '', notes: '',
       create_lot: true, lot_number: '', serial_number: '',
       manufacturing_date: '', expiry_date: '', best_before_date: '',
-      supplier: '', purchase_order: '', quality_status: 'good',
+      supplier: '', purchase_order: '', quality_status: 'good'
     })
     setSelectedProduct(null)
     setSelectedWarehouse(null)
@@ -294,8 +332,13 @@ const AddStockToWarehouse = () => {
     setStep(1)
   }
 
-  // ===== LOADING =====
-  if (loading) {
+  const projectedTotal = useMemo(() => {
+    const qty = parseInt(formData.quantity || 0)
+    return existingStock ? existingStock.quantity + qty : qty
+  }, [existingStock, formData.quantity])
+
+  // ---------- Chargement initial ----------
+  if (initialLoad && loading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-200px)]">
         <div className="text-center space-y-6">
@@ -308,22 +351,19 @@ const AddStockToWarehouse = () => {
     )
   }
 
-  const projectedTotal = existingStock && formData.quantity
-    ? existingStock.quantity + parseInt(formData.quantity || 0)
-    : parseInt(formData.quantity || 0)
-
   return (
     <div className="space-y-6 p-4 lg:p-6">
       {/* Notification */}
       {notification.show && (
         <div className="fixed top-20 right-6 z-50 animate-slideDown">
           <div className={`alert ${
-            notification.type === 'success' ? 'alert-success' :
-            notification.type === 'warning' ? 'alert-warning' : 'alert-error'
+            notification.type === 'success' ? 'alert-success'
+            : notification.type === 'warning' ? 'alert-warning'
+            : 'alert-error'
           } shadow-lg`}>
-            {notification.type === 'success' ? <CheckCircle className="w-5 h-5" /> :
-             notification.type === 'warning' ? <AlertTriangle className="w-5 h-5" /> :
-             <AlertCircle className="w-5 h-5" />}
+            {notification.type === 'success' ? <CheckCircle className="w-5 h-5" />
+              : notification.type === 'warning' ? <AlertTriangle className="w-5 h-5" />
+              : <AlertCircle className="w-5 h-5" />}
             <span className="font-semibold">{notification.message}</span>
             <button
               className="btn btn-ghost btn-xs btn-circle"
@@ -366,7 +406,7 @@ const AddStockToWarehouse = () => {
           {[
             { n: 1, label: 'Produit' },
             { n: 2, label: 'Entrepôt' },
-            { n: 3, label: 'Quantité' },
+            { n: 3, label: 'Quantité' }
           ].map((s, idx) => (
             <React.Fragment key={s.n}>
               <div className="flex items-center gap-2">
@@ -388,7 +428,7 @@ const AddStockToWarehouse = () => {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* ===== ÉTAPE 1 : PRODUIT ===== */}
+        {/* ÉTAPE 1 : PRODUIT */}
         <div className="bg-base-100 rounded-xl shadow-xl border border-base-300 overflow-hidden">
           <div className="p-5 border-b border-base-300 bg-gradient-to-r from-primary/5 to-transparent">
             <div className="flex items-center gap-3">
@@ -408,7 +448,9 @@ const AddStockToWarehouse = () => {
           </div>
           <div className="p-6 space-y-4">
             <div className="form-control">
-              <label className="label font-medium">Rechercher un produit <span className="text-error">*</span></label>
+              <label className="label font-medium">
+                Rechercher un produit <span className="text-error">*</span>
+              </label>
               <div className="relative">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-base-content/40" />
                 <input
@@ -437,7 +479,7 @@ const AddStockToWarehouse = () => {
                 <option value="">Choisir un produit</option>
                 {filteredProducts.map(p => (
                   <option key={p.id} value={p.id}>
-                    {p.reference} - {p.name} {p.category ? `(${p.category})` : ''}
+                    {p.reference} - {p.name} {p.category_name ? `(${p.category_name})` : ''}
                   </option>
                 ))}
               </select>
@@ -460,14 +502,15 @@ const AddStockToWarehouse = () => {
                       <span className="flex items-center gap-1 text-base-content/60">
                         <Hash className="w-3 h-3" /> Réf: {selectedProduct.reference}
                       </span>
-                      {selectedProduct.category && (
+                      {selectedProduct.category_name && (
                         <span className="flex items-center gap-1 text-base-content/60">
-                          <Folder className="w-3 h-3" /> {selectedProduct.category}
+                          <Folder className="w-3 h-3" /> {selectedProduct.category_name}
                         </span>
                       )}
-                      {selectedProduct.price && (
+                      {(selectedProduct.sale_price || selectedProduct.purchase_price) && (
                         <span className="flex items-center gap-1 text-success font-medium">
-                          <DollarSign className="w-3 h-3" /> {formatCurrency(selectedProduct.price)}
+                          <DollarSign className="w-3 h-3" />
+                          {formatCurrency(selectedProduct.sale_price || selectedProduct.purchase_price)}
                         </span>
                       )}
                     </div>
@@ -478,7 +521,7 @@ const AddStockToWarehouse = () => {
           </div>
         </div>
 
-        {/* ===== ÉTAPE 2 : ENTREPÔT ===== */}
+        {/* ÉTAPE 2 : ENTREPÔT */}
         <div className={`bg-base-100 rounded-xl shadow-xl border border-base-300 overflow-hidden transition-opacity duration-300 ${
           step < 2 ? 'opacity-50 pointer-events-none' : ''
         }`}>
@@ -554,12 +597,9 @@ const AddStockToWarehouse = () => {
               </div>
             )}
 
-            {/* ✅ AFFICHAGE INFO STOCK (plus de blocage) */}
             {!checkingStock && formData.product_id && formData.warehouse_id && (
               <div className={`rounded-xl p-4 border ${
-                existingStock
-                  ? 'bg-info/10 border-info/20'
-                  : 'bg-success/10 border-success/20'
+                existingStock ? 'bg-info/10 border-info/20' : 'bg-success/10 border-success/20'
               }`}>
                 <div className="flex items-start gap-3">
                   <Info className={`w-5 h-5 flex-shrink-0 mt-0.5 ${
@@ -601,7 +641,7 @@ const AddStockToWarehouse = () => {
           </div>
         </div>
 
-        {/* ===== ÉTAPE 3 : QUANTITÉ ===== */}
+        {/* ÉTAPE 3 : QUANTITÉ */}
         <div className={`bg-base-100 rounded-xl shadow-xl border border-base-300 overflow-hidden transition-opacity duration-300 ${
           step < 3 ? 'opacity-50 pointer-events-none' : ''
         }`}>
@@ -661,7 +701,7 @@ const AddStockToWarehouse = () => {
           </div>
         </div>
 
-        {/* ===== SECTION LOT ===== */}
+        {/* SECTION LOT */}
         <div className="bg-base-100 rounded-xl shadow-xl border-2 border-warning/30 overflow-hidden">
           <div className="p-5 border-b border-base-300 bg-gradient-to-r from-warning/10 to-transparent">
             <div className="flex items-center justify-between flex-wrap gap-3">
@@ -691,7 +731,6 @@ const AddStockToWarehouse = () => {
 
           {formData.create_lot && (
             <div className="p-6 space-y-5">
-              {/* Numéro de lot + Série */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="form-control">
                   <label className="label font-medium">
@@ -734,7 +773,6 @@ const AddStockToWarehouse = () => {
                 </div>
               </div>
 
-              {/* Dates */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="form-control">
                   <label className="label font-medium">Date de fabrication</label>
@@ -778,7 +816,6 @@ const AddStockToWarehouse = () => {
                 </div>
               </div>
 
-              {/* Statut qualité */}
               <div className="form-control">
                 <label className="label font-medium">Statut qualité</label>
                 <select
@@ -793,7 +830,6 @@ const AddStockToWarehouse = () => {
                 </select>
               </div>
 
-              {/* Fournisseur */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="form-control">
                   <label className="label font-medium">Fournisseur</label>
@@ -823,7 +859,7 @@ const AddStockToWarehouse = () => {
           )}
         </div>
 
-        {/* ===== RÉSUMÉ ===== */}
+        {/* RÉSUMÉ */}
         {formData.product_id && formData.warehouse_id && formData.quantity && (
           <div className="bg-gradient-to-r from-primary/10 to-secondary/10 rounded-xl p-6 border border-primary/20">
             <h3 className="font-bold text-lg mb-4">Résumé de l'opération</h3>
@@ -891,7 +927,7 @@ const AddStockToWarehouse = () => {
           </div>
         )}
 
-        {/* ===== BOUTONS ===== */}
+        {/* BOUTONS */}
         <div className="flex flex-col sm:flex-row gap-3 pt-4">
           <button
             type="button"
@@ -920,6 +956,14 @@ const AddStockToWarehouse = () => {
           </button>
         </div>
       </form>
+
+      <style>{`
+        @keyframes slideDown {
+          from { opacity: 0; transform: translateY(-20px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slideDown { animation: slideDown 0.35s ease-out; }
+      `}</style>
     </div>
   )
 }

@@ -1,63 +1,93 @@
 // src/pages/transferts/TransfertDetail.jsx
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, {
+  useState, useEffect, useCallback, useRef, useMemo
+} from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Send, CheckCircle, XCircle, Ban, Package,
   Building2, Calendar, FileText, AlertTriangle, Truck, Clock,
-  RefreshCw, Rocket, PackageCheck
-} from 'lucide-react';
-import AxiosInstance from '../AxiosInstance';
+  RefreshCw, Rocket, PackageCheck, Loader2
+} from 'lucide-react'
+import AxiosInstance from '../AxiosInstance'
 
 const STATUS_CONFIG = {
-  draft: { label: 'Brouillon', color: 'secondary', icon: Clock, actions: ['submit', 'cancel'] },
-  pending_approval: { label: 'En attente d\'approbation', color: 'warning', icon: Send, actions: ['approve', 'reject', 'cancel'] },
-  approved: { label: 'Approuvé', color: 'info', icon: CheckCircle, actions: ['start_transit', 'cancel'] },
-  in_transit: { label: 'En transit', color: 'info', icon: Truck, actions: ['receive'] },
-  partial: { label: 'Partiellement reçu', color: 'warning', icon: Clock, actions: ['receive'] },
-  completed: { label: 'Terminé', color: 'success', icon: CheckCircle, actions: [] },
-  rejected: { label: 'Rejeté', color: 'error', icon: XCircle, actions: [] },
-  cancelled: { label: 'Annulé', color: 'neutral', icon: Ban, actions: [] }
-};
+  draft: { label: 'Brouillon', color: 'secondary', icon: Clock },
+  pending_approval: { label: 'En attente d\'approbation', color: 'warning', icon: Send },
+  approved: { label: 'Approuvé', color: 'info', icon: CheckCircle },
+  in_transit: { label: 'En transit', color: 'info', icon: Truck },
+  partial: { label: 'Partiellement reçu', color: 'warning', icon: Clock },
+  completed: { label: 'Terminé', color: 'success', icon: CheckCircle },
+  rejected: { label: 'Rejeté', color: 'error', icon: XCircle },
+  cancelled: { label: 'Annulé', color: 'neutral', icon: Ban }
+}
 
 const TransfertDetail = () => {
-  const { id } = useParams();
-  const navigate = useNavigate();
-  const [transfer, setTransfer] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [user, setUser] = useState(null);
-  const [agenceCourante, setAgenceCourante] = useState(null);
-  const [userRole, setUserRole] = useState('autre');
-  const [showReceiveModal, setShowReceiveModal] = useState(false);
-  const [receiveItems, setReceiveItems] = useState([]);
+  const { id } = useParams()
+  const navigate = useNavigate()
 
+  const [transfer, setTransfer] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [initialLoad, setInitialLoad] = useState(true)
+  const [actionLoading, setActionLoading] = useState(false)
+  const [user, setUser] = useState(null)
+  const [agenceCourante, setAgenceCourante] = useState(null)
+  const [userRole, setUserRole] = useState('autre')
+  const [showReceiveModal, setShowReceiveModal] = useState(false)
+  const [receiveItems, setReceiveItems] = useState([])
+
+  // ✅ Refs cache
+  const cacheRef = useRef(new Map())
+  const fetchingRef = useRef(false)
+
+  // ✅ Charger user depuis localStorage une seule fois
   useEffect(() => {
-    const loadUserData = () => {
-      const storedUser = localStorage.getItem('User');
-      const storedAgence = localStorage.getItem('AgenceCourante');
-      
-      if (storedUser) {
-        const parsedUser = JSON.parse(storedUser);
-        setUser(parsedUser);
-      }
-      
-      if (storedAgence) {
-        const parsed = JSON.parse(storedAgence);
-        setAgenceCourante(parsed);
-      }
-    };
-    
-    loadUserData();
-    fetchTransfer();
-  }, [id]);
-
-  const fetchTransfer = async () => {
-    setLoading(true);
     try {
-      const res = await AxiosInstance.get(`/transfers/${id}/`);
-      console.log('📦 Transfert reçu:', res.data);
-      setTransfer(res.data);
-      
+      const storedUser = localStorage.getItem('User')
+      const storedAgence = localStorage.getItem('AgenceCourante')
+      if (storedUser) {
+        const parsed = JSON.parse(storedUser)
+        setUser(parsed)
+        // Calcul du rôle courant
+        let role = 'autre'
+        if (parsed?.role_global === 'pdg') role = 'pdg'
+        else if (parsed?.role_global === 'drh') role = 'drh'
+        setUserRole(role)
+      }
+      if (storedAgence) {
+        const parsedAgence = JSON.parse(storedAgence)
+        setAgenceCourante(parsedAgence)
+      }
+    } catch (e) {
+      console.error(e)
+    }
+  }, [])
+
+  // ✅ Fetch avec cache
+  const fetchTransfer = useCallback(async ({ bypassCache = false } = {}) => {
+    const key = `transfer_detail_${id}`
+
+    if (!bypassCache && cacheRef.current.has(key)) {
+      const t = cacheRef.current.get(key)
+      setTransfer(t)
+      setLoading(false)
+      setInitialLoad(false)
+      return
+    }
+
+    if (fetchingRef.current) return
+    fetchingRef.current = true
+    setLoading(true)
+
+    try {
+      const res = await AxiosInstance.get(`/transfers/${id}/`)
+      cacheRef.current.set(key, res.data)
+      if (cacheRef.current.size > 10) {
+        const firstKey = cacheRef.current.keys().next().value
+        cacheRef.current.delete(firstKey)
+      }
+
+      setTransfer(res.data)
+
       // Initialiser les quantités à recevoir
       if (res.data.items) {
         setReceiveItems(res.data.items.map(item => ({
@@ -67,215 +97,197 @@ const TransfertDetail = () => {
           quantity_received: item.quantity_received || 0,
           quantity_to_receive: 0,
           remaining: item.quantity - (item.quantity_received || 0)
-        })));
+        })))
       }
     } catch (error) {
-      console.error('Erreur:', error);
-      alert('Erreur chargement du transfert');
-      navigate('/transferts');
+      console.error('Erreur chargement:', error)
+      alert('Erreur chargement du transfert')
+      navigate('/transferts')
     } finally {
-      setLoading(false);
+      setLoading(false)
+      setInitialLoad(false)
+      fetchingRef.current = false
     }
-  };
+  }, [id, navigate])
+
+  useEffect(() => {
+    if (id) fetchTransfer()
+  }, [id, fetchTransfer])
+
+  const refresh = async () => {
+    cacheRef.current.clear()
+    await fetchTransfer({ bypassCache: true })
+  }
 
   const getStatusBadge = () => {
-    if (!transfer) return null;
-    const config = STATUS_CONFIG[transfer.status] || STATUS_CONFIG.draft;
-    const Icon = config.icon;
+    if (!transfer) return null
+    const config = STATUS_CONFIG[transfer.status] || STATUS_CONFIG.draft
+    const Icon = config.icon
     return (
       <span className={`badge badge-lg badge-${config.color} gap-2`}>
         <Icon className="w-4 h-4" />
         {config.label}
       </span>
-    );
-  };
+    )
+  }
 
-  // ============ PERMISSIONS ============
-  
-  // Vérifier si l'utilisateur est chef d'agence (générique)
-  const isChefAgence = () => {
-    if (!user) return false;
-    if (user.role_global === 'pdg' || user.role_global === 'drh') return true;
-    return user.roles_agence?.some(r => r.role === 'chef_agence' && r.est_actif);
-  };
-
-  // Vérifier si l'utilisateur est chef de l'agence source
+  // ---------- Permissions ----------
   const isChefOfSource = () => {
-    if (!transfer || !user) return false;
-    if (user.role_global === 'pdg') return true;
+    if (!transfer || !user) return false
+    if (user.role_global === 'pdg') return true
     return user.roles_agence?.some(
-      r => r.agence_id === transfer.from_agence?.id && 
-           r.role === 'chef_agence' && 
-           r.est_actif
-    );
-  };
+      r => r.agence_id === transfer.from_agence?.id
+        && r.role === 'chef_agence' && r.est_actif
+    )
+  }
 
-  // Vérifier si l'utilisateur est chef de l'agence destination
   const isChefOfDestination = () => {
-    if (!transfer || !user) return false;
-    if (user.role_global === 'pdg') return true;
+    if (!transfer || !user) return false
+    if (user.role_global === 'pdg') return true
     return user.roles_agence?.some(
-      r => r.agence_id === transfer.to_agence?.id && 
-           r.role === 'chef_agence' && 
-           r.est_actif
-    );
-  };
+      r => r.agence_id === transfer.to_agence?.id
+        && r.role === 'chef_agence' && r.est_actif
+    )
+  }
 
-  // Actions disponibles
-  const canSubmit = () => transfer?.status === 'draft' && isChefOfDestination();
-  const canApprove = () => transfer?.status === 'pending_approval' && isChefOfSource();
-  const canReject = () => transfer?.status === 'pending_approval' && isChefOfSource();
-  const canStartTransit = () => transfer?.status === 'approved' && isChefOfSource();
-  const canReceive = () => (transfer?.status === 'in_transit' || transfer?.status === 'partial') && isChefOfDestination();
-  const canCancel = () => 
-    (transfer?.status === 'draft' || transfer?.status === 'pending_approval' || transfer?.status === 'approved') && 
-    (isChefOfSource() || isChefOfDestination() || user?.role_global === 'pdg');
+  const canSubmit = () => transfer?.status === 'draft' && isChefOfDestination()
+  const canApprove = () => transfer?.status === 'pending_approval' && isChefOfSource()
+  const canReject = () => transfer?.status === 'pending_approval' && isChefOfSource()
+  const canStartTransit = () => transfer?.status === 'approved' && isChefOfSource()
+  const canReceive = () =>
+    (transfer?.status === 'in_transit' || transfer?.status === 'partial')
+    && isChefOfDestination()
+  const canCancel = () =>
+    ['draft', 'pending_approval', 'approved'].includes(transfer?.status)
+    && (isChefOfSource() || isChefOfDestination() || user?.role_global === 'pdg')
 
-  // ============ ACTIONS ============
-  
-  const handleSubmit = async () => {
-    setActionLoading(true);
+  // ---------- Actions ----------
+  const runAction = async (actionFn, successMsg) => {
+    setActionLoading(true)
     try {
-      const res = await AxiosInstance.post(`/transfers/${id}/submit/`);
-      if (res.status === 200) {
-        fetchTransfer();
-        alert('Demande soumise avec succès !');
+      const res = await actionFn()
+      if (res.status === 200 || res.status === 201) {
+        cacheRef.current.clear()
+        await fetchTransfer({ bypassCache: true })
+        alert(successMsg)
       }
     } catch (error) {
-      console.error(error);
-      alert(error.response?.data?.error || 'Erreur lors de la soumission');
+      console.error(error)
+      alert(error.response?.data?.error || 'Une erreur est survenue')
     } finally {
-      setActionLoading(false);
+      setActionLoading(false)
     }
-  };
+  }
 
-  const handleApprove = async () => {
-    setActionLoading(true);
-    try {
-      const res = await AxiosInstance.post(`/transfers/${id}/approve/`);
-      if (res.status === 200) {
-        fetchTransfer();
-        alert('Transfert approuvé ! Le stock a été débloqué.');
-      }
-    } catch (error) {
-      console.error(error);
-      alert(error.response?.data?.error || 'Erreur lors de l\'approbation');
-    } finally {
-      setActionLoading(false);
-    }
-  };
+  const handleSubmit = () =>
+    runAction(
+      () => AxiosInstance.post(`/transfers/${id}/submit/`),
+      'Demande soumise avec succès !'
+    )
 
-  const handleStartTransit = async () => {
-    setActionLoading(true);
-    try {
-      const res = await AxiosInstance.post(`/transfers/${id}/start-transit/`);
-      if (res.status === 200) {
-        fetchTransfer();
-        alert('Transfert marqué comme en transit.');
-      }
-    } catch (error) {
-      console.error(error);
-      alert(error.response?.data?.error || 'Erreur');
-    } finally {
-      setActionLoading(false);
-    }
-  };
+  const handleApprove = () =>
+    runAction(
+      () => AxiosInstance.post(`/transfers/${id}/approve/`),
+      'Transfert approuvé ! Le stock a été débloqué.'
+    )
+
+  const handleStartTransit = () =>
+    runAction(
+      () => AxiosInstance.post(`/transfers/${id}/start-transit/`),
+      'Transfert marqué comme en transit.'
+    )
 
   const handleReject = async () => {
-    const reason = prompt('Motif du rejet :');
-    if (!reason && reason !== '') return;
-    
-    setActionLoading(true);
-    try {
-      const res = await AxiosInstance.post(`/transfers/${id}/reject/`, { reason });
-      if (res.status === 200) {
-        fetchTransfer();
-        alert('Transfert rejeté.');
-      }
-    } catch (error) {
-      console.error(error);
-      alert(error.response?.data?.error || 'Erreur lors du rejet');
-    } finally {
-      setActionLoading(false);
-    }
-  };
+    const reason = prompt('Motif du rejet :')
+    if (!reason && reason !== '') return
+    await runAction(
+      () => AxiosInstance.post(`/transfers/${id}/reject/`, { reason }),
+      'Transfert rejeté.'
+    )
+  }
 
   const handleCancel = async () => {
-    if (!window.confirm('Annuler ce transfert ?')) return;
-    
-    setActionLoading(true);
-    try {
-      const res = await AxiosInstance.post(`/transfers/${id}/cancel/`);
-      if (res.status === 200) {
-        fetchTransfer();
-        alert('Transfert annulé.');
-      }
-    } catch (error) {
-      console.error(error);
-      alert(error.response?.data?.error || 'Erreur lors de l\'annulation');
-    } finally {
-      setActionLoading(false);
-    }
-  };
+    if (!window.confirm('Annuler ce transfert ?')) return
+    await runAction(
+      () => AxiosInstance.post(`/transfers/${id}/cancel/`),
+      'Transfert annulé.'
+    )
+  }
 
   const handleReceive = async () => {
-    // Filtrer les articles à recevoir
-    const itemsToReceive = receiveItems.filter(item => item.quantity_to_receive > 0);
-    
+    const itemsToReceive = receiveItems.filter(item => item.quantity_to_receive > 0)
     if (itemsToReceive.length === 0) {
-      alert('Veuillez saisir les quantités reçues');
-      return;
+      alert('Veuillez saisir les quantités reçues')
+      return
     }
-    
-    const waybill = prompt('Numéro de bon de livraison (optionnel) :', '');
-    
-    setActionLoading(true);
-    try {
-      const res = await AxiosInstance.post(`/transfers/${id}/receive/`, {
+    const waybill = prompt('Numéro de bon de livraison (optionnel) :', '')
+    await runAction(
+      () => AxiosInstance.post(`/transfers/${id}/receive/`, {
         items: itemsToReceive.map(item => ({
           item_id: item.item_id,
           quantity: item.quantity_to_receive
         })),
         waybill: waybill || '',
-        notes: `Réception partielle le ${new Date().toLocaleDateString('fr-FR')}`
-      });
-      
-      if (res.status === 200) {
-        fetchTransfer();
-        setShowReceiveModal(false);
-        alert('Réception enregistrée ! Le stock a été crédité.');
-      }
-    } catch (error) {
-      console.error(error);
-      alert(error.response?.data?.error || 'Erreur lors de la réception');
-    } finally {
-      setActionLoading(false);
-    }
-  };
+        notes: `Réception le ${new Date().toLocaleDateString('fr-FR')}`
+      }),
+      'Réception enregistrée ! Le stock a été crédité.'
+    )
+    setShowReceiveModal(false)
+  }
 
   const updateReceiveQuantity = (index, value) => {
-    const newItems = [...receiveItems];
-    const qty = parseInt(value) || 0;
-    const maxQty = newItems[index].remaining;
-    newItems[index].quantity_to_receive = Math.min(qty, maxQty);
-    setReceiveItems(newItems);
-  };
+    const newItems = [...receiveItems]
+    const qty = parseInt(value) || 0
+    const maxQty = newItems[index].remaining
+    newItems[index].quantity_to_receive = Math.min(qty, maxQty)
+    setReceiveItems(newItems)
+  }
 
-  if (loading) return (
-    <div className="flex justify-center items-center min-h-screen">
-      <span className="loading loading-spinner loading-lg text-primary"></span>
-    </div>
-  );
-  
-  if (!transfer) return (
-    <div className="alert alert-error m-4">
-      <AlertTriangle className="w-5 h-5" />
-      Transfert introuvable
-    </div>
-  );
+  // ✅ Totaux mémoïsés
+  const totals = useMemo(() => {
+    if (!transfer?.items) return { quantity: 0, received: 0, value: 0 }
+    return transfer.items.reduce((acc, item) => ({
+      quantity: acc.quantity + (item.quantity || 0),
+      received: acc.received + (item.quantity_received || 0),
+      value: acc.value + ((item.quantity || 0) * (item.unit_price || 0))
+    }), { quantity: 0, received: 0, value: 0 })
+  }, [transfer])
+
+  // ---------- Premier chargement ----------
+  if (initialLoad && loading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <div className="text-center space-y-4">
+          <span className="loading loading-spinner loading-lg text-primary"></span>
+          <p className="text-base font-medium text-base-content/70 animate-pulse">
+            Chargement du transfert...
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!transfer) {
+    return (
+      <div className="alert alert-error m-4">
+        <AlertTriangle className="w-5 h-5" />
+        Transfert introuvable
+      </div>
+    )
+  }
 
   return (
     <div className="w-full px-0">
+      {/* Spinner overlay pendant actions */}
+      {loading && !initialLoad && (
+        <div className="fixed top-20 right-6 z-40 animate-slideDown">
+          <div className="bg-base-100 shadow-lg rounded-full px-4 py-2 flex items-center gap-2 border border-base-300">
+            <span className="loading loading-spinner loading-xs text-primary"></span>
+            <span className="text-xs text-base-content/60">Chargement...</span>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="sticky top-0 z-10 bg-base-100 border-b border-base-200 px-4 sm:px-6 py-4 shadow-sm">
         <div className="flex flex-wrap justify-between items-start gap-4">
@@ -293,67 +305,69 @@ const TransfertDetail = () => {
               </p>
             </div>
           </div>
-          
-          {/* BOUTONS D'ACTION - WORKFLOW COMPLET */}
+
           <div className="flex flex-wrap gap-2">
-            <button onClick={fetchTransfer} className="btn btn-ghost btn-sm" title="Actualiser">
+            <button onClick={refresh} className="btn btn-ghost btn-sm" title="Actualiser">
               <RefreshCw className="w-4 h-4" />
             </button>
-            
+
             {canSubmit() && (
-              <button 
-                onClick={handleSubmit} 
-                disabled={actionLoading} 
+              <button
+                onClick={handleSubmit}
+                disabled={actionLoading}
                 className="btn btn-warning gap-2"
               >
-                <Send className="w-4 h-4" /> Soumettre
+                {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                Soumettre
               </button>
             )}
-            
+
             {canApprove() && (
-              <button 
-                onClick={handleApprove} 
-                disabled={actionLoading} 
+              <button
+                onClick={handleApprove}
+                disabled={actionLoading}
                 className="btn btn-success gap-2"
               >
-                <CheckCircle className="w-4 h-4" /> Approuver & Débloquer stock
+                {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                Approuver & Débloquer stock
               </button>
             )}
-            
+
             {canStartTransit() && (
-              <button 
-                onClick={handleStartTransit} 
-                disabled={actionLoading} 
+              <button
+                onClick={handleStartTransit}
+                disabled={actionLoading}
                 className="btn btn-info gap-2"
               >
-                <Rocket className="w-4 h-4" /> Démarrer transit
+                {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />}
+                Démarrer transit
               </button>
             )}
-            
+
             {canReceive() && (
-              <button 
-                onClick={() => setShowReceiveModal(true)} 
-                disabled={actionLoading} 
+              <button
+                onClick={() => setShowReceiveModal(true)}
+                disabled={actionLoading}
                 className="btn btn-primary gap-2"
               >
                 <PackageCheck className="w-4 h-4" /> Réceptionner
               </button>
             )}
-            
+
             {canReject() && (
-              <button 
-                onClick={handleReject} 
-                disabled={actionLoading} 
+              <button
+                onClick={handleReject}
+                disabled={actionLoading}
                 className="btn btn-error gap-2"
               >
                 <XCircle className="w-4 h-4" /> Rejeter
               </button>
             )}
-            
+
             {canCancel() && (
-              <button 
-                onClick={handleCancel} 
-                disabled={actionLoading} 
+              <button
+                onClick={handleCancel}
+                disabled={actionLoading}
                 className="btn btn-outline gap-2"
               >
                 <Ban className="w-4 h-4" /> Annuler
@@ -363,7 +377,7 @@ const TransfertDetail = () => {
         </div>
       </div>
 
-      {/* Contenu principal */}
+      {/* Contenu */}
       <div className="px-4 sm:px-6 py-6">
         {/* Cartes info */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -379,7 +393,7 @@ const TransfertDetail = () => {
               </p>
             </div>
           </div>
-          
+
           <div className="card bg-base-100 shadow-md border-l-4 border-accent">
             <div className="card-body p-4">
               <h3 className="font-semibold text-accent">📍 Agence destination</h3>
@@ -404,7 +418,7 @@ const TransfertDetail = () => {
             </div>
           </div>
         )}
-        
+
         {transfer.status === 'approved' && (
           <div className="alert alert-success mb-6 shadow-md">
             <CheckCircle className="w-5 h-5" />
@@ -415,10 +429,24 @@ const TransfertDetail = () => {
           </div>
         )}
 
-        {/* Tableau des articles */}
+        {/* Tableau articles */}
         <div className="card bg-base-100 shadow-md">
           <div className="card-body p-4">
-            <h3 className="font-bold mb-3">📋 Articles du transfert</h3>
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+              <h3 className="font-bold">📋 Articles du transfert</h3>
+              <div className="flex gap-2 flex-wrap">
+                <span className="badge badge-primary badge-sm gap-1">
+                  <Package className="w-3 h-3" /> {totals.quantity} demandés
+                </span>
+                <span className="badge badge-success badge-sm gap-1">
+                  <CheckCircle className="w-3 h-3" /> {totals.received} reçus
+                </span>
+                <span className="badge badge-neutral badge-sm gap-1">
+                  <Calendar className="w-3 h-3" />
+                  {totals.value.toLocaleString('fr-FR')} FCFA
+                </span>
+              </div>
+            </div>
             <div className="overflow-x-auto">
               <table className="table table-zebra w-full">
                 <thead>
@@ -434,12 +462,16 @@ const TransfertDetail = () => {
                 </thead>
                 <tbody>
                   {transfer.items?.map((item, idx) => {
-                    const received = item.quantity_received || 0;
-                    const remaining = item.quantity - received;
+                    const received = item.quantity_received || 0
+                    const remaining = item.quantity - received
                     return (
                       <tr key={idx}>
-                        <td className="font-medium">{item.product?.name || item.product_name}</td>
-                        <td className="font-mono text-sm">{item.product?.reference || '-'}</td>
+                        <td className="font-medium">
+                          {item.product?.name || item.product_name}
+                        </td>
+                        <td className="font-mono text-sm">
+                          {item.product?.reference || '-'}
+                        </td>
                         <td className="text-center">
                           <span className="badge badge-primary badge-sm">{item.quantity}</span>
                         </td>
@@ -453,12 +485,14 @@ const TransfertDetail = () => {
                             <span className="badge badge-neutral badge-sm">✓ Complet</span>
                           )}
                         </td>
-                        <td className="text-right">{item.unit_price?.toLocaleString()} FCFA</td>
+                        <td className="text-right">
+                          {(item.unit_price || 0).toLocaleString('fr-FR')} FCFA
+                        </td>
                         <td className="text-right font-semibold">
-                          {(item.quantity * item.unit_price).toLocaleString()} FCFA
+                          {((item.quantity || 0) * (item.unit_price || 0)).toLocaleString('fr-FR')} FCFA
                         </td>
                       </tr>
-                    );
+                    )
                   })}
                 </tbody>
               </table>
@@ -476,7 +510,7 @@ const TransfertDetail = () => {
           </div>
         )}
 
-        {/* Workflow steps */}
+        {/* Workflow */}
         <div className="mt-6 p-4 bg-base-200 rounded-lg">
           <h4 className="font-semibold mb-3">📊 Workflow du transfert</h4>
           <ul className="steps steps-vertical lg:steps-horizontal w-full">
@@ -502,32 +536,37 @@ const TransfertDetail = () => {
         </div>
       </div>
 
-      {/* Modal de réception */}
+      {/* Modal réception */}
       {showReceiveModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-base-100 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
             <div className="bg-gradient-to-r from-primary to-primary-focus p-4 text-primary-content">
               <div className="flex justify-between items-center">
                 <h2 className="text-xl font-bold">Réceptionner le transfert</h2>
-                <button onClick={() => setShowReceiveModal(false)} className="btn btn-ghost btn-sm text-white">
+                <button
+                  onClick={() => setShowReceiveModal(false)}
+                  className="btn btn-ghost btn-sm text-white"
+                >
                   ✕
                 </button>
               </div>
-              <p className="text-sm opacity-90">Saisissez les quantités reçues pour chaque article</p>
+              <p className="text-sm opacity-90">
+                Saisissez les quantités reçues pour chaque article
+              </p>
             </div>
-            
+
             <div className="flex-1 overflow-y-auto p-4">
               <div className="space-y-3">
                 {receiveItems.map((item, idx) => (
                   <div key={idx} className="card bg-base-200">
                     <div className="card-body p-3">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-semibold">{item.product_name}</p>
+                      <div className="flex justify-between items-start gap-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold truncate">{item.product_name}</p>
                           <p className="text-xs text-base-content/60">
-                            Demandé: {item.quantity_requested} | 
-                            Déjà reçu: {item.quantity_received} | 
-                            Reste: {item.remaining}
+                            Demandé: {item.quantity_requested} |
+                            Déjà reçu: {item.quantity_received} |
+                            Reste: <strong>{item.remaining}</strong>
                           </p>
                         </div>
                         <div className="form-control w-32">
@@ -550,21 +589,38 @@ const TransfertDetail = () => {
                 ))}
               </div>
             </div>
-            
+
             <div className="border-t border-base-200 p-4 flex gap-3">
-              <button onClick={handleReceive} className="btn btn-primary flex-1 gap-2" disabled={actionLoading}>
-                {actionLoading ? <span className="loading loading-spinner loading-sm"></span> : <PackageCheck className="w-4 h-4" />}
+              <button
+                onClick={handleReceive}
+                className="btn btn-primary flex-1 gap-2"
+                disabled={actionLoading}
+              >
+                {actionLoading
+                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  : <PackageCheck className="w-4 h-4" />}
                 Valider la réception
               </button>
-              <button onClick={() => setShowReceiveModal(false)} className="btn btn-outline">
+              <button
+                onClick={() => setShowReceiveModal(false)}
+                className="btn btn-outline"
+              >
                 Annuler
               </button>
             </div>
           </div>
         </div>
       )}
-    </div>
-  );
-};
 
-export default TransfertDetail;
+      <style>{`
+        @keyframes slideDown {
+          from { opacity: 0; transform: translateY(-20px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slideDown { animation: slideDown 0.35s ease-out; }
+      `}</style>
+    </div>
+  )
+}
+
+export default TransfertDetail

@@ -1,12 +1,12 @@
 // src/pages/transferts/Transferts.jsx
-import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   Plus, Eye, CheckCircle, XCircle, Send, Truck, Ban, AlertCircle,
   Package, ArrowLeftRight, Clock, Filter, Search, RefreshCw, FileText
-} from 'lucide-react';
-import AxiosInstance from '../AxiosInstance';
-import TransfertPdf from './TransfertPdf';
+} from 'lucide-react'
+import AxiosInstance from '../AxiosInstance'
+import TransfertPdf from './TransfertPdf'
 
 const STATUS_CONFIG = {
   draft: { label: 'Brouillon', color: 'secondary', icon: Clock },
@@ -17,196 +17,243 @@ const STATUS_CONFIG = {
   partial: { label: 'Partiellement reçu', color: 'warning', icon: Clock },
   completed: { label: 'Terminé', color: 'success', icon: CheckCircle },
   cancelled: { label: 'Annulé', color: 'neutral', icon: Ban }
-};
+}
 
 const Transferts = () => {
-  const navigate = useNavigate();
-  const [transfers, setTransfers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [downloadingId, setDownloadingId] = useState(null);
-  const [filters, setFilters] = useState({
-    status: '',
-    search: ''
-  });
-  const [showFilters, setShowFilters] = useState(false);
-  const [agences, setAgences] = useState([]);
-  const [userRole, setUserRole] = useState(null);
-  const [userAgencesIds, setUserAgencesIds] = useState([]);
+  const navigate = useNavigate()
+
+  const [transfers, setTransfers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [initialLoad, setInitialLoad] = useState(true)
+  const [downloadingId, setDownloadingId] = useState(null)
+  const [filters, setFilters] = useState({ status: '', search: '' })
+  const [showFilters, setShowFilters] = useState(false)
+  const [agences, setAgences] = useState([])
+  const [userRole, setUserRole] = useState(null)
+  const [userAgencesIds, setUserAgencesIds] = useState([])
+  const [userAgence, setUserAgence] = useState(null)
+
+  // ✅ Refs cache
+  const cacheRef = useRef(new Map())
+  const fetchingRef = useRef(false)
+
+  const unwrap = (data) => Array.isArray(data) ? data : (data?.results || [])
 
   const getUserInfo = () => {
     try {
-      const userData = localStorage.getItem('User');
-      const user = userData ? JSON.parse(userData) : null;
-      const agenceCourante = JSON.parse(localStorage.getItem('AgenceCourante') || '{}');
-      
-      let role = 'autre';
-      let agencesAccessibles = [];
-      
-      if (user?.role_global === 'pdg') {
-        role = 'pdg';
-      } else if (user?.role_global === 'drh') {
-        role = 'drh';
-      } else if (user?.roles_agence) {
+      const userData = localStorage.getItem('User')
+      const user = userData ? JSON.parse(userData) : null
+      const agenceCourante = JSON.parse(localStorage.getItem('AgenceCourante') || '{}')
+      let role = 'autre'
+      let agencesAccessibles = []
+
+      if (user?.role_global === 'pdg') role = 'pdg'
+      else if (user?.role_global === 'drh') role = 'drh'
+      else if (user?.roles_agence) {
         agencesAccessibles = user.roles_agence
           .filter(r => r.est_actif)
-          .map(r => r.agence_id);
-        
+          .map(r => r.agence_id)
         const currentRole = user.roles_agence.find(
           r => r.agence_id === agenceCourante.id && r.est_actif
-        );
-        if (currentRole) {
-          role = currentRole.role;
-        }
+        )
+        if (currentRole) role = currentRole.role
       }
-      
-      return { user, role, agencesAccessibles, agenceCourante };
+      return { user, role, agencesAccessibles, agenceCourante }
     } catch {
-      return { user: null, role: 'autre', agencesAccessibles: [], agenceCourante: {} };
+      return { user: null, role: 'autre', agencesAccessibles: [], agenceCourante: {} }
     }
-  };
+  }
 
-  const downloadPDF = async (transfer) => {
-    setDownloadingId(transfer.id);
+  // ✅ Fetch avec cache
+  const fetchData = useCallback(async ({ bypassCache = false } = {}) => {
+    const key = `transfers_${filters.status || ''}_${filters.search || ''}`
+
+    if (!bypassCache && cacheRef.current.has(key)) {
+      const c = cacheRef.current.get(key)
+      setTransfers(c.transfers)
+      setLoading(false)
+      setInitialLoad(false)
+      return
+    }
+
+    if (fetchingRef.current) return
+    fetchingRef.current = true
+    setLoading(true)
+
     try {
-      const response = await AxiosInstance.get(`/transfers/${transfer.id}/`);
-      const fullTransfer = response.data;
-      await TransfertPdf(fullTransfer);
+      // ✅ Transfers paginé
+      const params = new URLSearchParams()
+      params.append('page_size', '200')
+      if (filters.status) params.append('status', filters.status)
+      if (filters.search) params.append('search', filters.search)
+
+      const [transfersRes, agencesRes] = await Promise.all([
+        AxiosInstance.get(`/transfers/?${params.toString()}`).catch(() => ({ data: [] })),
+        cacheRef.current.has('agences_list')
+          ? Promise.resolve({ data: cacheRef.current.get('agences_list') })
+          : AxiosInstance.get('/agences/?page_size=200').catch(() => ({ data: [] }))
+      ])
+
+      const transfersData = unwrap(transfersRes.data)
+      const agencesData = unwrap(agencesRes.data)
+
+      if (!cacheRef.current.has('agences_list')) {
+        cacheRef.current.set('agences_list', agencesData)
+      }
+      cacheRef.current.set(key, { transfers: transfersData })
+      if (cacheRef.current.size > 10) {
+        const firstKey = cacheRef.current.keys().next().value
+        cacheRef.current.delete(firstKey)
+      }
+
+      setTransfers(transfersData)
+      setAgences(agencesData)
     } catch (error) {
-      console.error('Erreur lors de la génération du PDF:', error);
-      alert('Erreur lors de la génération du PDF');
+      console.error('Erreur chargement transferts:', error)
     } finally {
-      setDownloadingId(null);
+      setLoading(false)
+      setInitialLoad(false)
+      fetchingRef.current = false
     }
-  };
-
-  const fetchTransfers = async () => {
-    setLoading(true);
-    try {
-      let url = '/transfers/';
-      const params = new URLSearchParams();
-      if (filters.status) params.append('status', filters.status);
-      if (filters.search) params.append('search', filters.search);
-      if (params.toString()) url += `?${params.toString()}`;
-      const res = await AxiosInstance.get(url);
-      
-      setTransfers(res.data);
-    } catch (error) {
-      console.error('Erreur chargement transferts:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchAgences = async () => {
-    try {
-      const res = await AxiosInstance.get('agences/');
-      setAgences(res.data);
-    } catch (error) {
-      console.error('Erreur chargement agences:', error);
-    }
-  };
+  }, [filters])
 
   useEffect(() => {
-    const { role, agencesAccessibles } = getUserInfo();
-    setUserRole(role);
-    setUserAgencesIds(agencesAccessibles);
-    
-    fetchTransfers();
-    fetchAgences();
-  }, [filters]);
+    const { role, agencesAccessibles, agenceCourante } = getUserInfo()
+    setUserRole(role)
+    setUserAgencesIds(agencesAccessibles)
+    setUserAgence(agenceCourante)
+  }, [])
+
+  // ✅ Fetch uniquement quand filtres changent (debounce search)
+  useEffect(() => {
+    const t = setTimeout(() => fetchData(), 300)
+    return () => clearTimeout(t)
+  }, [fetchData])
+
+  const refreshData = async () => {
+    cacheRef.current.clear()
+    await fetchData({ bypassCache: true })
+  }
 
   const handleFilterChange = (e) => {
-    setFilters({ ...filters, [e.target.name]: e.target.value });
-  };
+    setFilters({ ...filters, [e.target.name]: e.target.value })
+  }
 
   const resetFilters = () => {
-    setFilters({ status: '', search: '' });
-  };
+    setFilters({ status: '', search: '' })
+  }
+
+  const downloadPDF = async (transfer) => {
+    setDownloadingId(transfer.id)
+    try {
+      const response = await AxiosInstance.get(`/transfers/${transfer.id}/`)
+      await TransfertPdf(response.data)
+    } catch (error) {
+      console.error('Erreur PDF:', error)
+      alert('Erreur lors de la génération du PDF')
+    } finally {
+      setDownloadingId(null)
+    }
+  }
 
   const getStatusBadge = (status) => {
-    const config = STATUS_CONFIG[status] || STATUS_CONFIG.draft;
-    const Icon = config.icon;
+    const config = STATUS_CONFIG[status] || STATUS_CONFIG.draft
+    const Icon = config.icon
     return (
       <span className={`badge badge-${config.color} gap-1`}>
         <Icon className="w-3 h-3" />
         {config.label}
       </span>
-    );
-  };
+    )
+  }
 
   const canSubmit = (transfer) => {
-    const { agenceCourante, role } = getUserInfo();
-    if (transfer.status !== 'draft') return false;
-    const isDestinationChef = transfer.to_agence?.id === agenceCourante?.id && (role === 'chef_agence');
-    if (role === 'pdg' || role === 'drh') return false;
-    return isDestinationChef;
-  };
+    if (transfer.status !== 'draft') return false
+    if (userRole === 'pdg' || userRole === 'drh') return false
+    return transfer.to_agence?.id === userAgence?.id && userRole === 'chef_agence'
+  }
 
   const canApprove = (transfer) => {
-    const { agenceCourante, role } = getUserInfo();
-    if (transfer.status !== 'pending_approval') return false;
-    if (role === 'pdg') return true;
-    const isSourceChef = transfer.from_agence?.id === agenceCourante?.id && (role === 'chef_agence');
-    return isSourceChef;
-  };
+    if (transfer.status !== 'pending_approval') return false
+    if (userRole === 'pdg') return true
+    return transfer.from_agence?.id === userAgence?.id && userRole === 'chef_agence'
+  }
 
-  const canReject = (transfer) => canApprove(transfer);
+  const canReject = (transfer) => canApprove(transfer)
 
   const canCancel = (transfer) => {
-    const { agenceCourante, role } = getUserInfo();
-    if (transfer.status !== 'draft' && transfer.status !== 'pending_approval') return false;
-    if (role === 'pdg') return true;
-    const isSourceOrDestination = (transfer.from_agence?.id === agenceCourante?.id || transfer.to_agence?.id === agenceCourante?.id) && (role === 'chef_agence');
-    return isSourceOrDestination;
-  };
+    if (!['draft', 'pending_approval'].includes(transfer.status)) return false
+    if (userRole === 'pdg') return true
+    const isSourceOrDest =
+      (transfer.from_agence?.id === userAgence?.id
+        || transfer.to_agence?.id === userAgence?.id)
+    return isSourceOrDest && userRole === 'chef_agence'
+  }
 
   const handleAction = async (id, action) => {
     try {
-      let res;
+      let res
       switch (action) {
         case 'submit':
-          res = await AxiosInstance.post(`/transfers/${id}/submit/`);
-          break;
+          res = await AxiosInstance.post(`/transfers/${id}/submit/`)
+          break
         case 'approve':
-          res = await AxiosInstance.post(`/transfers/${id}/approve/`);
-          break;
-        case 'reject':
-          const reason = prompt('Motif du rejet :');
-          if (!reason && reason !== '') return;
-          res = await AxiosInstance.post(`/transfers/${id}/reject/`, { reason });
-          break;
+          res = await AxiosInstance.post(`/transfers/${id}/approve/`)
+          break
+        case 'reject': {
+          const reason = prompt('Motif du rejet :')
+          if (!reason && reason !== '') return
+          res = await AxiosInstance.post(`/transfers/${id}/reject/`, { reason })
+          break
+        }
         case 'cancel':
-          if (!window.confirm('Annuler ce transfert ?')) return;
-          res = await AxiosInstance.post(`/transfers/${id}/cancel/`);
-          break;
+          if (!window.confirm('Annuler ce transfert ?')) return
+          res = await AxiosInstance.post(`/transfers/${id}/cancel/`)
+          break
         default:
-          return;
+          return
       }
       if (res.status === 200 || res.status === 201) {
-        fetchTransfers();
+        cacheRef.current.clear()
+        fetchData({ bypassCache: true })
       }
     } catch (error) {
-      console.error(`Erreur lors de l'action ${action}:`, error);
-      alert(error.response?.data?.error || 'Une erreur est survenue');
+      console.error(`Erreur ${action}:`, error)
+      alert(error.response?.data?.error || 'Une erreur est survenue')
     }
-  };
+  }
 
-  const { agenceCourante } = getUserInfo();
-
-  // Fonction pour obtenir le type d'agence avec icône
   const getAgenceTypeLabel = (agence) => {
-    if (!agence) return { text: 'N/A', icon: '❓' };
-    if (agence.type_agence === 'principale') {
-      return { text: 'Principale', icon: '🏛️' };
-    }
-    if (agence.type_agence === 'secondaire') {
-      return { text: 'Secondaire', icon: '🏪' };
-    }
-    return { text: agence.type_agence || 'N/A', icon: '📌' };
-  };
+    if (!agence) return { text: 'N/A', icon: '❓' }
+    if (agence.type_agence === 'principale') return { text: 'Principale', icon: '🏛️' }
+    if (agence.type_agence === 'secondaire') return { text: 'Secondaire', icon: '🏪' }
+    return { text: agence.type_agence || 'N/A', icon: '📌' }
+  }
+
+  if (initialLoad && loading) {
+    return (
+      <div className="flex justify-center items-center h-[calc(100vh-200px)]">
+        <div className="text-center space-y-4">
+          <span className="loading loading-spinner loading-lg text-primary"></span>
+          <p className="text-base font-medium text-base-content/70 animate-pulse">
+            Chargement des transferts...
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="p-4">
+      {loading && !initialLoad && (
+        <div className="fixed top-20 right-6 z-40 animate-slideDown">
+          <div className="bg-base-100 shadow-lg rounded-full px-4 py-2 flex items-center gap-2 border border-base-300">
+            <span className="loading loading-spinner loading-xs text-primary"></span>
+            <span className="text-xs text-base-content/60">Chargement...</span>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-base-content flex items-center gap-2">
@@ -216,9 +263,9 @@ const Transferts = () => {
           <p className="text-base-content/60 text-sm mt-1">
             Gérez les demandes de transfert de stock
           </p>
-          {agenceCourante?.nom && (
+          {userAgence?.nom && (
             <div className="mt-2 text-xs text-base-content/50">
-              Agence courante : <span className="font-semibold text-primary">{agenceCourante.nom}</span>
+              Agence courante : <span className="font-semibold text-primary">{userAgence.nom}</span>
               {userRole === 'chef_agence' && ' (Chef d\'agence)'}
               {userRole === 'pdg' && ' (PDG - Accès total)'}
               {userRole === 'drh' && ' (DRH)'}
@@ -242,7 +289,7 @@ const Transferts = () => {
               </button>
             </div>
             <div className="flex gap-2">
-              <button onClick={fetchTransfers} className="btn btn-sm btn-outline gap-1">
+              <button onClick={refreshData} className="btn btn-sm btn-outline gap-1">
                 <RefreshCw className="w-4 h-4" />
                 Actualiser
               </button>
@@ -260,7 +307,12 @@ const Transferts = () => {
                 <label className="label">
                   <span className="label-text">Statut</span>
                 </label>
-                <select name="status" className="select select-bordered" value={filters.status} onChange={handleFilterChange}>
+                <select
+                  name="status"
+                  className="select select-bordered"
+                  value={filters.status}
+                  onChange={handleFilterChange}
+                >
                   <option value="">Tous</option>
                   {Object.entries(STATUS_CONFIG).map(([key, config]) => (
                     <option key={key} value={key}>{config.label}</option>
@@ -302,111 +354,93 @@ const Transferts = () => {
             </tr>
           </thead>
           <tbody>
-            {loading && (
-              <tr><td colSpan="7" className="text-center py-8">
-                <span className="loading loading-spinner loading-md"></span>
-                Chargement...
-               </td></tr>
+            {transfers.length === 0 && !loading && (
+              <tr>
+                <td colSpan="7" className="text-center py-8 text-base-content/50">
+                  Aucun transfert trouvé
+                </td>
+              </tr>
             )}
-            {!loading && transfers.length === 0 && (
-              <tr><td colSpan="7" className="text-center py-8 text-base-content/50">
-                Aucun transfert trouvé
-               </td></tr>
-            )}
-            {!loading && transfers.map((transfer) => {
-              const showSubmit = canSubmit(transfer);
-              const showApprove = canApprove(transfer);
-              const showReject = canReject(transfer);
-              const showCancel = canCancel(transfer);
-              
-              const sourceType = getAgenceTypeLabel(transfer.from_agence);
-              const destType = getAgenceTypeLabel(transfer.to_agence);
-              
+            {transfers.map((transfer) => {
+              const showSubmit = canSubmit(transfer)
+              const showApprove = canApprove(transfer)
+              const showReject = canReject(transfer)
+              const showCancel = canCancel(transfer)
+              const sourceType = getAgenceTypeLabel(transfer.from_agence)
+              const destType = getAgenceTypeLabel(transfer.to_agence)
+
               return (
                 <tr key={transfer.id} className="hover">
                   <td className="font-mono text-sm font-medium">{transfer.reference}</td>
                   <td>{getStatusBadge(transfer.status)}</td>
-                  
-                  {/* AGENCE SOURCE */}
                   <td>
                     <div className="flex flex-col">
-                      <span className="text-sm font-semibold text-primary">{transfer.from_agence_nom}</span>
+                      <span className="text-sm font-semibold text-primary">
+                        {transfer.from_agence_nom}
+                      </span>
                       <span className="text-xs text-base-content/50">
                         {sourceType.icon} {sourceType.text}
                       </span>
                     </div>
                   </td>
-                  
-                  {/* AGENCE DESTINATION */}
                   <td>
                     <div className="flex flex-col">
-                      <span className="text-sm font-semibold text-accent">{transfer.to_agence_nom}</span>
+                      <span className="text-sm font-semibold text-accent">
+                        {transfer.to_agence_nom}
+                      </span>
                       <span className="text-xs text-base-content/50">
                         {destType.icon} {destType.text}
                       </span>
                     </div>
                   </td>
-                  
                   <td className="text-center">
                     <span className="badge badge-neutral">{transfer.items_count || 0}</span>
                   </td>
-                  
-                  <td className="text-sm">{new Date(transfer.created_at).toLocaleDateString('fr-FR')}</td>
-                  
+                  <td className="text-sm">
+                    {new Date(transfer.created_at).toLocaleDateString('fr-FR')}
+                  </td>
                   <td>
                     <div className="flex flex-wrap gap-1 justify-center">
-                      <Link to={`/transferts/${transfer.id}`} className="btn btn-xs btn-ghost" title="Voir détails">
+                      <Link to={`/transferts/${transfer.id}`} className="btn btn-xs btn-ghost">
                         <Eye className="w-3 h-3" />
                       </Link>
-                      
-                      <button 
-                        onClick={() => downloadPDF(transfer)} 
-                        className="btn btn-xs btn-ghost text-info" 
-                        title="Télécharger PDF"
+                      <button
+                        onClick={() => downloadPDF(transfer)}
+                        className="btn btn-xs btn-ghost text-info"
                         disabled={downloadingId === transfer.id}
                       >
-                        {downloadingId === transfer.id ? (
-                          <span className="loading loading-spinner loading-xs"></span>
-                        ) : (
-                          <FileText className="w-3 h-3" />
-                        )}
+                        {downloadingId === transfer.id
+                          ? <span className="loading loading-spinner loading-xs"></span>
+                          : <FileText className="w-3 h-3" />}
                       </button>
-                      
                       {showSubmit && (
-                        <button 
-                          onClick={() => handleAction(transfer.id, 'submit')} 
+                        <button
+                          onClick={() => handleAction(transfer.id, 'submit')}
                           className="btn btn-xs btn-warning gap-1"
-                          title="Soumettre la demande"
                         >
                           <Send className="w-3 h-3" /> Soumettre
                         </button>
                       )}
-                      
                       {showApprove && (
-                        <button 
-                          onClick={() => handleAction(transfer.id, 'approve')} 
+                        <button
+                          onClick={() => handleAction(transfer.id, 'approve')}
                           className="btn btn-xs btn-success gap-1"
-                          title="Approuver le transfert"
                         >
                           <CheckCircle className="w-3 h-3" /> Approuver
                         </button>
                       )}
-                      
                       {showReject && (
-                        <button 
-                          onClick={() => handleAction(transfer.id, 'reject')} 
+                        <button
+                          onClick={() => handleAction(transfer.id, 'reject')}
                           className="btn btn-xs btn-error gap-1"
-                          title="Rejeter la demande"
                         >
                           <XCircle className="w-3 h-3" /> Rejeter
                         </button>
                       )}
-                      
                       {showCancel && (
-                        <button 
-                          onClick={() => handleAction(transfer.id, 'cancel')} 
+                        <button
+                          onClick={() => handleAction(transfer.id, 'cancel')}
                           className="btn btn-xs btn-outline gap-1"
-                          title="Annuler le transfert"
                         >
                           <Ban className="w-3 h-3" />
                         </button>
@@ -414,12 +448,12 @@ const Transferts = () => {
                     </div>
                   </td>
                 </tr>
-              );
+              )
             })}
           </tbody>
         </table>
       </div>
-      
+
       <div className="mt-4 p-3 bg-base-200 rounded-lg text-xs text-base-content/60">
         <div className="flex flex-wrap gap-4">
           <span className="flex items-center gap-1"><FileText className="w-3 h-3 text-info" /> PDF : Télécharger le document</span>
@@ -429,8 +463,16 @@ const Transferts = () => {
           <span className="flex items-center gap-1"><Ban className="w-3 h-3" /> Annuler : Chef source/destination ou PDG</span>
         </div>
       </div>
-    </div>
-  );
-};
 
-export default Transferts;
+      <style>{`
+        @keyframes slideDown {
+          from { opacity: 0; transform: translateY(-20px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slideDown { animation: slideDown 0.35s ease-out; }
+      `}</style>
+    </div>
+  )
+}
+
+export default Transferts
