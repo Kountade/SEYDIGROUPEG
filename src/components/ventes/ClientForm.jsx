@@ -1,21 +1,22 @@
 // src/components/sales/ClientForm.jsx
-import React, { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import AxiosInstance from '../AxiosInstance';
+import React, { useEffect, useState, useRef } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
+import AxiosInstance from '../AxiosInstance'
 import {
   Save, X, ArrowLeft, User, Building2, Phone, Mail, MapPin,
-  Briefcase, CreditCard, Star, AlertCircle, CheckCircle, Loader2,
-  Users, Calendar, Clock, RefreshCw
-} from 'lucide-react';
+  CreditCard, Star, AlertCircle, CheckCircle, Loader2, Users
+} from 'lucide-react'
 
 const ClientForm = () => {
-  const navigate = useNavigate();
-  const { id } = useParams();
-  const isEditMode = !!id;
+  const navigate = useNavigate()
+  const { id } = useParams()
+  const isEditMode = !!id
 
-  const [loading, setLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
+  const [loading, setLoading] = useState(false)
+  const [initialLoad, setInitialLoad] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [notification, setNotification] = useState({ show: false, message: '', type: 'success' })
+
   const [formData, setFormData] = useState({
     client_type: 'particulier',
     nom: '',
@@ -27,116 +28,142 @@ const ClientForm = () => {
     numero_tva: '',
     est_revendeur: false,
     is_active: true
-  });
-  const [errors, setErrors] = useState({});
+  })
+  const [errors, setErrors] = useState({})
 
-  const showNotification = (message, type) => {
-    setNotification({ show: true, message, type });
-    setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 4000);
-  };
+  const cacheRef = useRef(new Map())
 
+  const showNotification = (message, type = 'success') => {
+    setNotification({ show: true, message, type })
+    setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 4000)
+  }
+
+  // ---------- Fetch client (edit) ----------
   const fetchClient = async () => {
-    setLoading(true);
+    setLoading(true)
     try {
-      const response = await AxiosInstance.get(`/clients/${id}/`);
-      const client = response.data;
+      const cacheKey = `client_${id}`
+      let data
+      if (cacheRef.current.has(cacheKey)) {
+        data = cacheRef.current.get(cacheKey)
+      } else {
+        const response = await AxiosInstance.get(`/clients/${id}/`)
+        data = response.data
+        cacheRef.current.set(cacheKey, data)
+      }
       setFormData({
-        client_type: client.client_type,
-        nom: client.nom,
-        prenom: client.prenom || '',
-        email: client.email || '',
-        telephone: client.telephone,
-        adresse: client.adresse || '',
-        raison_sociale: client.raison_sociale || '',
-        numero_tva: client.numero_tva || '',
-        est_revendeur: client.est_revendeur,
-        is_active: client.is_active
-      });
+        client_type: data.client_type || 'particulier',
+        nom: data.nom || '',
+        prenom: data.prenom || '',
+        email: data.email || '',
+        telephone: data.telephone || '',
+        adresse: data.adresse || '',
+        raison_sociale: data.raison_sociale || '',
+        numero_tva: data.numero_tva || '',
+        est_revendeur: data.est_revendeur || false,
+        is_active: data.is_active !== undefined ? data.is_active : true,
+      })
     } catch (error) {
-      console.error('Erreur:', error);
-      showNotification('Client non trouvé', 'error');
-      setTimeout(() => navigate('/clients'), 1500);
+      console.error('Erreur:', error)
+      showNotification('Client non trouvé', 'error')
+      setTimeout(() => navigate('/clients'), 1500)
     } finally {
-      setLoading(false);
+      setLoading(false)
+      setInitialLoad(false)
     }
-  };
+  }
 
   useEffect(() => {
-    if (isEditMode) {
-      fetchClient();
-    }
-  }, [id]);
+    if (isEditMode) fetchClient()
+    else setInitialLoad(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id])
 
   const validateForm = () => {
-    const newErrors = {};
-    if (!formData.nom.trim()) newErrors.nom = 'Le nom est requis';
-    if (!formData.telephone.trim()) newErrors.telephone = 'Le téléphone est requis';
+    const newErrors = {}
+    if (!formData.nom?.trim()) newErrors.nom = 'Le nom est requis'
+    if (!formData.telephone?.trim()) newErrors.telephone = 'Le téléphone est requis'
     if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = 'Email invalide';
+      newErrors.email = 'Email invalide'
     }
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    e?.preventDefault?.()
     if (!validateForm()) {
-      showNotification('Veuillez corriger les erreurs', 'error');
-      return;
+      showNotification('Veuillez corriger les erreurs', 'error')
+      return
     }
 
-    setSubmitting(true);
+    setSubmitting(true)
     try {
       if (isEditMode) {
-        await AxiosInstance.put(`/clients/${id}/`, formData);
-        showNotification('Client modifié avec succès', 'success');
+        await AxiosInstance.put(`/clients/${id}/`, formData)
+        showNotification('Client modifié avec succès', 'success')
       } else {
-        await AxiosInstance.post('/clients/', formData);
-        showNotification('Client ajouté avec succès', 'success');
+        await AxiosInstance.post('/clients/', formData)
+        showNotification('Client ajouté avec succès', 'success')
       }
-      setTimeout(() => navigate('/clients'), 1500);
+      cacheRef.current.clear()
+      setTimeout(() => navigate('/clients'), 1500)
     } catch (error) {
-      console.error('Erreur:', error);
-      showNotification(error.response?.data?.message || 'Erreur lors de l\'enregistrement', 'error');
+      console.error('Erreur:', error)
+      const data = error.response?.data
+      let msg = "Erreur lors de l'enregistrement"
+      if (typeof data === 'string') msg = data
+      else if (data?.detail) msg = data.detail
+      else if (data?.message) msg = data.message
+      else if (data && typeof data === 'object') {
+        msg = Object.entries(data)
+          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+          .join(' | ')
+      }
+      showNotification(msg, 'error')
     } finally {
-      setSubmitting(false);
+      setSubmitting(false)
     }
-  };
+  }
 
-  if (loading) {
+  if (initialLoad && loading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
         <div className="text-center space-y-4">
-          <div className="loading loading-spinner loading-lg text-primary w-12 h-12 sm:w-16 sm:h-16"></div>
-          <p className="text-base sm:text-xl font-semibold text-base-content/70 animate-pulse">
+          <div className="loading loading-spinner loading-lg text-primary"></div>
+          <p className="text-base font-semibold text-base-content/70 animate-pulse">
             Chargement du client...
           </p>
         </div>
       </div>
-    );
+    )
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6 p-3 sm:p-4 lg:p-6 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950 min-h-screen">
-      {/* Notification Toast */}
+    <div className="space-y-4 sm:space-y-6 p-3 sm:p-4 lg:p-6 bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
+      {/* Notification */}
       {notification.show && (
         <div className="fixed top-20 right-4 sm:right-6 z-50 animate-slideDown">
           <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-xl text-sm sm:text-base rounded-xl`}>
             <div className="flex items-center gap-2">
-              {notification.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+              {notification.type === 'success'
+                ? <CheckCircle className="w-4 h-4" />
+                : <AlertCircle className="w-4 h-4" />}
               <span className="font-medium">{notification.message}</span>
             </div>
-            <button className="btn btn-ghost btn-xs btn-circle" onClick={() => setNotification({ show: false, message: '', type: 'success' })}>
+            <button
+              className="btn btn-ghost btn-xs btn-circle"
+              onClick={() => setNotification({ show: false, message: '', type: 'success' })}
+            >
               <X className="w-3 h-3" />
             </button>
           </div>
         </div>
       )}
 
-      {/* En-tête avec gradient */}
+      {/* En-tête */}
       <div className="relative overflow-hidden bg-gradient-to-r from-primary/10 via-primary/5 to-transparent rounded-2xl p-5">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full filter blur-3xl"></div>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 relative z-10">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <div className="flex items-center gap-3 mb-2">
               <div className="p-2 bg-primary/10 rounded-xl">
@@ -147,16 +174,26 @@ const ClientForm = () => {
               </h1>
             </div>
             <p className="text-sm text-base-content/60 ml-1">
-              {isEditMode ? 'Modifiez les informations du client' : 'Ajoutez un nouveau client à la base'}
+              {isEditMode
+                ? 'Modifiez les informations du client'
+                : 'Ajoutez un nouveau client à la base'}
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <button onClick={() => navigate('/clients')} className="btn btn-sm sm:btn-md btn-outline gap-2 hover:bg-primary/10 transition-all">
-              <ArrowLeft className="w-4 h-4" />
-              Retour
+            <button
+              onClick={() => navigate('/clients')}
+              className="btn btn-sm sm:btn-md btn-outline gap-2"
+            >
+              <ArrowLeft className="w-4 h-4" /> Retour
             </button>
-            <button onClick={handleSubmit} disabled={submitting} className="btn btn-sm sm:btn-md bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary text-white border-none shadow-lg hover:shadow-xl transition-all gap-2">
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            <button
+              onClick={handleSubmit}
+              disabled={submitting}
+              className="btn btn-sm sm:btn-md btn-primary gap-2"
+            >
+              {submitting
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <Save className="w-4 h-4" />}
               {isEditMode ? 'Mettre à jour' : 'Créer le client'}
             </button>
           </div>
@@ -167,13 +204,12 @@ const ClientForm = () => {
       <div className="bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
         <div className="p-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Type de client */}
             <div className="form-control">
               <label className="label">
                 <span className="label-text font-medium">Type de client *</span>
               </label>
               <select
-                className="select select-bordered w-full focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                className="select select-bordered w-full"
                 value={formData.client_type}
                 onChange={(e) => setFormData({ ...formData, client_type: e.target.value })}
               >
@@ -183,16 +219,15 @@ const ClientForm = () => {
               </select>
             </div>
 
-            {/* Nom */}
             <div className="form-control">
               <label className="label">
                 <span className="label-text font-medium">Nom *</span>
               </label>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
-                  className={`input input-bordered w-full pl-10 focus:border-primary focus:ring-1 focus:ring-primary transition-all ${errors.nom ? 'input-error' : ''}`}
+                  className={`input input-bordered w-full pl-10 ${errors.nom ? 'input-error' : ''}`}
                   value={formData.nom}
                   onChange={(e) => setFormData({ ...formData, nom: e.target.value })}
                   placeholder="Nom du client"
@@ -201,30 +236,28 @@ const ClientForm = () => {
               {errors.nom && <span className="text-error text-xs mt-1">{errors.nom}</span>}
             </div>
 
-            {/* Prénom */}
             <div className="form-control">
               <label className="label">
                 <span className="label-text font-medium">Prénom</span>
               </label>
               <input
                 type="text"
-                className="input input-bordered w-full focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                className="input input-bordered w-full"
                 value={formData.prenom}
                 onChange={(e) => setFormData({ ...formData, prenom: e.target.value })}
                 placeholder="Prénom du client"
               />
             </div>
 
-            {/* Téléphone */}
             <div className="form-control">
               <label className="label">
                 <span className="label-text font-medium">Téléphone *</span>
               </label>
               <div className="relative">
-                <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="tel"
-                  className={`input input-bordered w-full pl-10 focus:border-primary focus:ring-1 focus:ring-primary transition-all ${errors.telephone ? 'input-error' : ''}`}
+                  className={`input input-bordered w-full pl-10 ${errors.telephone ? 'input-error' : ''}`}
                   value={formData.telephone}
                   onChange={(e) => setFormData({ ...formData, telephone: e.target.value })}
                   placeholder="77 123 45 67"
@@ -233,16 +266,15 @@ const ClientForm = () => {
               {errors.telephone && <span className="text-error text-xs mt-1">{errors.telephone}</span>}
             </div>
 
-            {/* Email */}
             <div className="form-control">
               <label className="label">
                 <span className="label-text font-medium">Email</span>
               </label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="email"
-                  className={`input input-bordered w-full pl-10 focus:border-primary focus:ring-1 focus:ring-primary transition-all ${errors.email ? 'input-error' : ''}`}
+                  className={`input input-bordered w-full pl-10 ${errors.email ? 'input-error' : ''}`}
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   placeholder="client@email.com"
@@ -251,7 +283,6 @@ const ClientForm = () => {
               {errors.email && <span className="text-error text-xs mt-1">{errors.email}</span>}
             </div>
 
-            {/* Adresse */}
             <div className="form-control md:col-span-2">
               <label className="label">
                 <span className="label-text font-medium">Adresse</span>
@@ -259,7 +290,7 @@ const ClientForm = () => {
               <div className="relative">
                 <MapPin className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
                 <textarea
-                  className="textarea textarea-bordered w-full pl-10 focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                  className="textarea textarea-bordered w-full pl-10"
                   value={formData.adresse}
                   onChange={(e) => setFormData({ ...formData, adresse: e.target.value })}
                   rows={3}
@@ -268,7 +299,6 @@ const ClientForm = () => {
               </div>
             </div>
 
-            {/* Champs entreprise */}
             {formData.client_type === 'entreprise' && (
               <>
                 <div className="form-control">
@@ -276,10 +306,10 @@ const ClientForm = () => {
                     <span className="label-text font-medium">Raison sociale</span>
                   </label>
                   <div className="relative">
-                    <Building2 className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <input
                       type="text"
-                      className="input input-bordered w-full pl-10 focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                      className="input input-bordered w-full pl-10"
                       value={formData.raison_sociale}
                       onChange={(e) => setFormData({ ...formData, raison_sociale: e.target.value })}
                       placeholder="Raison sociale de l'entreprise"
@@ -291,13 +321,13 @@ const ClientForm = () => {
                     <span className="label-text font-medium">Numéro TVA</span>
                   </label>
                   <div className="relative">
-                    <CreditCard className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <input
                       type="text"
-                      className="input input-bordered w-full pl-10 focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                      className="input input-bordered w-full pl-10"
                       value={formData.numero_tva}
                       onChange={(e) => setFormData({ ...formData, numero_tva: e.target.value })}
-                      placeholder="Numéro de TVA intracommunautaire"
+                      placeholder="Numéro de TVA"
                     />
                   </div>
                 </div>
@@ -305,7 +335,6 @@ const ClientForm = () => {
             )}
           </div>
 
-          {/* Options */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6 pt-6 border-t border-gray-200">
             <label className="label cursor-pointer justify-start gap-3">
               <input
@@ -315,10 +344,10 @@ const ClientForm = () => {
                 onChange={(e) => setFormData({ ...formData, est_revendeur: e.target.checked })}
               />
               <span className="label-text flex items-center gap-2">
-                <Star className="w-4 h-4 text-warning" /> Revendeur (bénéficie de prix spéciaux)
+                <Star className="w-4 h-4 text-warning" />
+                Revendeur (bénéficie de prix spéciaux)
               </span>
             </label>
-
             <label className="label cursor-pointer justify-start gap-3">
               <input
                 type="checkbox"
@@ -332,20 +361,38 @@ const ClientForm = () => {
             </label>
           </div>
 
-          {/* Actions */}
           <div className="flex justify-end gap-3 mt-6 pt-6 border-t border-gray-200">
-            <button type="button" className="btn btn-ghost gap-2" onClick={() => navigate('/clients')}>
+            <button
+              type="button"
+              className="btn btn-ghost gap-2"
+              onClick={() => navigate('/clients')}
+            >
               <X className="w-4 h-4" /> Annuler
             </button>
-            <button type="submit" className="btn btn-primary gap-2" onClick={handleSubmit} disabled={submitting}>
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            <button
+              type="submit"
+              className="btn btn-primary gap-2"
+              onClick={handleSubmit}
+              disabled={submitting}
+            >
+              {submitting
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <Save className="w-4 h-4" />}
               {isEditMode ? 'Mettre à jour' : 'Créer le client'}
             </button>
           </div>
         </div>
       </div>
-    </div>
-  );
-};
 
-export default ClientForm;
+      <style>{`
+        @keyframes slideDown {
+          from { transform: translateY(-20px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        .animate-slideDown { animation: slideDown 0.3s ease-out; }
+      `}</style>
+    </div>
+  )
+}
+
+export default ClientForm

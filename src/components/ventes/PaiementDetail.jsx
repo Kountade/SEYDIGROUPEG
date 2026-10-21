@@ -1,21 +1,27 @@
 // src/components/paiements/PaiementDetail.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
 import { downloadPaiementPDF } from './PaiementPdf'
 import {
   CreditCard, ArrowLeft, Edit, Trash2, AlertCircle,
   DollarSign, Calendar, FileText, User, Phone, Mail,
-  MapPin, CheckCircle, XCircle, Clock, RefreshCw, Download
+  MapPin, CheckCircle, XCircle, Clock, RefreshCw, Download,
+  Loader2
 } from 'lucide-react'
 
 const PaiementDetail = () => {
   const { id } = useParams()
   const navigate = useNavigate()
+
   const [paiement, setPaiement] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [initialLoad, setInitialLoad] = useState(true)
   const [error, setError] = useState(null)
   const [pdfLoading, setPdfLoading] = useState(false)
+
+  const cacheRef = useRef(new Map())
+  const fetchingRef = useRef(false)
 
   const methodes = {
     especes: 'Espèces', carte: 'Carte bancaire', cheque: 'Chèque',
@@ -26,31 +32,56 @@ const PaiementDetail = () => {
     pending: { label: 'En attente', color: 'warning', icon: Clock },
     completed: { label: 'Complété', color: 'success', icon: CheckCircle },
     failed: { label: 'Échoué', color: 'error', icon: XCircle },
-    refunded: { label: 'Remboursé', color: 'info', icon: RefreshCw }
+    refunded: { label: 'Remboursé', color: 'info', icon: RefreshCw },
   }
 
-  useEffect(() => {
-    fetchPaiement()
-  }, [id])
+  const fetchPaiement = useCallback(async ({ bypassCache = false } = {}) => {
+    const key = `paiement_detail_${id}`
+    if (!bypassCache && cacheRef.current.has(key)) {
+      setPaiement(cacheRef.current.get(key))
+      setLoading(false)
+      setInitialLoad(false)
+      setError(null)
+      return
+    }
 
-  const fetchPaiement = async () => {
+    if (fetchingRef.current) return
+    fetchingRef.current = true
     setLoading(true)
     setError(null)
+
     try {
-      const { data } = await AxiosInstance.get(`/paiements/${id}/`)
-      setPaiement(data)
+      const res = await AxiosInstance.get(`/paiements/${id}/`)
+      cacheRef.current.set(key, res.data)
+      if (cacheRef.current.size > 10) {
+        const firstKey = cacheRef.current.keys().next().value
+        cacheRef.current.delete(firstKey)
+      }
+      setPaiement(res.data)
     } catch (err) {
       console.error(err)
       setError('Impossible de charger le paiement')
     } finally {
       setLoading(false)
+      setInitialLoad(false)
+      fetchingRef.current = false
     }
+  }, [id])
+
+  useEffect(() => {
+    if (id) fetchPaiement()
+  }, [id, fetchPaiement])
+
+  const refresh = async () => {
+    cacheRef.current.clear()
+    await fetchPaiement({ bypassCache: true })
   }
 
   const handleDelete = async () => {
     if (!window.confirm('Supprimer définitivement ce paiement ?')) return
     try {
       await AxiosInstance.delete(`/paiements/${id}/`)
+      cacheRef.current.clear()
       navigate('/paiements')
     } catch (err) {
       alert('Erreur lors de la suppression')
@@ -72,7 +103,6 @@ const PaiementDetail = () => {
 
   const getClientInfo = () => {
     if (!paiement) return null
-    // Priorité au client de la facture
     if (paiement.facture_client_nom && paiement.facture_client_nom !== 'Anonyme') {
       return {
         nom: paiement.facture_client_nom,
@@ -81,10 +111,9 @@ const PaiementDetail = () => {
         telephone: paiement.facture_client_telephone,
         adresse: paiement.facture_client_adresse,
         raison_sociale: paiement.facture_client_raison_sociale,
-        source: 'facture'
+        source: 'facture',
       }
     }
-    // Sinon client direct
     if (paiement.client_nom && paiement.client_nom !== 'Anonyme') {
       return {
         nom: paiement.client_nom,
@@ -93,16 +122,26 @@ const PaiementDetail = () => {
         telephone: paiement.client_telephone,
         adresse: paiement.client_adresse,
         raison_sociale: paiement.client_raison_sociale,
-        source: 'direct'
+        source: 'direct',
       }
     }
     return null
   }
 
-  if (loading) {
+  const formatPrice = (v) => {
+    const n = Number(v)
+    if (!Number.isFinite(n)) return '0 FCFA'
+    return new Intl.NumberFormat('fr-FR').format(n) + ' FCFA'
+  }
+
+  // ---------- Premier chargement ----------
+  if (initialLoad && loading) {
     return (
       <div className="flex justify-center items-center h-screen">
-        <div className="loading loading-spinner loading-lg text-primary"></div>
+        <div className="text-center space-y-4">
+          <div className="loading loading-spinner loading-lg text-primary"></div>
+          <p className="text-base font-medium text-base-content/70">Chargement...</p>
+        </div>
       </div>
     )
   }
@@ -114,7 +153,7 @@ const PaiementDetail = () => {
         <div className="alert alert-error shadow-lg max-w-md">
           <span>{error || 'Paiement introuvable'}</span>
         </div>
-        <button onClick={fetchPaiement} className="btn btn-primary gap-2">
+        <button onClick={refresh} className="btn btn-primary gap-2">
           <RefreshCw className="w-4 h-4" /> Réessayer
         </button>
         <Link to="/paiements" className="btn btn-ghost">Retour à la liste</Link>
@@ -128,6 +167,17 @@ const PaiementDetail = () => {
 
   return (
     <div className="min-h-screen bg-base-200">
+      {/* Spinner overlay */}
+      {loading && !initialLoad && (
+        <div className="fixed top-20 right-6 z-40">
+          <div className="bg-base-100 shadow-lg rounded-full px-4 py-2 flex items-center gap-2 border border-base-300">
+            <Loader2 className="w-3 h-3 animate-spin text-primary" />
+            <span className="text-xs text-base-content/60">Chargement...</span>
+          </div>
+        </div>
+      )}
+
+      {/* Header */}
       <div className="bg-base-100 border-b sticky top-0 z-10 shadow-sm">
         <div className="px-6 py-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-4">
@@ -140,11 +190,28 @@ const PaiementDetail = () => {
             </h1>
           </div>
           <div className="flex gap-2">
-            <button onClick={handleDownloadPDF} disabled={pdfLoading} className="btn btn-sm btn-outline gap-1">
-              {pdfLoading ? <span className="loading loading-spinner loading-xs"></span> : <Download className="w-4 h-4" />}
+            <button
+              onClick={refresh}
+              className="btn btn-sm btn-outline gap-1"
+              disabled={loading}
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              Actualiser
+            </button>
+            <button
+              onClick={handleDownloadPDF}
+              disabled={pdfLoading}
+              className="btn btn-sm btn-outline gap-1"
+            >
+              {pdfLoading
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <Download className="w-4 h-4" />}
               PDF
             </button>
-            <button onClick={() => navigate(`/paiements/${id}/edit`)} className="btn btn-sm btn-outline gap-1">
+            <button
+              onClick={() => navigate(`/paiements/${id}/edit`)}
+              className="btn btn-sm btn-outline gap-1"
+            >
               <Edit className="w-4 h-4" /> Modifier
             </button>
             <button onClick={handleDelete} className="btn btn-sm btn-error gap-1">
@@ -158,19 +225,20 @@ const PaiementDetail = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Colonne principale */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Montant */}
             <div className="card bg-base-100 shadow-md">
               <div className="card-body">
                 <h2 className="card-title text-lg flex items-center gap-2">
                   <DollarSign className="w-5 h-5 text-primary" /> Montant
                 </h2>
                 <div className="text-4xl font-black text-primary">
-                  {(paiement.montant || 0).toLocaleString()} FCFA
+                  {formatPrice(paiement.montant)}
                 </div>
                 <div className="flex flex-wrap gap-4 mt-2">
                   <div className="badge badge-lg gap-1">
-                    <Calendar className="w-3 h-3" />{' '}
-                    {paiement.date_paiement ? new Date(paiement.date_paiement).toLocaleDateString() : 'Date inconnue'}
+                    <Calendar className="w-3 h-3" />
+                    {paiement.date_paiement
+                      ? new Date(paiement.date_paiement).toLocaleDateString()
+                      : 'Date inconnue'}
                   </div>
                   <div className={`badge badge-lg gap-1 badge-${statutInfo.color}`}>
                     <StatutIcon className="w-3 h-3" /> {statutInfo.label}
@@ -179,7 +247,6 @@ const PaiementDetail = () => {
               </div>
             </div>
 
-            {/* Détails paiement */}
             <div className="card bg-base-100 shadow-md">
               <div className="card-body">
                 <h2 className="card-title text-lg">Informations paiement</h2>
@@ -193,7 +260,6 @@ const PaiementDetail = () => {
               </div>
             </div>
 
-            {/* Facture associée */}
             {paiement.facture_ref && paiement.facture_ref !== '-' && (
               <div className="card bg-base-100 shadow-md">
                 <div className="card-body">
@@ -203,8 +269,8 @@ const PaiementDetail = () => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div><span className="font-semibold">Référence :</span> {paiement.facture_ref}</div>
                     <div><span className="font-semibold">Date :</span> {paiement.facture_date ? new Date(paiement.facture_date).toLocaleDateString() : '-'}</div>
-                    <div><span className="font-semibold">Total TTC :</span> {(paiement.facture_total || 0).toLocaleString()} FCFA</div>
-                    <div><span className="font-semibold">Reste à payer :</span> {(paiement.facture_restant || 0).toLocaleString()} FCFA</div>
+                    <div><span className="font-semibold">Total TTC :</span> {formatPrice(paiement.facture_total)}</div>
+                    <div><span className="font-semibold">Reste à payer :</span> {formatPrice(paiement.facture_restant)}</div>
                   </div>
                   <div className="mt-3">
                     <Link to={`/factures/${paiement.facture}`} className="btn btn-sm btn-outline">
@@ -216,7 +282,7 @@ const PaiementDetail = () => {
             )}
           </div>
 
-          {/* Colonne latérale – Client */}
+          {/* Colonne latérale */}
           <div className="space-y-6">
             {clientInfo ? (
               <div className="card bg-base-100 shadow-md">
@@ -229,11 +295,27 @@ const PaiementDetail = () => {
                     )}
                   </div>
                   <div className="space-y-2">
-                    <div><span className="font-semibold">Nom :</span> {clientInfo.nom} {clientInfo.prenom || ''}</div>
-                    {clientInfo.raison_sociale && <div><span className="font-semibold">Raison sociale :</span> {clientInfo.raison_sociale}</div>}
-                    {clientInfo.email && <div className="flex items-center gap-1"><Mail className="w-3 h-3" /> {clientInfo.email}</div>}
-                    {clientInfo.telephone && <div className="flex items-center gap-1"><Phone className="w-3 h-3" /> {clientInfo.telephone}</div>}
-                    {clientInfo.adresse && <div className="flex items-start gap-1"><MapPin className="w-3 h-3 mt-1" /> {clientInfo.adresse}</div>}
+                    <div>
+                      <span className="font-semibold">Nom :</span> {clientInfo.nom} {clientInfo.prenom || ''}
+                    </div>
+                    {clientInfo.raison_sociale && (
+                      <div><span className="font-semibold">Raison sociale :</span> {clientInfo.raison_sociale}</div>
+                    )}
+                    {clientInfo.email && (
+                      <div className="flex items-center gap-1">
+                        <Mail className="w-3 h-3" /> {clientInfo.email}
+                      </div>
+                    )}
+                    {clientInfo.telephone && (
+                      <div className="flex items-center gap-1">
+                        <Phone className="w-3 h-3" /> {clientInfo.telephone}
+                      </div>
+                    )}
+                    {clientInfo.adresse && (
+                      <div className="flex items-start gap-1">
+                        <MapPin className="w-3 h-3 mt-1" /> {clientInfo.adresse}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -247,13 +329,19 @@ const PaiementDetail = () => {
                 </div>
               </div>
             )}
-            {/* Métadonnées */}
+
             <div className="card bg-base-100 shadow-md">
               <div className="card-body">
                 <h2 className="card-title text-lg">Métadonnées</h2>
                 <div className="text-sm space-y-1">
-                  <div><span className="font-semibold">Créé le :</span> {paiement.created_at ? new Date(paiement.created_at).toLocaleString() : '-'}</div>
-                  <div><span className="font-semibold">Modifié le :</span> {paiement.updated_at ? new Date(paiement.updated_at).toLocaleString() : '-'}</div>
+                  <div>
+                    <span className="font-semibold">Créé le :</span>{' '}
+                    {paiement.created_at ? new Date(paiement.created_at).toLocaleString() : '-'}
+                  </div>
+                  <div>
+                    <span className="font-semibold">Modifié le :</span>{' '}
+                    {paiement.updated_at ? new Date(paiement.updated_at).toLocaleString() : '-'}
+                  </div>
                 </div>
               </div>
             </div>

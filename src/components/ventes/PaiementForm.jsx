@@ -1,47 +1,48 @@
 // src/components/paiements/PaiementForm.jsx
-
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
-import AxiosInstance from '../AxiosInstance';
+import React, { useState, useEffect, useRef } from 'react'
+import { useNavigate, useParams, Link } from 'react-router-dom'
+import AxiosInstance from '../AxiosInstance'
 import {
-  Save, X, ArrowLeft, Plus, Minus, Trash2, CreditCard,
-  CheckCircle, AlertCircle, Loader2, Building2, 
-  Package, DollarSign, FileText, User, Hash, Calendar,
-  Receipt, Phone, Mail, Banknote, Building
-} from 'lucide-react';
+  Save, X, ArrowLeft, CreditCard, CheckCircle, AlertCircle,
+  Loader2, Building2, DollarSign, FileText, Hash, Receipt,
+  Banknote, Building
+} from 'lucide-react'
 
 const PaiementForm = () => {
-  const navigate = useNavigate();
-  const { id } = useParams();
-  const isEditMode = !!id;
+  const navigate = useNavigate()
+  const { id } = useParams()
+  const isEditMode = !!id
 
-  // États généraux
-  const [loading, setLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [factures, setFactures] = useState([]);
-  const [selectedFacture, setSelectedFacture] = useState(null);
-  const [notification, setNotification] = useState({ show: false, message: '', type: 'success', details: null });
-  
-  // ✅ NOUVEAUX ÉTATS pour la trésorerie
-  const [caisses, setCaisses] = useState([]);
-  const [comptesBancaires, setComptesBancaires] = useState([]);
-  const [loadingDestinations, setLoadingDestinations] = useState(true);
-  
-  // Champs du formulaire
-  const [factureId, setFactureId] = useState('');
-  const [montant, setMontant] = useState('');
-  const [methode, setMethode] = useState('especes');
-  const [referenceExterne, setReferenceExterne] = useState('');
-  const [notes, setNotes] = useState('');
-  
-  // ✅ NOUVEAUX CHAMPS pour la destination
-  const [typeDestination, setTypeDestination] = useState('caisse'); // 'caisse' ou 'compte'
-  const [caisseId, setCaisseId] = useState('');
-  const [compteId, setCompteId] = useState('');
+  const [loading, setLoading] = useState(false)
+  const [initialLoad, setInitialLoad] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
 
-  // États de validation
-  const [errors, setErrors] = useState({});
-  const [loadingFactures, setLoadingFactures] = useState(true);
+  const [factures, setFactures] = useState([])
+  const [selectedFacture, setSelectedFacture] = useState(null)
+  const [caisses, setCaisses] = useState([])
+  const [comptesBancaires, setComptesBancaires] = useState([])
+  const [loadingFactures, setLoadingFactures] = useState(true)
+  const [loadingDestinations, setLoadingDestinations] = useState(true)
+
+  const [notification, setNotification] = useState({
+    show: false, message: '', type: 'success', details: null
+  })
+
+  // Form fields
+  const [factureId, setFactureId] = useState('')
+  const [montant, setMontant] = useState('')
+  const [methode, setMethode] = useState('especes')
+  const [referenceExterne, setReferenceExterne] = useState('')
+  const [notes, setNotes] = useState('')
+  const [typeDestination, setTypeDestination] = useState('caisse')
+  const [caisseId, setCaisseId] = useState('')
+  const [compteId, setCompteId] = useState('')
+
+  const [errors, setErrors] = useState({})
+
+  const cacheRef = useRef(new Map())
+
+  const unwrap = (data) => Array.isArray(data) ? data : (data?.results || [])
 
   const methodesPaiement = [
     { value: 'especes', label: 'Espèces', icon: '💰' },
@@ -50,204 +51,212 @@ const PaiementForm = () => {
     { value: 'virement', label: 'Virement', icon: '🏦' },
     { value: 'mobile_money', label: 'Mobile Money', icon: '📱' },
     { value: 'autre', label: 'Autre', icon: '📌' }
-  ];
+  ]
 
   const showNotification = (message, type = 'success', details = null) => {
-    setNotification({ show: true, message, type, details });
-    setTimeout(() => setNotification({ show: false, message: '', type: 'success', details: null }), 8000);
-  };
+    setNotification({ show: true, message, type, details })
+    setTimeout(() => setNotification({
+      show: false, message: '', type: 'success', details: null
+    }), 8000)
+  }
 
-  // ============================================================
-  // 1. Chargement des factures éligibles
-  // ============================================================
+  // ---------- Chargement ----------
   useEffect(() => {
-    const fetchData = async () => {
-      setLoadingFactures(true);
-      setLoadingDestinations(true);
+    const loadAll = async () => {
+      setLoadingFactures(true)
+      setLoadingDestinations(true)
+
       try {
-        // Charger les factures
-        const facturesRes = await AxiosInstance.get('/factures/?status__in=partially_paid,overdue,sent');
-        const facturesAvecReste = facturesRes.data.filter(f => (f.montant_restant || 0) > 0);
-        setFactures(facturesAvecReste);
-        
-        // ✅ Charger les caisses
-        const caissesRes = await AxiosInstance.get('/caisses/?is_active=true');
-        setCaisses(caissesRes.data);
-        
-        // ✅ Charger les comptes bancaires
-        const comptesRes = await AxiosInstance.get('/comptes-bancaires/?is_active=true');
-        setComptesBancaires(comptesRes.data);
-        
+        // Factures avec reste > 0
+        let facturesData
+        if (cacheRef.current.has('factures_eligibles')) {
+          facturesData = cacheRef.current.get('factures_eligibles')
+        } else {
+          const facturesRes = await AxiosInstance.get(
+            '/factures/?status__in=partially_paid,overdue,sent&page_size=200'
+          )
+          facturesData = unwrap(facturesRes.data)
+            .filter(f => (Number(f.montant_restant) || 0) > 0)
+          cacheRef.current.set('factures_eligibles', facturesData)
+        }
+        setFactures(facturesData)
+
+        // Caisses
+        let caissesData
+        if (cacheRef.current.has('caisses')) {
+          caissesData = cacheRef.current.get('caisses')
+        } else {
+          const caissesRes = await AxiosInstance.get('/caisses/?is_active=true&page_size=100')
+          caissesData = unwrap(caissesRes.data)
+          cacheRef.current.set('caisses', caissesData)
+        }
+        setCaisses(caissesData)
+
+        // Comptes bancaires
+        let comptesData
+        if (cacheRef.current.has('comptes')) {
+          comptesData = cacheRef.current.get('comptes')
+        } else {
+          const comptesRes = await AxiosInstance.get('/comptes-bancaires/?is_active=true&page_size=100')
+          comptesData = unwrap(comptesRes.data)
+          cacheRef.current.set('comptes', comptesData)
+        }
+        setComptesBancaires(comptesData)
+
+        // Édition
         if (isEditMode) {
-          await fetchPaiement();
+          await fetchPaiement()
         }
       } catch (err) {
-        console.error('Erreur chargement données', err);
-        showNotification('Impossible de charger les données', 'error');
+        console.error('Erreur chargement données', err)
+        showNotification('Impossible de charger les données', 'error')
       } finally {
-        setLoadingFactures(false);
-        setLoadingDestinations(false);
+        setLoadingFactures(false)
+        setLoadingDestinations(false)
+        setInitialLoad(false)
       }
-    };
-    fetchData();
-  }, [id]);
-
-  // ============================================================
-  // 2. Chargement du paiement en mode édition
-  // ============================================================
-  const fetchPaiement = async () => {
-    setLoading(true);
-    try {
-      const { data } = await AxiosInstance.get(`/paiements/${id}/`);
-      setFactureId(data.facture?.id || '');
-      setMontant(data.montant);
-      setMethode(data.methode);
-      setReferenceExterne(data.reference_externe || '');
-      setNotes(data.notes || '');
-      
-      // ✅ Récupérer la destination
-      if (data.caisse) {
-        setTypeDestination('caisse');
-        setCaisseId(data.caisse.id);
-      } else if (data.compte_bancaire) {
-        setTypeDestination('compte');
-        setCompteId(data.compte_bancaire.id);
-      }
-      
-      if (data.facture) {
-        setSelectedFacture(data.facture);
-      }
-    } catch (err) {
-      console.error('Erreur chargement paiement', err);
-      showNotification('Erreur de chargement du paiement', 'error');
-    } finally {
-      setLoading(false);
     }
-  };
 
-  // ============================================================
-  // 3. Gestion des changements
-  // ============================================================
+    loadAll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id])
+
+  const fetchPaiement = async () => {
+    setLoading(true)
+    try {
+      const cacheKey = `paiement_edit_${id}`
+      let data
+      if (cacheRef.current.has(cacheKey)) {
+        data = cacheRef.current.get(cacheKey)
+      } else {
+        const res = await AxiosInstance.get(`/paiements/${id}/`)
+        data = res.data
+        cacheRef.current.set(cacheKey, data)
+      }
+
+      setFactureId(data.facture?.id || '')
+      setMontant(data.montant || '')
+      setMethode(data.methode || 'especes')
+      setReferenceExterne(data.reference_externe || '')
+      setNotes(data.notes || '')
+
+      if (data.caisse_destination) {
+        setTypeDestination('caisse')
+        setCaisseId(data.caisse_destination.id)
+      } else if (data.compte_destination) {
+        setTypeDestination('compte')
+        setCompteId(data.compte_destination.id)
+      }
+
+      if (data.facture) setSelectedFacture(data.facture)
+    } catch (err) {
+      console.error('Erreur chargement paiement', err)
+      showNotification('Erreur de chargement du paiement', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // ---------- Handlers ----------
   const handleFactureChange = (e) => {
-    const factureIdValue = parseInt(e.target.value);
-    const facture = factures.find(f => f.id === factureIdValue);
-    setSelectedFacture(facture || null);
-    setFactureId(factureIdValue);
-    setMontant('');
-    if (errors.facture) setErrors(prev => ({ ...prev, facture: '' }));
-  };
+    const factureIdValue = parseInt(e.target.value)
+    const facture = factures.find(f => f.id === factureIdValue)
+    setSelectedFacture(facture || null)
+    setFactureId(factureIdValue || '')
+    setMontant('')
+    if (errors.facture) setErrors(prev => ({ ...prev, facture: '' }))
+  }
 
   const handleChange = (field, value) => {
-    if (field === 'facture') {
-      setFactureId(value);
-      if (errors.facture) setErrors(prev => ({ ...prev, facture: '' }));
-    } else if (field === 'montant') {
-      setMontant(value);
-      if (errors.montant) setErrors(prev => ({ ...prev, montant: '' }));
-    } else if (field === 'methode') {
-      setMethode(value);
-      if (errors.methode) setErrors(prev => ({ ...prev, methode: '' }));
-    } else if (field === 'reference_externe') {
-      setReferenceExterne(value);
-    } else if (field === 'notes') {
-      setNotes(value);
-    } else if (field === 'type_destination') {
-      setTypeDestination(value);
-      setCaisseId('');
-      setCompteId('');
-      if (errors.destination) setErrors(prev => ({ ...prev, destination: '' }));
+    if (field === 'montant') { setMontant(value); if (errors.montant) setErrors(p => ({ ...p, montant: '' })) }
+    else if (field === 'methode') { setMethode(value); if (errors.methode) setErrors(p => ({ ...p, methode: '' })) }
+    else if (field === 'reference_externe') setReferenceExterne(value)
+    else if (field === 'notes') setNotes(value)
+    else if (field === 'type_destination') {
+      setTypeDestination(value); setCaisseId(''); setCompteId('')
+      if (errors.destination) setErrors(p => ({ ...p, destination: '' }))
     } else if (field === 'caisse') {
-      setCaisseId(value);
-      if (errors.destination) setErrors(prev => ({ ...prev, destination: '' }));
+      setCaisseId(value); if (errors.destination) setErrors(p => ({ ...p, destination: '' }))
     } else if (field === 'compte') {
-      setCompteId(value);
-      if (errors.destination) setErrors(prev => ({ ...prev, destination: '' }));
+      setCompteId(value); if (errors.destination) setErrors(p => ({ ...p, destination: '' }))
     }
-  };
+  }
 
-  // ============================================================
-  // 4. Validation
-  // ============================================================
+  // ---------- Validation ----------
   const validate = () => {
-    const newErrors = {};
-    if (!factureId) newErrors.facture = 'Veuillez sélectionner une facture';
-    if (!montant || parseFloat(montant) <= 0) newErrors.montant = 'Montant invalide';
-    if (!methode) newErrors.methode = 'Choisissez une méthode';
-    
-    // ✅ Validation de la destination
-    if (typeDestination === 'caisse' && !caisseId) {
-      newErrors.destination = 'Veuillez sélectionner une caisse';
-    } else if (typeDestination === 'compte' && !compteId) {
-      newErrors.destination = 'Veuillez sélectionner un compte bancaire';
+    const newErrors = {}
+    if (!factureId) newErrors.facture = 'Veuillez sélectionner une facture'
+    const m = Number(montant)
+    if (!Number.isFinite(m) || m <= 0) newErrors.montant = 'Montant invalide'
+    if (!methode) newErrors.methode = 'Choisissez une méthode'
+
+    if (typeDestination === 'caisse' && !caisseId) newErrors.destination = 'Sélectionnez une caisse'
+    else if (typeDestination === 'compte' && !compteId) newErrors.destination = 'Sélectionnez un compte'
+
+    if (selectedFacture && Number.isFinite(m)) {
+      const restant = Number(selectedFacture.montant_restant) || 0
+      if (m > restant) newErrors.montant = `Maximum : ${restant.toLocaleString('fr-FR')} FCFA`
     }
 
-    if (selectedFacture && montant) {
-      const montantValue = parseFloat(montant);
-      const restant = selectedFacture.montant_restant || 0;
-      if (montantValue > restant) {
-        newErrors.montant = `Maximum : ${restant.toLocaleString()} FCFA`;
-      }
-    }
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }
 
-  // ============================================================
-  // 5. Soumission
-  // ============================================================
+  // ---------- Submit ----------
   const handleSubmit = async () => {
-    if (!validate()) return;
+    if (!validate()) return
+    setSubmitting(true)
 
-    setSubmitting(true);
-    
     const payload = {
       facture: parseInt(factureId),
       montant: parseFloat(montant),
-      methode: methode,
+      methode,
       reference_externe: referenceExterne,
-      notes: notes,
-      // ✅ Ajouter la destination
-      caisse: typeDestination === 'caisse' ? parseInt(caisseId) : null,
-      compte_bancaire: typeDestination === 'compte' ? parseInt(compteId) : null,
-    };
+      notes,
+      caisse_destination: typeDestination === 'caisse' ? parseInt(caisseId) : null,
+      compte_destination: typeDestination === 'compte' ? parseInt(compteId) : null,
+    }
 
     try {
       if (isEditMode) {
-        await AxiosInstance.put(`/paiements/${id}/`, payload);
-        showNotification('Paiement modifié avec succès', 'success');
+        await AxiosInstance.put(`/paiements/${id}/`, payload)
+        showNotification('Paiement modifié avec succès', 'success')
       } else {
-        await AxiosInstance.post('/paiements/', payload);
-        showNotification('Paiement enregistré avec succès', 'success');
+        await AxiosInstance.post('/paiements/', payload)
+        showNotification('Paiement enregistré avec succès', 'success')
       }
-      setTimeout(() => navigate('/paiements'), 2000);
+      cacheRef.current.clear()
+      setTimeout(() => navigate('/paiements'), 1500)
     } catch (err) {
-      console.error('Erreur:', err);
-      const errorData = err.response?.data;
-      let errorMessage = 'Erreur lors de l\'enregistrement';
-      if (errorData?.facture) errorMessage = errorData.facture[0];
-      else if (errorData?.montant) errorMessage = errorData.montant[0];
-      else if (errorData?.non_field_errors) errorMessage = errorData.non_field_errors[0];
-      else if (errorData?.error) errorMessage = errorData.error;
-      else if (errorData?.caisse) errorMessage = errorData.caisse[0];
-      else if (errorData?.compte_bancaire) errorMessage = errorData.compte_bancaire[0];
-      showNotification(errorMessage, 'error', errorData);
+      console.error('Erreur:', err)
+      const d = err.response?.data
+      let errorMessage = "Erreur lors de l'enregistrement"
+      if (typeof d === 'string') errorMessage = d
+      else if (d?.facture) errorMessage = Array.isArray(d.facture) ? d.facture[0] : d.facture
+      else if (d?.montant) errorMessage = Array.isArray(d.montant) ? d.montant[0] : d.montant
+      else if (d?.non_field_errors) errorMessage = Array.isArray(d.non_field_errors) ? d.non_field_errors[0] : d.non_field_errors
+      else if (d?.error) errorMessage = d.error
+      else if (d?.caisse_destination) errorMessage = Array.isArray(d.caisse_destination) ? d.caisse_destination[0] : d.caisse_destination
+      else if (d?.compte_destination) errorMessage = Array.isArray(d.compte_destination) ? d.compte_destination[0] : d.compte_destination
+      showNotification(errorMessage, 'error', d)
     } finally {
-      setSubmitting(false);
+      setSubmitting(false)
     }
-  };
+  }
 
-  const formatPrice = (price) => {
-    if (!price) return '0 FCFA';
-    return new Intl.NumberFormat('fr-FR').format(price) + ' FCFA';
-  };
+  const formatPrice = (v) => {
+    const n = Number(v)
+    if (!Number.isFinite(n)) return '0 FCFA'
+    return new Intl.NumberFormat('fr-FR').format(n) + ' FCFA'
+  }
 
   const getFactureLabel = (facture) => {
-    const clientName = facture.client_nom || facture.client?.nom || 'Client inconnu';
-    const restant = facture.montant_restant?.toLocaleString() || '0';
-    return `${facture.reference} - ${clientName} (Reste: ${restant} FCFA)`;
-  };
+    const clientName = facture.client_nom || facture.client?.nom || 'Client inconnu'
+    const restant = Number(facture.montant_restant) || 0
+    return `${facture.reference} - ${clientName} (Reste: ${formatPrice(restant)})`
+  }
 
-  if (loading && isEditMode) {
+  if (initialLoad && loading && isEditMode) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-200px)]">
         <div className="text-center space-y-4">
@@ -257,24 +266,37 @@ const PaiementForm = () => {
           </p>
         </div>
       </div>
-    );
+    )
   }
 
   return (
     <div className="w-full py-4 lg:py-6 bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
-      {/* Notification Toast */}
+      {/* Notification */}
       {notification.show && (
         <div className="fixed top-16 lg:top-20 right-3 lg:right-6 z-50 animate-slideDown w-[calc(100%-1.5rem)] lg:w-auto max-w-md">
-          <div className={`alert ${notification.type === 'success' ? 'alert-success' : notification.type === 'warning' ? 'alert-warning' : 'alert-error'} shadow-lg`}>
-            {notification.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-            <span className="text-sm lg:text-base font-medium whitespace-pre-line">{notification.message}</span>
+          <div className={`alert ${
+            notification.type === 'success' ? 'alert-success'
+            : notification.type === 'warning' ? 'alert-warning'
+            : 'alert-error'
+          } shadow-lg`}>
+            {notification.type === 'success'
+              ? <CheckCircle className="w-4 h-4" />
+              : <AlertCircle className="w-4 h-4" />}
+            <span className="text-sm lg:text-base font-medium whitespace-pre-line">
+              {notification.message}
+            </span>
             {notification.details && (
               <details className="text-xs">
                 <summary className="cursor-pointer">Détails</summary>
-                <pre className="mt-1 p-1 bg-black/5 rounded">{JSON.stringify(notification.details, null, 2)}</pre>
+                <pre className="mt-1 p-1 bg-black/5 rounded overflow-auto max-h-40">
+                  {JSON.stringify(notification.details, null, 2)}
+                </pre>
               </details>
             )}
-            <button className="btn btn-ghost btn-xs btn-circle" onClick={() => setNotification({ show: false, message: '', type: 'success', details: null })}>
+            <button
+              className="btn btn-ghost btn-xs btn-circle"
+              onClick={() => setNotification({ show: false, message: '', type: 'success', details: null })}
+            >
               <X className="w-3 h-3" />
             </button>
           </div>
@@ -283,8 +305,7 @@ const PaiementForm = () => {
 
       {/* En-tête */}
       <div className="relative overflow-hidden bg-gradient-to-r from-primary/10 via-primary/5 to-transparent py-5 px-4 lg:px-6">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full filter blur-3xl"></div>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 relative z-10">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <div className="flex items-center gap-3 mb-2">
               <div className="p-2 bg-primary/10 rounded-xl">
@@ -295,38 +316,40 @@ const PaiementForm = () => {
               </h1>
             </div>
             <p className="text-sm text-base-content/60 ml-1">
-              {isEditMode ? 'Modifiez les informations du paiement' : 'Enregistrez un nouveau paiement'}
+              {isEditMode
+                ? 'Modifiez les informations du paiement'
+                : 'Enregistrez un nouveau paiement'}
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
             <Link to="/paiements" className="btn btn-outline btn-sm lg:btn-md gap-2">
               <ArrowLeft className="w-4 h-4" /> Retour
             </Link>
-            <button 
-              onClick={handleSubmit} 
-              disabled={submitting} 
-              className="btn btn-primary btn-sm lg:btn-md gap-2 shadow-lg hover:shadow-xl transition-all"
+            <button
+              onClick={handleSubmit}
+              disabled={submitting}
+              className="btn btn-primary btn-sm lg:btn-md gap-2"
             >
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {submitting
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <Save className="w-4 h-4" />}
               {isEditMode ? 'Modifier' : 'Valider'}
             </button>
           </div>
         </div>
       </div>
 
-      {/* Carte principale */}
+      {/* Carte */}
       <div className="max-w-full px-4 lg:px-6">
         <div className="bg-white rounded-xl shadow-xl border border-base-200 overflow-hidden">
           <div className="p-4 lg:p-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Colonne gauche : Champs du formulaire */}
+              {/* Colonne gauche */}
               <div className="space-y-4">
-                {/* Sélection de la facture */}
                 <div className="form-control w-full">
                   <label className="label">
                     <span className="label-text font-semibold flex items-center gap-2">
-                      <Receipt className="w-4 h-4 text-primary" />
-                      Facture <span className="text-error">*</span>
+                      <Receipt className="w-4 h-4 text-primary" /> Facture <span className="text-error">*</span>
                     </span>
                   </label>
                   <select
@@ -337,15 +360,12 @@ const PaiementForm = () => {
                   >
                     <option value="">-- Sélectionner une facture --</option>
                     {factures.map(f => (
-                      <option key={f.id} value={f.id}>
-                        {getFactureLabel(f)}
-                      </option>
+                      <option key={f.id} value={f.id}>{getFactureLabel(f)}</option>
                     ))}
                   </select>
                   {loadingFactures && (
                     <span className="text-info text-xs mt-1 flex items-center gap-1">
-                      <span className="loading loading-spinner loading-xs"></span>
-                      Chargement des factures...
+                      <span className="loading loading-spinner loading-xs"></span> Chargement...
                     </span>
                   )}
                   {errors.facture && <span className="text-error text-xs mt-1">{errors.facture}</span>}
@@ -356,12 +376,10 @@ const PaiementForm = () => {
                   )}
                 </div>
 
-                {/* Montant */}
                 <div className="form-control w-full">
                   <label className="label">
                     <span className="label-text font-semibold flex items-center gap-2">
-                      <DollarSign className="w-4 h-4 text-primary" />
-                      Montant <span className="text-error">*</span>
+                      <DollarSign className="w-4 h-4 text-primary" /> Montant <span className="text-error">*</span>
                     </span>
                   </label>
                   <input
@@ -381,14 +399,11 @@ const PaiementForm = () => {
                   )}
                 </div>
 
-                {/* ✅ SECTION DESTINATION - NOUVEAU */}
                 <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
                   <h4 className="font-semibold text-sm text-blue-700 mb-3 flex items-center gap-2">
-                    <Banknote className="w-4 h-4" />
-                    Destination du paiement <span className="text-error">*</span>
+                    <Banknote className="w-4 h-4" /> Destination <span className="text-error">*</span>
                   </h4>
-                  
-                  {/* Type de destination */}
+
                   <div className="form-control w-full mb-3">
                     <div className="flex gap-4">
                       <label className="flex items-center gap-2 cursor-pointer">
@@ -418,13 +433,11 @@ const PaiementForm = () => {
                     </div>
                   </div>
 
-                  {/* Sélection de la caisse */}
                   {typeDestination === 'caisse' && (
                     <div className="form-control w-full">
                       <label className="label">
                         <span className="label-text font-medium flex items-center gap-2">
-                          <Building className="w-4 h-4 text-primary" />
-                          Caisse
+                          <Building className="w-4 h-4 text-primary" /> Caisse
                         </span>
                       </label>
                       <select
@@ -440,22 +453,14 @@ const PaiementForm = () => {
                           </option>
                         ))}
                       </select>
-                      {loadingDestinations && (
-                        <span className="text-info text-xs mt-1 flex items-center gap-1">
-                          <span className="loading loading-spinner loading-xs"></span>
-                          Chargement des caisses...
-                        </span>
-                      )}
                     </div>
                   )}
 
-                  {/* Sélection du compte bancaire */}
                   {typeDestination === 'compte' && (
                     <div className="form-control w-full">
                       <label className="label">
                         <span className="label-text font-medium flex items-center gap-2">
-                          <Building2 className="w-4 h-4 text-primary" />
-                          Compte bancaire
+                          <Building2 className="w-4 h-4 text-primary" /> Compte bancaire
                         </span>
                       </label>
                       <select
@@ -471,24 +476,15 @@ const PaiementForm = () => {
                           </option>
                         ))}
                       </select>
-                      {loadingDestinations && (
-                        <span className="text-info text-xs mt-1 flex items-center gap-1">
-                          <span className="loading loading-spinner loading-xs"></span>
-                          Chargement des comptes...
-                        </span>
-                      )}
                     </div>
                   )}
-                  
                   {errors.destination && <span className="text-error text-xs mt-1">{errors.destination}</span>}
                 </div>
 
-                {/* Méthode de paiement */}
                 <div className="form-control w-full">
                   <label className="label">
                     <span className="label-text font-semibold flex items-center gap-2">
-                      <CreditCard className="w-4 h-4 text-primary" />
-                      Méthode <span className="text-error">*</span>
+                      <CreditCard className="w-4 h-4 text-primary" /> Méthode <span className="text-error">*</span>
                     </span>
                   </label>
                   <select
@@ -506,12 +502,10 @@ const PaiementForm = () => {
                   {errors.methode && <span className="text-error text-xs mt-1">{errors.methode}</span>}
                 </div>
 
-                {/* Référence externe */}
                 <div className="form-control w-full">
                   <label className="label">
                     <span className="label-text font-semibold flex items-center gap-2">
-                      <Hash className="w-4 h-4 text-primary" />
-                      Référence externe
+                      <Hash className="w-4 h-4 text-primary" /> Référence externe
                     </span>
                   </label>
                   <input
@@ -524,12 +518,10 @@ const PaiementForm = () => {
                   />
                 </div>
 
-                {/* Notes */}
                 <div className="form-control w-full">
                   <label className="label">
                     <span className="label-text font-semibold flex items-center gap-2">
-                      <FileText className="w-4 h-4 text-primary" />
-                      Notes
+                      <FileText className="w-4 h-4 text-primary" /> Notes
                     </span>
                   </label>
                   <textarea
@@ -543,13 +535,12 @@ const PaiementForm = () => {
                 </div>
               </div>
 
-              {/* Colonne droite : Résumé de la facture */}
+              {/* Colonne droite : Récap facture */}
               <div className="lg:sticky lg:top-20 h-fit">
                 {selectedFacture ? (
                   <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
                     <h3 className="font-semibold text-lg text-primary mb-4 flex items-center gap-2">
-                      <Receipt className="w-5 h-5" />
-                      Récapitulatif de la facture
+                      <Receipt className="w-5 h-5" /> Récapitulatif facture
                     </h3>
                     <div className="space-y-3 text-sm">
                       <div className="flex justify-between py-2 border-b border-gray-200">
@@ -559,53 +550,66 @@ const PaiementForm = () => {
                       <div className="flex justify-between py-2 border-b border-gray-200">
                         <span className="text-gray-500">Client</span>
                         <span className={!selectedFacture.client ? 'text-warning' : ''}>
-                          {selectedFacture.client?.nom || selectedFacture.client_nom || '⚠️ Aucun'}
+                          {selectedFacture.client?.nom
+                            || selectedFacture.client_nom
+                            || '⚠️ Aucun'}
                         </span>
                       </div>
                       <div className="flex justify-between py-2 border-b border-gray-200">
                         <span className="text-gray-500">Total TTC</span>
-                        <span className="font-bold text-primary">{formatPrice(selectedFacture.total_ttc)}</span>
+                        <span className="font-bold text-primary">
+                          {formatPrice(selectedFacture.total_ttc)}
+                        </span>
                       </div>
                       <div className="flex justify-between py-2 border-b border-gray-200">
                         <span className="text-gray-500">Déjà payé</span>
-                        <span className="text-success font-semibold">{formatPrice(selectedFacture.montant_paye || 0)}</span>
+                        <span className="text-success font-semibold">
+                          {formatPrice(selectedFacture.montant_paye || 0)}
+                        </span>
                       </div>
                       <div className="flex justify-between py-2 border-b border-gray-200">
                         <span className="text-gray-500">Reste à payer</span>
-                        <span className="text-error font-bold">{formatPrice(selectedFacture.montant_restant || 0)}</span>
+                        <span className="text-error font-bold">
+                          {formatPrice(selectedFacture.montant_restant || 0)}
+                        </span>
                       </div>
-                      
-                      {/* Barre de progression */}
                       <div className="mt-3 pt-2">
                         <div className="flex justify-between text-xs mb-1">
                           <span className="text-gray-500">Progression</span>
                           <span className="font-medium">
-                            {selectedFacture.total_ttc > 0 
-                              ? ((selectedFacture.montant_paye / selectedFacture.total_ttc) * 100).toFixed(0)
+                            {Number(selectedFacture.total_ttc) > 0
+                              ? Math.round(
+                                  (Number(selectedFacture.montant_paye)
+                                    / Number(selectedFacture.total_ttc)) * 100
+                                )
                               : 0}%
                           </span>
                         </div>
                         <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                          <div 
+                          <div
                             className="bg-primary h-2 rounded-full transition-all duration-500"
-                            style={{ 
-                              width: `${selectedFacture.total_ttc > 0 
-                                ? (selectedFacture.montant_paye / selectedFacture.total_ttc) * 100 
-                                : 0}%` 
+                            style={{
+                              width: `${Number(selectedFacture.total_ttc) > 0
+                                ? Math.min(
+                                    (Number(selectedFacture.montant_paye)
+                                      / Number(selectedFacture.total_ttc)) * 100,
+                                    100
+                                  )
+                                : 0}%`
                             }}
                           />
                         </div>
                       </div>
                     </div>
-
-                    {/* Bouton d'action */}
                     <div className="mt-4 pt-4 border-t border-gray-200">
-                      <button 
-                        onClick={handleSubmit} 
-                        disabled={submitting} 
-                        className="btn btn-primary w-full gap-2 shadow-lg hover:shadow-xl transition-all"
+                      <button
+                        onClick={handleSubmit}
+                        disabled={submitting}
+                        className="btn btn-primary w-full gap-2"
                       >
-                        {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                        {submitting
+                          ? <Loader2 className="w-4 h-4 animate-spin" />
+                          : <Save className="w-4 h-4" />}
                         {isEditMode ? 'Modifier le paiement' : 'Enregistrer le paiement'}
                       </button>
                     </div>
@@ -623,17 +627,16 @@ const PaiementForm = () => {
             </div>
           </div>
 
-          {/* Actions */}
           <div className="flex flex-col sm:flex-row justify-end gap-3 p-4 lg:p-6 bg-gray-50/50 border-t border-base-200">
-            <Link to="/paiements" className="btn btn-ghost gap-2">
-              Annuler
-            </Link>
-            <button 
-              className="btn btn-primary gap-2 shadow-lg hover:shadow-xl transition-all" 
-              onClick={handleSubmit} 
+            <Link to="/paiements" className="btn btn-ghost gap-2">Annuler</Link>
+            <button
+              className="btn btn-primary gap-2"
+              onClick={handleSubmit}
               disabled={submitting}
             >
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {submitting
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <Save className="w-4 h-4" />}
               {isEditMode ? 'Modifier le paiement' : 'Valider le paiement'}
             </button>
           </div>
@@ -645,12 +648,10 @@ const PaiementForm = () => {
           from { transform: translateY(-20px); opacity: 0; }
           to { transform: translateY(0); opacity: 1; }
         }
-        .animate-slideDown {
-          animation: slideDown 0.3s ease-out;
-        }
+        .animate-slideDown { animation: slideDown 0.3s ease-out; }
       `}</style>
     </div>
-  );
-};
+  )
+}
 
-export default PaiementForm;
+export default PaiementForm

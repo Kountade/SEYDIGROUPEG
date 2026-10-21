@@ -1,5 +1,7 @@
 // src/components/pos/PointDeVente.jsx
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, {
+  useState, useEffect, useRef, useMemo, useCallback
+} from 'react'
 import { useNavigate } from 'react-router-dom'
 import AxiosInstance from '../AxiosInstance'
 import {
@@ -15,10 +17,13 @@ const PointDeVente = () => {
   const searchInputRef = useRef(null)
 
   // ============================================================
-  // ÉTATS PRINCIPAUX
+  // ÉTATS
   // ============================================================
-  const [loading, setLoading] = useState(false)
+  const [loadingUser, setLoadingUser] = useState(true)
+  const [loadingProducts, setLoadingProducts] = useState(false)
+  const [initialProductsLoad, setInitialProductsLoad] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+
   const [products, setProducts] = useState([])
   const [clients, setClients] = useState([])
   const [selectedClient, setSelectedClient] = useState(null)
@@ -26,15 +31,12 @@ const PointDeVente = () => {
   const [notification, setNotification] = useState({
     show: false, message: '', type: 'success', details: null
   })
+
   const [agence, setAgence] = useState(null)
   const [entrepot, setEntrepot] = useState(null)
   const [currentUser, setCurrentUser] = useState(null)
-  const [loadingUser, setLoadingUser] = useState(true)
   const [notes, setNotes] = useState('')
 
-  // ============================================================
-  // ÉTATS POUR LA GESTION MULTI-AGENCES / MULTI-ENTREPÔTS
-  // ============================================================
   const [agences, setAgences] = useState([])
   const [selectedAgenceFilter, setSelectedAgenceFilter] = useState(null)
   const [warehouses, setWarehouses] = useState([])
@@ -61,9 +63,17 @@ const PointDeVente = () => {
   const [sortField, setSortField] = useState('name')
   const [sortDirection, setSortDirection] = useState('asc')
 
+  // Refs cache
+  const cacheRef = useRef(new Map())
+  const fetchingUserRef = useRef(false)
+  const fetchingProductsRef = useRef(false)
+  const fetchingClientsRef = useRef(false)
+
   // ============================================================
-  // HELPERS DE SÉCURITÉ
+  // HELPERS
   // ============================================================
+  const unwrap = (data) => Array.isArray(data) ? data : (data?.results || [])
+
   const getImageUrl = (product) => {
     if (!product) return null
     const img = product.main_image || product.image_url || product.image
@@ -76,13 +86,13 @@ const PointDeVente = () => {
   const safeNumber = (val, fallback = 0) => {
     if (val === null || val === undefined || val === '') return fallback
     const n = typeof val === 'number' ? val : parseFloat(val)
-    return isNaN(n) ? fallback : n
+    return Number.isFinite(n) ? n : fallback
   }
 
   const safeInt = (val, fallback = 0) => {
     if (val === null || val === undefined || val === '') return fallback
     const n = typeof val === 'number' ? val : parseInt(val, 10)
-    return isNaN(n) ? fallback : n
+    return Number.isFinite(n) ? n : fallback
   }
 
   const formatPrice = (price) => {
@@ -101,9 +111,6 @@ const PointDeVente = () => {
     }), 5000)
   }
 
-  // ============================================================
-  // VÉRIFICATION DISPONIBILITÉ PRODUIT
-  // ============================================================
   const isProductAvailable = (product) => {
     if (!product) return false
     const stock = safeNumber(product.stock_quantity, 0)
@@ -111,9 +118,6 @@ const PointDeVente = () => {
     return stock > 0 && price > 0
   }
 
-  // ============================================================
-  // BADGE DE STATUT
-  // ============================================================
   const getStatusBadge = (product) => {
     const stock = safeNumber(product?.stock_quantity, 0)
     const minLevel = safeNumber(product?.min_stock_level, 0)
@@ -123,62 +127,54 @@ const PointDeVente = () => {
     if (!hasPrice) {
       return (
         <div className="badge badge-error gap-1 font-semibold">
-          <AlertTriangle className="w-3 h-3" />
-          Prix manquant
+          <AlertTriangle className="w-3 h-3" /> Prix manquant
         </div>
       )
     }
-
     if (stock <= 0) {
       return (
         <div className="badge badge-error gap-1 font-semibold">
-          <AlertTriangle className="w-3 h-3" />
-          Rupture
+          <AlertTriangle className="w-3 h-3" /> Rupture
         </div>
       )
     }
-
     if (minLevel > 0 && stock <= minLevel) {
       return (
         <div className="badge badge-warning gap-1 font-semibold">
-          <AlertCircle className="w-3 h-3" />
-          Stock faible
+          <AlertCircle className="w-3 h-3" /> Stock faible
         </div>
       )
     }
-
     return (
       <div className="badge badge-success gap-1 font-semibold">
-        <CheckCircle className="w-3 h-3" />
-        En stock
+        <CheckCircle className="w-3 h-3" /> En stock
       </div>
     )
   }
 
   // ============================================================
-  // CHARGEMENT DES ENTREPÔTS
+  // CHARGEMENT ENTREPÔTS
   // ============================================================
   const fetchWarehouses = async (agenceId = null) => {
     setLoadingWarehouses(true)
     try {
       const targetAgenceId = agenceId || agence?.id
+      const cacheKey = `warehouses_${targetAgenceId || 'all'}`
 
-      let url = '/warehouses/'
-      const params = new URLSearchParams()
-
-      if (targetAgenceId) {
-        params.append('agence', targetAgenceId)
+      let warehousesList
+      if (cacheRef.current.has(cacheKey)) {
+        warehousesList = cacheRef.current.get(cacheKey)
+      } else {
+        const params = new URLSearchParams()
+        if (targetAgenceId) params.append('agence', targetAgenceId)
+        params.append('is_active', 'true')
+        params.append('page_size', '100')
+        const response = await AxiosInstance.get(`/warehouses/?${params.toString()}`)
+        warehousesList = unwrap(response.data)
+        cacheRef.current.set(cacheKey, warehousesList)
       }
-      params.append('is_active', 'true')
 
-      if (params.toString()) {
-        url += `?${params.toString()}`
-      }
-
-      const response = await AxiosInstance.get(url)
-      const warehousesList = Array.isArray(response.data) ? response.data : []
       setWarehouses(warehousesList)
-
       return warehousesList
     } catch (error) {
       console.error('Erreur chargement entrepôts:', error)
@@ -190,59 +186,66 @@ const PointDeVente = () => {
   }
 
   // ============================================================
-  // CHARGEMENT INITIAL UTILISATEUR + AGENCES + ENTREPÔTS
+  // CHARGEMENT INITIAL USER + AGENCES + CATÉGORIES
   // ============================================================
   useEffect(() => {
+    if (fetchingUserRef.current) return
+    fetchingUserRef.current = true
+
     const fetchCurrentUser = async () => {
       try {
-        const response = await AxiosInstance.get('/users/me/')
-        const userData = response.data || {}
+        let userData
+        if (cacheRef.current.has('user_me')) {
+          userData = cacheRef.current.get('user_me')
+        } else {
+          const response = await AxiosInstance.get('/users/me/')
+          userData = response.data || {}
+          cacheRef.current.set('user_me', userData)
+        }
         setCurrentUser(userData)
 
-        const agencesDeLUtilisateur = userData.agences || []
+        const agencesUser = unwrap(userData.agences || [])
+        let agenceUtilisateur = agencesUser[0]
 
-        if (agencesDeLUtilisateur.length > 0) {
-          setAgences(agencesDeLUtilisateur)
-          const agenceUtilisateur = agencesDeLUtilisateur[0]
-          setAgence(agenceUtilisateur)
-          setSelectedAgenceFilter(agenceUtilisateur.id)
-
-          // ✅ Charger les entrepôts de cette agence
-          const list = await fetchWarehouses(agenceUtilisateur.id)
-
-          // Sélectionner l'entrepôt par défaut
-          if (list.length > 0) {
-            const defaultWarehouse = list.find(w => w.is_default) || list[0]
-            setEntrepot(defaultWarehouse)
-          }
+        if (agencesUser.length > 0) {
+          setAgences(agencesUser)
         } else {
           // Fallback : charger toutes les agences
-          try {
-            const agencesRes = await AxiosInstance.get('/agences/')
-            const agencesList = Array.isArray(agencesRes.data) ? agencesRes.data : []
-            if (agencesList.length > 0) {
-              setAgences(agencesList)
-              setAgence(agencesList[0])
-              setSelectedAgenceFilter(agencesList[0].id)
-              const list = await fetchWarehouses(agencesList[0].id)
-              if (list.length > 0) {
-                const defaultWarehouse = list.find(w => w.is_default) || list[0]
-                setEntrepot(defaultWarehouse)
-              }
-            }
-          } catch (e) {
-            console.error('Erreur agences:', e)
+          let agencesList
+          if (cacheRef.current.has('agences_list')) {
+            agencesList = cacheRef.current.get('agences_list')
+          } else {
+            const res = await AxiosInstance.get('/agences/?page_size=200')
+            agencesList = unwrap(res.data)
+            cacheRef.current.set('agences_list', agencesList)
+          }
+          setAgences(agencesList)
+          if (agencesList.length > 0) agenceUtilisateur = agencesList[0]
+        }
+
+        if (agenceUtilisateur) {
+          setAgence(agenceUtilisateur)
+          setSelectedAgenceFilter(agenceUtilisateur.id)
+          const list = await fetchWarehouses(agenceUtilisateur.id)
+          if (list.length > 0) {
+            const def = list.find(w => w.is_default) || list[0]
+            setEntrepot(def)
           }
         }
 
-        // Catégories
-        try {
-          const catRes = await AxiosInstance.get('/categories/')
-          setCategories(Array.isArray(catRes.data) ? catRes.data : [])
-        } catch (e) {
-          console.warn('Catégories non chargées:', e)
+        // Catégories (cache)
+        if (cacheRef.current.has('categories')) {
+          setCategories(cacheRef.current.get('categories'))
+        } else {
+          try {
+            const catRes = await AxiosInstance.get('/categories/?page_size=200')
+            const cats = unwrap(catRes.data)
+            cacheRef.current.set('categories', cats)
+            setCategories(cats)
+          } catch (e) {
+            console.warn('Catégories non chargées:', e)
+          }
         }
-
       } catch (error) {
         console.error('Erreur users/me:', error)
         showNotification('Erreur de chargement du profil', 'error')
@@ -250,29 +253,26 @@ const PointDeVente = () => {
         setLoadingUser(false)
       }
     }
+
     fetchCurrentUser()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // ============================================================
-  // CHANGEMENT D'AGENCE (PDG/DRH)
+  // CHANGEMENT D'AGENCE
   // ============================================================
   const handleAgenceChange = async (agenceId) => {
     const newAgence = agences.find(a => a.id === parseInt(agenceId))
     if (!newAgence) return
-
     setAgence(newAgence)
     setSelectedAgenceFilter(newAgence.id)
     setEntrepot(null)
     setItems([])
-
     const newWarehouses = await fetchWarehouses(newAgence.id)
-
     if (newWarehouses.length > 0) {
-      const defaultWarehouse = newWarehouses.find(w => w.is_default) || newWarehouses[0]
-      setEntrepot(defaultWarehouse)
+      const def = newWarehouses.find(w => w.is_default) || newWarehouses[0]
+      setEntrepot(def)
     }
-
     showNotification(`Agence changée : ${newAgence.nom}`, 'success')
   }
 
@@ -282,120 +282,165 @@ const PointDeVente = () => {
   const handleEntrepotChange = (warehouseId) => {
     const newEntrepot = warehouses.find(w => w.id === parseInt(warehouseId))
     if (!newEntrepot) return
-
     setEntrepot(newEntrepot)
     setItems([])
-
     showNotification(`Entrepôt changé : ${newEntrepot.name}`, 'success')
   }
 
   // ============================================================
-  // CHARGEMENT DES PRODUITS (selon entrepôt)
+  // CHARGEMENT PRODUITS + PRICING + STOCKS EN 3 REQUÊTES (au lieu de 2N)
   // ============================================================
   useEffect(() => {
     if (!entrepot?.id) return
 
-    const fetchProductsWithPrices = async () => {
-      setLoading(true)
+    const loadProducts = async () => {
+      const cacheKey = `pos_products_${entrepot.id}`
+
+      // Cache → skip
+      if (cacheRef.current.has(cacheKey)) {
+        setProducts(cacheRef.current.get(cacheKey))
+        setLoadingProducts(false)
+        setInitialProductsLoad(false)
+        return
+      }
+
+      if (fetchingProductsRef.current) return
+      fetchingProductsRef.current = true
+      setLoadingProducts(true)
+
       try {
-        const productsRes = await AxiosInstance.get('/products/?is_active=true')
-        const allProducts = Array.isArray(productsRes.data) ? productsRes.data : []
+        // 1) Produits
+        const productsRes = await AxiosInstance.get('/products/?is_active=true&page_size=500')
+        const allProducts = unwrap(productsRes.data)
 
-        const productsWithPrices = await Promise.all(
-          allProducts.map(async (product) => {
-            const base = {
-              ...product,
-              image_url: getImageUrl(product),
-              sale_price: safeNumber(product.sale_price || product.price, 0),
-              wholesale_price: null,
-              has_wholesale: false,
-              stock_quantity: safeNumber(product.stock_quantity, 0),
-              min_stock_level: safeNumber(product.min_stock_level, 0),
-              has_price: true,
+        // 2) Tous les prix de CET entrepôt (1 requête)
+        let pricingMap = {}
+        try {
+          const pricingRes = await AxiosInstance.get(
+            `/product-prices/?warehouse_id=${entrepot.id}&is_current=true&page_size=500`
+          )
+          const pricings = unwrap(pricingRes.data)
+          pricingMap = pricings.reduce((acc, p) => {
+            acc[p.product] = p
+            return acc
+          }, {})
+        } catch (err) {
+          console.warn('Pricing non chargé:', err)
+        }
+
+        // 3) Stocks de CET entrepôt (1 requête)
+        let stockMap = {}
+        try {
+          const stockRes = await AxiosInstance.get(
+            `/warehouse-stocks/by_warehouse/?warehouse_id=${entrepot.id}&page_size=500`
+          )
+          const stocks = unwrap(stockRes.data)
+          stockMap = stocks.reduce((acc, s) => {
+            const key = `${s.product}_${s.variant || 'null'}`
+            acc[key] = {
+              quantity: safeNumber(s.quantity, 0),
+              minimum: safeNumber(s.minimum_stock, 0),
             }
+            return acc
+          }, {})
+        } catch (err) {
+          console.warn('Stocks non chargés:', err)
+        }
 
-            // Prix (non bloquant)
-            try {
-              const priceRes = await AxiosInstance.get(
-                `/ventes/product_prices/?product_id=${product.id}&warehouse_id=${entrepot.id}`
-              )
-              base.sale_price = safeNumber(priceRes.data?.sale_price, base.sale_price)
-              base.wholesale_price = priceRes.data?.wholesale_price != null
-                ? safeNumber(priceRes.data.wholesale_price) : null
-              base.has_wholesale = !!priceRes.data?.has_wholesale
-              if (!priceRes.data?.sale_price || safeNumber(priceRes.data.sale_price) <= 0) {
-                base.has_price = false
-              }
-            } catch {
-              base.has_price = false
-            }
+        // Assemblage
+        const enriched = allProducts.map(product => {
+          const pid = product.id
+          const pricing = pricingMap[pid]
+          const stock = stockMap[`${pid}_null`] || { quantity: 0, minimum: 0 }
 
-            // Stock (non bloquant)
-            try {
-              const stockRes = await AxiosInstance.get(
-                `/warehouse-stocks/by_product/?product_id=${product.id}`
-              )
-              const stocks = Array.isArray(stockRes.data) ? stockRes.data : []
-              const stock = stocks.find(
-                s => safeInt(s.warehouse) === safeInt(entrepot.id)
-              )
-              if (stock) {
-                base.stock_quantity = safeNumber(stock.quantity, 0)
-                base.min_stock_level = safeNumber(stock.minimum_stock, 0)
-              }
-            } catch {
-              // garder stock du produit
-            }
+          const salePrice = safeNumber(
+            pricing?.sale_price ?? product.sale_price ?? product.price,
+            0
+          )
+          const wholesalePrice = pricing?.wholesale_price != null
+            ? safeNumber(pricing.wholesale_price)
+            : null
+          const hasWholesale = !!wholesalePrice && wholesalePrice > 0
+          const hasPrice = salePrice > 0
 
-            return base
-          })
-        )
+          return {
+            ...product,
+            image_url: getImageUrl(product),
+            sale_price: salePrice,
+            wholesale_price: wholesalePrice,
+            has_wholesale: hasWholesale,
+            has_price: hasPrice,
+            stock_quantity: stock.quantity,
+            min_stock_level: stock.minimum,
+          }
+        })
 
-        setProducts(productsWithPrices)
+        cacheRef.current.set(cacheKey, enriched)
+        if (cacheRef.current.size > 10) {
+          const firstKey = cacheRef.current.keys().next().value
+          cacheRef.current.delete(firstKey)
+        }
+
+        setProducts(enriched)
       } catch (error) {
         console.error('Erreur produits:', error)
         showNotification('Erreur de chargement des produits', 'error')
       } finally {
-        setLoading(false)
+        setLoadingProducts(false)
+        setInitialProductsLoad(false)
+        fetchingProductsRef.current = false
       }
     }
 
-    fetchProductsWithPrices()
+    loadProducts()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entrepot])
 
   // ============================================================
-  // CHARGEMENT DES CLIENTS
+  // CHARGEMENT CLIENTS (1 seule fois + cache)
   // ============================================================
   useEffect(() => {
+    if (fetchingClientsRef.current) return
+    fetchingClientsRef.current = true
+
     const fetchClients = async () => {
       try {
-        const response = await AxiosInstance.get('/clients/?is_active=true')
-        setClients(Array.isArray(response.data) ? response.data : [])
+        let data
+        if (cacheRef.current.has('clients_active')) {
+          data = cacheRef.current.get('clients_active')
+        } else {
+          const response = await AxiosInstance.get('/clients/?is_active=true&page_size=500')
+          data = unwrap(response.data)
+          cacheRef.current.set('clients_active', data)
+        }
+        setClients(data)
       } catch (error) {
         console.error('Erreur clients:', error)
+      } finally {
+        fetchingClientsRef.current = false
       }
     }
     fetchClients()
   }, [])
 
   // ============================================================
-  // CHARGEMENT DES LOTS
+  // LOTS PAR PRODUIT (à la demande + cache)
   // ============================================================
   const fetchLotsForProduct = async (productId) => {
     const pid = safeInt(productId)
     if (!pid || !entrepot?.id) return
+    if (lotsByProduct[pid] !== undefined) return
 
     setLoadingLots(prev => ({ ...prev, [pid]: true }))
     try {
-      const response = await AxiosInstance.get(`/lots/by-product/${pid}/`)
-      const lots = Array.isArray(response.data) ? response.data : []
-      const availableLots = lots.filter(lot =>
-        safeInt(lot.warehouse) === safeInt(entrepot.id) &&
-        lot.quality_status === 'good' &&
-        safeNumber(lot.quantity, 0) > 0
+      const response = await AxiosInstance.get(`/lots/by-product/${pid}/?page_size=100`)
+      const lots = unwrap(response.data)
+      const available = lots.filter(lot =>
+        safeInt(lot.warehouse) === safeInt(entrepot.id)
+        && lot.quality_status === 'good'
+        && safeNumber(lot.quantity, 0) > 0
       )
-      setLotsByProduct(prev => ({ ...prev, [pid]: availableLots }))
+      setLotsByProduct(prev => ({ ...prev, [pid]: available }))
     } catch (error) {
       console.warn('Lots non chargés pour produit', pid, error)
       setLotsByProduct(prev => ({ ...prev, [pid]: [] }))
@@ -417,15 +462,11 @@ const PointDeVente = () => {
       showNotification('Produit invalide', 'error')
       return
     }
-
     if (!isProductAvailable(product)) {
       const stock = safeNumber(product.stock_quantity, 0)
       const price = safeNumber(product.sale_price, 0)
-      if (stock <= 0) {
-        showNotification(`"${product.name}" est en rupture de stock`, 'warning')
-      } else if (price <= 0) {
-        showNotification(`"${product.name}" n'a pas de prix défini`, 'warning')
-      }
+      if (stock <= 0) showNotification(`"${product.name}" est en rupture de stock`, 'warning')
+      else if (price <= 0) showNotification(`"${product.name}" n'a pas de prix défini`, 'warning')
       return
     }
 
@@ -442,7 +483,6 @@ const PointDeVente = () => {
     }
 
     const defaultPrice = safeNumber(product.sale_price, 0)
-
     fetchLotsForProduct(pid)
 
     setItems(prev => [...prev, {
@@ -490,16 +530,13 @@ const PointDeVente = () => {
     setItems(prev => prev.map(item => {
       if (item.id !== itemId) return item
       const updated = { ...item, [field]: value }
-
       if (field === 'quantity') {
         updated.quantity = Math.max(1, safeInt(value, 1))
       }
-
       const qty = safeNumber(updated.quantity, 1)
       const price = safeNumber(updated.unit_price, 0)
       const discount = safeNumber(updated.discount, 0)
       updated.total = qty * price * (1 - discount / 100)
-
       return updated
     }))
   }
@@ -507,17 +544,14 @@ const PointDeVente = () => {
   const handleQuantityChange = (itemId, newQuantity) => {
     const item = items.find(i => i.id === itemId)
     if (!item) return
-
     const maxQty = safeNumber(item.stock_max, 999)
     const safeQty = Math.max(1, Math.min(safeInt(newQuantity, 1), maxQty))
-
     if (safeQty !== newQuantity) {
       showNotification(
         `Stock maximum pour ${item.product_name} : ${maxQty}`,
         'warning'
       )
     }
-
     handleItemChange(itemId, 'quantity', safeQty)
   }
 
@@ -532,7 +566,7 @@ const PointDeVente = () => {
   }, [items])
 
   // ============================================================
-  // SOUMISSION
+  // SUBMIT
   // ============================================================
   const handleSubmit = async () => {
     if (items.length === 0) {
@@ -580,6 +614,7 @@ const PointDeVente = () => {
 
     try {
       await AxiosInstance.post('/ventes/', payload)
+      cacheRef.current.clear()
       showNotification('Vente créée avec succès !', 'success')
       setItems([])
       setSelectedClient(null)
@@ -595,6 +630,7 @@ const PointDeVente = () => {
         errorMessage = data.non_field_errors.join(', ')
       else if (data?.items) errorMessage = 'Erreur articles : ' + JSON.stringify(data.items)
       showNotification(errorMessage, 'error', data)
+    } finally {
       setSubmitting(false)
     }
   }
@@ -604,25 +640,19 @@ const PointDeVente = () => {
   // ============================================================
   const filteredProducts = useMemo(() => {
     let filtered = Array.isArray(products) ? products : []
-
-    if (showOnlyAvailable) {
-      filtered = filtered.filter(p => isProductAvailable(p))
-    }
-
+    if (showOnlyAvailable) filtered = filtered.filter(p => isProductAvailable(p))
     if (searchTerm) {
       const term = searchTerm.toLowerCase()
       filtered = filtered.filter(p =>
-        (p.name || '').toLowerCase().includes(term) ||
-        (p.reference || '').toLowerCase().includes(term) ||
-        (p.barcode || '').toLowerCase().includes(term) ||
-        (p.sku || '').toLowerCase().includes(term)
+        (p.name || '').toLowerCase().includes(term)
+        || (p.reference || '').toLowerCase().includes(term)
+        || (p.barcode || '').toLowerCase().includes(term)
+        || (p.sku || '').toLowerCase().includes(term)
       )
     }
-
     if (selectedCategory !== 'all') {
       filtered = filtered.filter(p => safeInt(p.category) === safeInt(selectedCategory))
     }
-
     return filtered
   }, [products, searchTerm, selectedCategory, showOnlyAvailable])
 
@@ -646,21 +676,22 @@ const PointDeVente = () => {
   }, [filteredProducts, sortField, sortDirection])
 
   const totalPages = Math.max(1, Math.ceil(sortedProducts.length / itemsPerPage))
-  const paginatedProducts = sortedProducts.slice(
+  const paginatedProducts = useMemo(() => sortedProducts.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
+  ), [sortedProducts, currentPage, itemsPerPage])
+
+  const unavailableCount = useMemo(
+    () => (products || []).filter(p => !isProductAvailable(p)).length,
+    [products]
   )
 
-  const unavailableCount = useMemo(() => {
-    return (products || []).filter(p => !isProductAvailable(p)).length
-  }, [products])
-
   // ============================================================
-  // COMPOSANT IMAGE PRODUIT
+  // COMPOSANT IMAGE
   // ============================================================
   const ProductImage = ({ src, alt, className }) => {
     const [errored, setErrored] = useState(false)
-    if (!src || errored || src === '/placeholder-product.png') {
+    if (!src || errored) {
       return (
         <div className={`${className} flex items-center justify-center bg-base-300`}>
           <Package className="w-12 h-12 text-base-content/30" />
@@ -681,7 +712,7 @@ const PointDeVente = () => {
   // ============================================================
   // LOADING
   // ============================================================
-  if (loadingUser) {
+  if (loadingUser || (initialProductsLoad && loadingProducts)) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-200px)]">
         <div className="text-center space-y-6">
@@ -694,17 +725,25 @@ const PointDeVente = () => {
     )
   }
 
-  // ============================================================
-  // RENDU
-  // ============================================================
   return (
     <div className="space-y-6 p-4 lg:p-6">
+      {/* Spinner overlay pendant refresh */}
+      {loadingProducts && !initialProductsLoad && (
+        <div className="fixed top-20 right-6 z-40">
+          <div className="bg-base-100 shadow-lg rounded-full px-4 py-2 flex items-center gap-2 border border-base-300">
+            <Loader className="w-3 h-3 animate-spin text-primary" />
+            <span className="text-xs text-base-content/60">Chargement...</span>
+          </div>
+        </div>
+      )}
+
       {/* Notification */}
       {notification.show && (
         <div className="fixed top-20 right-6 z-50 animate-slideDown max-w-md">
           <div className={`alert ${
-            notification.type === 'success' ? 'alert-success' :
-            notification.type === 'warning' ? 'alert-warning' : 'alert-error'
+            notification.type === 'success' ? 'alert-success'
+            : notification.type === 'warning' ? 'alert-warning'
+            : 'alert-error'
           } shadow-lg`}>
             {notification.type === 'success'
               ? <CheckCircle className="w-5 h-5" />
@@ -730,7 +769,10 @@ const PointDeVente = () => {
         </div>
         <div className="flex flex-wrap gap-3">
           <button
-            onClick={() => window.location.reload()}
+            onClick={() => {
+              cacheRef.current.clear()
+              window.location.reload()
+            }}
             className="btn btn-outline gap-2"
           >
             <RefreshCw className="w-4 h-4" /> Actualiser
@@ -744,13 +786,9 @@ const PointDeVente = () => {
         </div>
       </div>
 
-      {/* ============================================================ */}
-      {/* SÉLECTEURS AGENCE + ENTREPÔT + CLIENT */}
-      {/* ============================================================ */}
+      {/* Sélecteurs */}
       <div className="bg-base-100 rounded-xl shadow-md border border-base-300 p-4 lg:p-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-
-          {/* ✅ SÉLECTEUR D'AGENCE (visible si plusieurs agences) */}
           {agences.length > 1 && (
             <div className="flex items-center gap-3">
               <Building2 className="w-5 h-5 text-primary flex-shrink-0" />
@@ -777,7 +815,6 @@ const PointDeVente = () => {
             </div>
           )}
 
-          {/* ✅ SÉLECTEUR D'ENTREPÔT (toujours visible) */}
           <div className="flex items-center gap-3">
             <Warehouse className="w-5 h-5 text-primary flex-shrink-0" />
             <div className="flex-1">
@@ -817,7 +854,6 @@ const PointDeVente = () => {
             </div>
           </div>
 
-          {/* Client */}
           <div className="flex items-center gap-3">
             <User className="w-5 h-5 text-primary flex-shrink-0" />
             <div className="flex-1">
@@ -854,7 +890,6 @@ const PointDeVente = () => {
           </div>
         </div>
 
-        {/* ✅ Bandeau info entrepôt sélectionné */}
         {entrepot && (
           <div className="mt-4 pt-4 border-t border-base-300 flex flex-wrap items-center gap-4 text-xs">
             <div className="flex items-center gap-1.5 text-base-content/70">
@@ -898,10 +933,7 @@ const PointDeVente = () => {
                 placeholder="Rechercher par nom, référence, code-barres..."
                 className="input input-bordered w-full pl-12"
                 value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value)
-                  setCurrentPage(1)
-                }}
+                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1) }}
               />
             </div>
           </div>
@@ -909,10 +941,7 @@ const PointDeVente = () => {
             <select
               className="select select-bordered min-w-[150px]"
               value={selectedCategory}
-              onChange={(e) => {
-                setSelectedCategory(e.target.value)
-                setCurrentPage(1)
-              }}
+              onChange={(e) => { setSelectedCategory(e.target.value); setCurrentPage(1) }}
             >
               <option value="all">Toutes catégories</option>
               {categories.map(cat => (
@@ -953,10 +982,7 @@ const PointDeVente = () => {
                 type="checkbox"
                 className="toggle toggle-sm toggle-primary"
                 checked={showOnlyAvailable}
-                onChange={(e) => {
-                  setShowOnlyAvailable(e.target.checked)
-                  setCurrentPage(1)
-                }}
+                onChange={(e) => { setShowOnlyAvailable(e.target.checked); setCurrentPage(1) }}
               />
             </label>
 
@@ -990,11 +1016,11 @@ const PointDeVente = () => {
         </div>
       </div>
 
-      {/* Contenu principal */}
+      {/* Contenu */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Produits */}
         <div className="lg:col-span-3 bg-base-100 rounded-xl shadow-xl border border-base-300 overflow-hidden">
-          {loading ? (
+          {loadingProducts && !initialProductsLoad ? (
             <div className="flex justify-center items-center py-20">
               <div className="text-center space-y-3">
                 <Loader className="w-10 h-10 animate-spin text-primary mx-auto" />
@@ -1065,7 +1091,6 @@ const PointDeVente = () => {
                         <div className="absolute top-2 right-2">
                           {getStatusBadge(product)}
                         </div>
-
                         {!isAvailable && (
                           <div className="absolute inset-0 bg-black/60 flex items-center justify-center flex-col gap-1">
                             <span className="text-white font-bold text-sm bg-red-500 px-3 py-1 rounded">
@@ -1073,13 +1098,11 @@ const PointDeVente = () => {
                             </span>
                           </div>
                         )}
-
                         {isInCart && isAvailable && (
                           <div className="absolute top-2 left-2">
                             <span className="badge badge-primary badge-sm">✓ Ajouté</span>
                           </div>
                         )}
-
                         <div className="absolute bottom-2 left-2 right-2 flex gap-1 flex-wrap">
                           {hasPrice ? (
                             <span className="badge badge-sm bg-black/70 text-white border-0">
@@ -1116,8 +1139,8 @@ const PointDeVente = () => {
                           <div className="flex items-center gap-1">
                             <Warehouse className="w-3 h-3 text-base-content/40" />
                             <span className={`text-xs font-semibold ${
-                              stock <= 0 ? 'text-error' :
-                              (product.min_stock_level > 0 && stock <= product.min_stock_level)
+                              stock <= 0 ? 'text-error'
+                              : (product.min_stock_level > 0 && stock <= product.min_stock_level)
                                 ? 'text-warning' : 'text-success'
                             }`}>
                               {stock}
@@ -1189,8 +1212,8 @@ const PointDeVente = () => {
                         </td>
                         <td>
                           <span className={`badge ${
-                            stock <= 0 ? 'badge-error' :
-                            (product.min_stock_level > 0 && stock <= product.min_stock_level)
+                            stock <= 0 ? 'badge-error'
+                            : (product.min_stock_level > 0 && stock <= product.min_stock_level)
                               ? 'badge-warning' : 'badge-success'
                           }`}>
                             {stock}
