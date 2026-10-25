@@ -225,7 +225,8 @@ const ProductPricingManager = () => {
         currency: formData.currency
       }
 
-      await AxiosInstance.post('/product-prices/set_price/', payload)
+      // ✅ CORRECTION : 'set-price' (tiret) et non 'set_price' (underscore)
+      await AxiosInstance.post('/product-prices/set-price/', payload)
 
       showNotification(
         editingId ? 'Prix modifié avec succès' : 'Prix enregistré avec succès',
@@ -266,7 +267,8 @@ const ProductPricingManager = () => {
 
     setSubmitting(true)
     try {
-      await AxiosInstance.post('/product-prices/set_price/', {
+      // ✅ CORRECTION : 'set-price' (tiret) et non 'set_price' (underscore)
+      await AxiosInstance.post('/product-prices/set-price/', {
         product_id: id,
         warehouse_id: price.warehouse,
         purchase_price: 0,
