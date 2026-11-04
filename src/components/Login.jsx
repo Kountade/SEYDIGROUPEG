@@ -10,21 +10,17 @@ import {
   Eye, 
   EyeOff, 
   LogIn,
-  UserPlus,
   AlertCircle,
   CheckCircle,
   Shield,
   Building2,
   LayoutDashboard,
   Users,
-  FileText,
   TrendingUp,
-  ChevronRight,
   Globe,
   Award,
   Clock,
   Zap,
-  HeartHandshake,
   Sparkles,
   ArrowRight
 } from 'lucide-react'
@@ -295,7 +291,7 @@ const Login = () => {
                     </div>
                     <input
                       type="email"
-                      placeholder="exemple@sey digroup.com"
+                      placeholder="exemple@seydigroup.com"
                       className={`input input-bordered w-full pl-10 pr-4 py-3 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all duration-200 ${
                         errors.email ? 'input-error' : ''
                       }`}
@@ -407,30 +403,30 @@ const Login = () => {
                   )}
                 </button>
 
-                {/* Séparateur élégant */}
+                {/* Séparateur */}
                 <div className="relative my-6">
                   <div className="absolute inset-0 flex items-center">
                     <div className="w-full border-t border-base-300"></div>
                   </div>
                   <div className="relative flex justify-center text-xs">
                     <span className="px-2 bg-base-100 text-base-content/40">
-                      ou
+                      Information
                     </span>
                   </div>
                 </div>
 
-                {/* Section création de compte */}
-                <div className="text-center space-y-3">
-                  <p className="text-sm text-base-content/60">
-                    Nouveau chez SEYDI GROUP ?
+                {/* 🔒 Création de compte désactivée */}
+                <div className="text-center space-y-2 p-4 rounded-lg bg-base-200/50 border border-base-300">
+                  <div className="flex items-center justify-center gap-2 text-warning">
+                    <AlertCircle className="w-4 h-4" />
+                    <span className="text-sm font-semibold">
+                      Création de compte désactivée
+                    </span>
+                  </div>
+                  <p className="text-xs text-base-content/60 leading-relaxed">
+                    Les comptes sont créés uniquement par l'administrateur.
+                    Contactez votre responsable pour obtenir vos accès.
                   </p>
-                  <Link
-                    to="/register"
-                    className="inline-flex items-center justify-center gap-2 w-full px-6 py-2.5 rounded-lg border-2 border-primary text-primary font-semibold text-sm hover:bg-primary hover:text-primary-content transition-all duration-300 hover:-translate-y-0.5"
-                  >
-                    <UserPlus className="w-4 h-4" />
-                    Créer un compte
-                  </Link>
                 </div>
 
                 {/* Section sécurité */}

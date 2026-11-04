@@ -181,7 +181,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const [ventesImpayees, setVentesImpayees] = useState(0)
   const [absencesEnAttente, setAbsencesEnAttente] = useState(0)
   
-  // ✅ NOUVEAU : État pour les lots
+  // ✅ État pour les lots
   const [lotsStats, setLotsStats] = useState({
     total: 0,
     expiringSoon: 0,
@@ -395,7 +395,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
           }
         }
         
-        // ✅ NOUVEAU : Charger les données des lots
+        // ✅ Charger les données des lots
         const lotsRes = await AxiosInstance.get(`/lots/${params}`).catch(() => ({ data: [] }))
         const lotsData = lotsRes.data || []
         
@@ -456,7 +456,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
           notifs.push({ id: 'absences', title: 'Absences en attente', message: `${absencesRes.data.length} demande(s) de congé en attente`, link: '/leaves', type: 'info', time: "aujourd'hui" })
         }
         
-        // ✅ NOUVEAU : Notifications pour les lots expirant bientôt
+        // Notifications pour les lots expirant bientôt
         if (expiringSoon > 0) {
           notifs.push({ 
             id: 'lots-expiring', 
@@ -660,8 +660,8 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         { id: 'paiement-fournisseur', text: 'Paiement Fournisseur', icon: DollarSign, path: '/paiement-fournisseur', permission: canViewPurchases(), badge: 0 },
         { id: 'receptions', text: 'Réceptions', icon: Truck, path: '/receptions', permission: canViewPurchases() },
         { id: 'frais', text: 'Frais de réception', icon: DollarSign, path: '/frais', permission: canViewPurchases() },
-        { id: 'catalogue', text: 'Catalogue', icon: ClipboardList, path: '/supplier-catalogs', permission: canViewPurchases() },
-        { id: 'prix', text: 'Historique prix', icon: History, path: '/price-history', permission: canViewPurchases() },
+        // ❌ SUPPRIMÉ : Catalogue (/supplier-catalogs)
+        // ❌ SUPPRIMÉ : Historique prix (/price-history)
         { id: 'alertes', text: 'Alertes', icon: AlertTriangle, path: '/purchase-alerts', permission: canViewPurchases(), badge: alertsCount }
       ]
     },
@@ -676,7 +676,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         { id: 'marques', text: 'Marques', icon: Award, path: '/brands', permission: canViewInventory() },
         { id: 'unites', text: 'Unités', icon: Ruler, path: '/units', permission: canViewInventory() },
         { id: 'reception', text: 'Réception stock', icon: Truck, path: '/stock-receipt', permission: canViewInventory() },
-        // ✅ NOUVEAU : Menu Lots
+        // ✅ Menu Lots
         { 
           id: 'lots', 
           text: 'Lots', 
