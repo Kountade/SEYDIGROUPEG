@@ -10,93 +10,67 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'robots.txt'],
+      includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'robots.txt'],
       manifest: {
-        name: 'Seydi Group App',
-        short_name: 'SeydiApp',
-        description: 'Application Seydi Group',
+        name: 'Seydi Group',
+        short_name: 'SeydiGroup',
+        description: 'Application Seydi Group — Gestion et services',
         theme_color: '#10b981',
         background_color: '#ffffff',
         display: 'standalone',
+        orientation: 'portrait',
+        categories: ['business', 'productivity'],
         icons: [
-          {
-            src: '/icons/icon-192x192.png',
-            sizes: '192x192',
-            type: 'image/png',
-            purpose: 'any maskable'
-          },
-          {
-            src: '/icons/icon-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'any maskable'
-          }
+          { src: '/icons/icon-72x72.png',   sizes: '72x72',   type: 'image/png', purpose: 'any maskable' },
+          { src: '/icons/icon-96x96.png',   sizes: '96x96',   type: 'image/png', purpose: 'any maskable' },
+          { src: '/icons/icon-128x128.png', sizes: '128x128', type: 'image/png', purpose: 'any maskable' },
+          { src: '/icons/icon-144x144.png', sizes: '144x144', type: 'image/png', purpose: 'any maskable' },
+          { src: '/icons/icon-152x152.png', sizes: '152x152', type: 'image/png', purpose: 'any maskable' },
+          { src: '/icons/icon-192x192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+          { src: '/icons/icon-384x384.png', sizes: '384x384', type: 'image/png', purpose: 'any maskable' },
+          { src: '/icons/icon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
         ]
       },
       workbox: {
-        // ✅ CORRECTION : 10 MB au lieu de 5 MB (votre bundle fait 5.43 MB)
-        maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
-
-        // ✅ Exclure les très gros fichiers du precache
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-        globIgnores: [
-          '**/node_modules/**/*',
-          '**/background-login-*.jpg',
-          '**/logo-DG-*.svg',
-        ],
-
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,ttf}'],
         runtimeCaching: [
           {
             urlPattern: /\/api\//i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24
-              }
+              networkTimeoutSeconds: 10,
+              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 }
             }
           },
           {
-            urlPattern: /\.(png|jpg|jpeg|svg|gif|webp|ico)$/,
+            urlPattern: /\.(png|jpg|jpeg|svg|gif|webp|ico|avif)$/,
             handler: 'CacheFirst',
             options: {
               cacheName: 'image-cache',
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 30
-              }
+              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 30 }
             }
           },
           {
-            urlPattern: /\.(css|js)$/,
+            urlPattern: /\.(css|js|woff2|ttf)$/,
             handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'static-resources'
-            }
+            options: { cacheName: 'static-resources' }
           }
-        ],
-
-        cleanupOutdatedCaches: true,
-        clientsClaim: true,
-        skipWaiting: true,
+        ]
       },
       devOptions: {
-        enabled: false,   // ✅ Désactivé en dev pour éviter les bugs
+        enabled: false,
         type: 'module',
         navigateFallback: 'index.html'
       }
     })
   ],
-
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
-    sourcemap: false,
-    // ✅ Augmenter la limite d'avertissement (évite les warnings)
-    chunkSizeWarningLimit: 6000,
+    sourcemap: false
   },
-
   server: {
     proxy: {
       '/api': {

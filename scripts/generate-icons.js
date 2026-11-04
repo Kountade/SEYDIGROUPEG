@@ -4,60 +4,86 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// Pour ESM modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Tailles d'icônes à générer
-const sizes = [72, 96, 128, 144, 152, 192, 384, 512];
+// 🎯 SOURCE : votre favicon.svg existant
+const sourceImage = path.join(__dirname, '..', 'public', 'favicon.svg');
 
-// Chemin vers votre logo source
-// Placez un fichier logo.png à la racine du projet frontend
-const sourceImage = path.join(__dirname, '..', 'logo.png');
+// Tailles demandées (manifest + index.html)
+const sizes = [16, 32, 72, 76, 96, 120, 128, 144, 152, 180, 192, 384, 512];
 
-// Dossier de destination
-const outputDir = path.join(__dirname, '..', 'public', 'icons');
+const iconsDir = path.join(__dirname, '..', 'public', 'icons');
+const publicDir = path.join(__dirname, '..', 'public');
 
-// Vérifier si le dossier source existe
+// Vérifier que favicon.svg existe
 if (!fs.existsSync(sourceImage)) {
-  console.error('❌ Logo source non trouvé !');
-  console.log(`📁 Veuillez placer votre logo à : ${sourceImage}`);
-  console.log('📝 Formats supportés: PNG, JPG, SVG');
-  console.log('📌 Exemple: Placez logo.png dans le dossier frontend/');
-  
-  // Créer un logo par défaut si vous voulez
-  console.log('\n💡 Alternative: Créez un logo simple avec ce script');
+  console.error('❌ favicon.svg non trouvé !');
+  console.log(`📁 Attendu à : ${sourceImage}`);
+  console.log('📝 Placez votre favicon.svg dans public/');
   process.exit(1);
 }
 
-// Créer le dossier de destination s'il n'existe pas
-if (!fs.existsSync(outputDir)) {
-  fs.mkdirSync(outputDir, { recursive: true });
-  console.log(`📁 Dossier créé : ${outputDir}`);
+// Créer le dossier icons
+if (!fs.existsSync(iconsDir)) {
+  fs.mkdirSync(iconsDir, { recursive: true });
 }
 
-console.log('🎨 Génération des icônes en cours...');
+console.log('🎨 Génération des icônes StockAcha depuis favicon.svg...');
+console.log(`📁 Source : ${sourceImage}`);
 
-// Générer les icônes
-sizes.forEach(async (size) => {
-  const outputPath = path.join(outputDir, `icon-${size}x${size}.png`);
-  
+const generateIcons = async () => {
   try {
-    await sharp(sourceImage)
-      .resize(size, size, {
-        fit: 'contain',
-        background: { r: 255, g: 255, b: 255, alpha: 0 }
-      })
-      .png({
-        quality: 90,
-        compressionLevel: 9
-      })
-      .toFile(outputPath);
-    
-    console.log(`✅ Icon ${size}x${size} générée`);
-  } catch (error) {
-    console.error(`❌ Erreur pour ${size}x${size}:`, error.message);
-  }
-});
+    for (const size of sizes) {
+      const outputPath = path.join(iconsDir, `icon-${size}x${size}.png`);
 
-console.log('✨ Génération terminée !');
+      await sharp(sourceImage, { density: 384 }) // densité élevée pour SVG → PNG net
+        .resize(size, size, {
+          fit: 'contain',
+          background: { r: 255, g: 255, b: 255, alpha: 0 }
+        })
+        .png({ quality: 90, compressionLevel: 9 })
+        .toFile(outputPath);
+
+      console.log(`✅ icon-${size}x${size}.png`);
+    }
+
+    // ✅ apple-touch-icon.png (180x180) à la racine public/
+    await sharp(sourceImage, { density: 384 })
+      .resize(180, 180)
+      .png({ quality: 90 })
+      .toFile(path.join(publicDir, 'apple-touch-icon.png'));
+    console.log('✅ apple-touch-icon.png (180x180)');
+
+    // ✅ og-image.png (1200x630) — fond bleu + logo centré
+    await sharp({
+      create: {
+        width: 1200,
+        height: 630,
+        channels: 4,
+        background: { r: 30, g: 64, b: 175, alpha: 1 } // #1e40af
+      }
+    })
+      .composite([
+        {
+          input: await sharp(sourceImage, { density: 384 })
+            .resize(400, 400, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+            .png()
+            .toBuffer(),
+          top: 115,
+          left: 400
+        }
+      ])
+      .png()
+      .toFile(path.join(publicDir, 'og-image.png'));
+    console.log('✅ og-image.png (1200x630)');
+
+    console.log('\n✨ Génération terminée !');
+    console.log(`📁 Icônes → ${iconsDir}`);
+  } catch (error) {
+    console.error('❌ Erreur:', error.message);
+    process.exit(1);
+  }
+};
+
+generateIcons();

@@ -2,17 +2,64 @@
 <html lang="fr" data-theme="emerald">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+
+    <!-- PWA Meta Tags -->
     <meta name="theme-color" content="#10b981" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="SeydiGroup" />
+    <meta name="apple-mobile-web-app-title" content="Seydi Group" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="application-name" content="Seydi Group" />
 
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+    <!-- Favicon principal -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!-- Favicons PNG fallback -->
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="/icons/icon-32x32.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="/icons/icon-16x16.png"
+    />
+
+    <!-- Apple Touch Icons -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link
+      rel="apple-touch-icon"
+      sizes="152x152"
+      href="/icons/icon-152x152.png"
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="120x120"
+      href="/icons/icon-120x120.png"
+    />
+    <link rel="apple-touch-icon" sizes="76x76" href="/icons/icon-76x76.png" />
+
+    <!-- Manifest (généré par VitePWA au build) -->
     <link rel="manifest" href="/manifest.webmanifest" />
 
-    <title>SEYDIGROUP</title>
+    <!-- SEO -->
+    <meta
+      name="description"
+      content="Seydi Group — Application de gestion et de services."
+    />
+    <meta property="og:title" content="Seydi Group" />
+    <meta property="og:description" content="Application Seydi Group." />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="/og-image.png" />
+
+    <title>Seydi Group</title>
   </head>
   <body>
     <div id="root"></div>
