@@ -403,32 +403,6 @@ const Login = () => {
                   )}
                 </button>
 
-                {/* Séparateur */}
-                <div className="relative my-6">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-base-300"></div>
-                  </div>
-                  <div className="relative flex justify-center text-xs">
-                    <span className="px-2 bg-base-100 text-base-content/40">
-                      Information
-                    </span>
-                  </div>
-                </div>
-
-                {/* 🔒 Création de compte désactivée */}
-                <div className="text-center space-y-2 p-4 rounded-lg bg-base-200/50 border border-base-300">
-                  <div className="flex items-center justify-center gap-2 text-warning">
-                    <AlertCircle className="w-4 h-4" />
-                    <span className="text-sm font-semibold">
-                      Création de compte désactivée
-                    </span>
-                  </div>
-                  <p className="text-xs text-base-content/60 leading-relaxed">
-                    Les comptes sont créés uniquement par l'administrateur.
-                    Contactez votre responsable pour obtenir vos accès.
-                  </p>
-                </div>
-
                 {/* Section sécurité */}
                 <div className="flex items-center justify-center gap-2 pt-2">
                   <Shield className="w-3 h-3 text-success" />
