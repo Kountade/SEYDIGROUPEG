@@ -1,4 +1,4 @@
-// vite.config.js
+//vite.config.js
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
@@ -32,8 +32,9 @@ export default defineConfig({
         ]
       },
       workbox: {
-        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,ttf}'],
+        // ⬇️ Clé du correctif : > 5.55 MB
+        maximumFileSizeToCacheInBytes: 8 * 1024 * 1024, // 8 MiB
+        globPatterns: ['*/.{js,css,html,ico,png,svg,woff2,ttf}'],
         runtimeCaching: [
           {
             urlPattern: /\/api\//i,
@@ -69,7 +70,16 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
-    sourcemap: false
+    sourcemap: false,
+    // ⬇️ Recommandé pour maîtriser la taille des chunks
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom'],
+          router: ['react-router-dom']
+        }
+      }
+    }
   },
   server: {
     proxy: {
