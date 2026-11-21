@@ -187,7 +187,13 @@ import DashboardCommercial from './components/ventes/DashboardCommercial'
 
 function App() {
   const location = useLocation()
-  const noNavBar = location.pathname === "/" || location.pathname === "/register" || location.pathname.includes("password")
+  
+  // ✅ CORRECTION ICI : On s'assure que le routeur reconnait bien le mot "password"
+  const noNavBar = 
+    location.pathname === "/" || 
+    location.pathname === "/register" || 
+    location.pathname.includes("password") || 
+    location.pathname.includes("reset")
 
   return (
     <>
@@ -197,7 +203,10 @@ function App() {
             <Route path="/register" element={<Register />} />
             <Route path="/" element={<Login />} />
             <Route path="/request/password_reset" element={<PasswordResetRequest />} />
+            
+            {/* ✅ La route pour le formulaire de réinitialisation */}
             <Route path="/password-reset/:token" element={<PasswordReset />} />
+            
           </Routes>
           :
           <Navbar
@@ -407,7 +416,6 @@ function App() {
                   <Route path="/hr-stats" element={<HRStats />} />
                   <Route path="/trainings" element={<Trainings />} />
 
-                  {/* ✅ DASHBOARD VENTES - CORRIGÉ */}
                   <Route path="/dashboard/ventes" element={<DashboardCommercial />} />
 
                   <Route path="/clients" element={<ClientsList />} />
